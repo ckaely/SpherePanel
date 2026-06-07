@@ -1,0 +1,20 @@
+## Interface: 120005
+## Title: SpherePanel
+## Notes: Modular side panel — replaces the quest tracker
+## Author: ckaely
+## Version: 0.1.0
+## SavedVariables: SPDB
+## DefaultState: enabled
+
+Core.lua
+Config.lua
+PanelFrame.lua
+ModuleSystem.lua
+Modules\QuestTracker.lua
+Modules\Chat.lua
+Modules\DamageMeter.lua
+Modules\Raid.lua
+Modules\SilverDragon.lua
+Modules\GameMenu.lua
+Modules\MinimapButtons.lua
+Modules\SquareMap.lua

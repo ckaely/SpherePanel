@@ -1,0 +1,34 @@
+# ============================================================
+# SpherePanel — .gitignore
+# Repo public = livrable de l'addon.
+# Docs AI, backups et scratch dev sont exclus.
+# ============================================================
+
+# --- Documentation AI (stockée dans le repo privé addon-workspace) ---
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+PROJECT_CONTEXT.md
+WIKI.md
+BROKER.md
+Ingenieur_addons.md
+MEMORY.md
+*.local.md
+
+# --- Backups et dev scratch ---
+CCB/
+backups/
+*.bak
+
+# --- Système ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.log
+
+# --- Éditeurs ---
+.vscode/
+.idea/
+*.swp
+*~
