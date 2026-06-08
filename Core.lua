@@ -96,6 +96,8 @@ function SP:HandleSlash(msg)
         if SP.panel then SP.panel:Show() end
     elseif cmd == "hide" then
         if SP.panel then SP.panel:Hide() end
+    elseif cmd == "config" or cmd == "options" then
+        if SP.OpenConfig then SP:OpenConfig() else SP:Print("Panneau d'options indisponible.") end
     elseif cmd == "enable" and rest ~= "" then
         SP:EnableModule(rest)
     elseif cmd == "modules" then
@@ -106,6 +108,6 @@ function SP:HandleSlash(msg)
             SP:Print(("  %s (%s) — %s"):format(m.name, m.label, state))
         end
     else
-        SP:Print("Commandes : |cFFFFFFFF/sp|r lock | reset | show | hide | modules | enable <Nom>")
+        SP:Print("Commandes : |cFFFFFFFF/sp|r config | lock | reset | show | hide | modules | enable <Nom>")
     end
 end

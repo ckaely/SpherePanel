@@ -7,9 +7,10 @@
 local ADDON_NAME, SP = ...
 
 -- Textures de boutons natives (bords transparents garantis).
-local TEX_PLUS  = "Interface\\Buttons\\UI-PlusButton-Up"
-local TEX_MINUS = "Interface\\Buttons\\UI-MinusButton-Up"
-local TEX_GEAR  = "Interface\\Buttons\\UI-OptionsButton"
+local TEX_PLUS   = "Interface\\Buttons\\UI-PlusButton-Up"
+local TEX_MINUS  = "Interface\\Buttons\\UI-MinusButton-Up"
+local TEX_LOCK   = "Interface\\Buttons\\LockButton-Locked-Up"
+local TEX_UNLOCK = "Interface\\Buttons\\LockButton-Unlocked-Up"
 
 -- Interface obligatoire que tout module DOIT exposer.
 local REQUIRED    = { "name", "label" }
@@ -109,7 +110,7 @@ function SP:CreateModuleFrame(m)
     header:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, 0)
     header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     header:SetHeight(UIc.HEADER_H)
-    header:RegisterForClicks("LeftButtonUp")
+    header:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     header:RegisterForDrag("LeftButton")
     local hbg = header:CreateTexture(nil, "BACKGROUND")
     hbg:SetAllPoints(header)
@@ -133,22 +134,30 @@ function SP:CreateModuleFrame(m)
     label:SetPoint("LEFT", arrow, "RIGHT", 4, 0)
     label:SetText(m.label)
 
-    -- Bouton fermer (désactive le module)
-    local close = CreateFrame("Button", nil, header, "UIPanelCloseButton")
-    close:SetSize(UIc.HEADER_H, UIc.HEADER_H)
-    close:SetPoint("RIGHT", header, "RIGHT", 2, 0)
-    close:SetFrameLevel(baseLvl + 2)
-    close:SetScript("OnClick", function() SP:DisableModuleUI(m) end)
+    -- Cadenas : épingle l'affichage (exclu du futur auto-fade)
+    local lock = CreateFrame("Button", nil, header)
+    lock:SetSize(UIc.HEADER_H - 4, UIc.HEADER_H - 4)
+    lock:SetPoint("RIGHT", header, "RIGHT", -3, 0)
+    lock:SetFrameLevel(baseLvl + 2)
+    lock:SetScript("OnClick", function() SP:TogglePin(m) end)
+    lock:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+        local cfg = SP:GetModuleConfig(m.name)
+        GameTooltip:SetText((cfg and cfg.pinned) and "Épinglé — clic pour libérer" or "Épingler ce module")
+        GameTooltip:Show()
+    end)
+    lock:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    m.lock = lock
 
-    -- Bouton options (inline) — stub étape 2
-    local opt = CreateFrame("Button", nil, header)
-    opt:SetSize(UIc.HEADER_H - 4, UIc.HEADER_H - 4)
-    opt:SetPoint("RIGHT", close, "LEFT", -2, 0)
-    opt:SetFrameLevel(baseLvl + 2)
-    opt:SetNormalTexture(TEX_GEAR)
-    opt:SetScript("OnClick", function() SP:ToggleOptions(m) end)
+    -- Suffixe dynamique du bandeau (ex : compteur de quêtes "18 / 35")
+    local suffix = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    suffix:SetPoint("RIGHT", lock, "LEFT", -6, 0)
+    m.suffixFS = suffix
 
-    header:SetScript("OnClick",     function() SP:ToggleCollapse(m) end)
+    -- Clic gauche = collapse ; clic droit = menu contextuel ; drag = reorder.
+    header:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then SP:ShowModuleMenu(m) else SP:ToggleCollapse(m) end
+    end)
     header:SetScript("OnDragStart", function() SP:BeginReorder(m) end)
     header:SetScript("OnDragStop",  function() SP:EndReorder(m) end)
     m.header = header
@@ -172,6 +181,7 @@ function SP:CreateModuleFrame(m)
     m.frame = frame
     m.body  = body
     SP:UpdateCollapseVisual(m)
+    SP:UpdatePinVisual(m)
 end
 
 -- ============================================================
@@ -194,12 +204,98 @@ function SP:ToggleCollapse(m)
     SP:RebuildLayout()
 end
 
-function SP:ToggleOptions(m)
-    -- TODO(dev) : panneau d'options inline par module.
-    SP:Print(("Options de |cFFFFFFFF%s|r : à venir."):format(m.label))
+-- ------------------------------------------------------------
+-- Cadenas / épingle (pin)
+-- ------------------------------------------------------------
+function SP:UpdatePinVisual(m)
+    if not m.lock or not m.frame then return end
+    local cfg = SP:GetModuleConfig(m.name)
+    local pinned = cfg and cfg.pinned
+    m.lock:SetNormalTexture(pinned and TEX_LOCK or TEX_UNLOCK)
+    m.lock:SetAlpha(pinned and 1 or 0.45)
+    -- un module épinglé ignore l'alpha du panneau → reste opaque sous l'auto-fade (phase 2)
+    m.frame:SetIgnoreParentAlpha(pinned and true or false)
 end
 
--- ✕ : désactive le module (Disable + masque). Réactivable via /sp enable <Nom>.
+function SP:TogglePin(m)
+    local cfg = SP:GetModuleConfig(m.name)
+    if not cfg then return end
+    cfg.pinned = not cfg.pinned
+    SP:UpdatePinVisual(m)
+end
+
+-- Texte secondaire du bandeau (suffixe). Utilisé par QuestTracker (compteur), etc.
+function SP:SetModuleHeaderText(m, text)
+    if m and m.suffixFS then m.suffixFS:SetText(text or "") end
+end
+
+-- ------------------------------------------------------------
+-- Menu contextuel (clic droit sur le bandeau)
+-- ------------------------------------------------------------
+function SP:ShowModuleMenu(m)
+    local cfg = SP:GetModuleConfig(m.name)
+    local function build(_, root)
+        root:CreateTitle(m.label)
+        root:CreateButton("Paramètres", function()
+            if SP.OpenConfig then SP:OpenConfig(m.name) end
+        end)
+        root:CreateButton((cfg and cfg.pinned) and "Déverrouiller" or "Verrouiller", function()
+            SP:TogglePin(m)
+        end)
+        root:CreateButton("Masquer", function() SP:DisableModuleUI(m) end)
+    end
+    if MenuUtil and MenuUtil.CreateContextMenu then
+        MenuUtil.CreateContextMenu(m.header, build)
+    else
+        SP:_ShowFallbackMenu(m)
+    end
+end
+
+-- Menu de secours minimal si MenuUtil indisponible (build ancienne / future).
+function SP:_ShowFallbackMenu(m)
+    local cfg = SP:GetModuleConfig(m.name)
+    local entries = {
+        { "Paramètres", function() if SP.OpenConfig then SP:OpenConfig(m.name) end end },
+        { (cfg and cfg.pinned) and "Déverrouiller" or "Verrouiller", function() SP:TogglePin(m) end },
+        { "Masquer", function() SP:DisableModuleUI(m) end },
+    }
+    local menu = SP._fbMenu
+    if not menu then
+        menu = CreateFrame("Frame", "SpherePanelCtxMenu", UIParent)
+        menu:SetFrameStrata("DIALOG")
+        menu:EnableMouse(true)
+        local bg = menu:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints(menu); bg:SetColorTexture(0.05, 0.05, 0.07, 0.96)
+        menu.buttons = {}
+        menu:SetScript("OnLeave", function(s) if not s:IsMouseOver() then s:Hide() end end)
+        SP._fbMenu = menu
+    end
+    local W, ROW = 150, 18
+    for i, e in ipairs(entries) do
+        local b = menu.buttons[i]
+        if not b then
+            b = CreateFrame("Button", nil, menu)
+            b:SetSize(W - 4, ROW)
+            b:SetPoint("TOPLEFT", menu, "TOPLEFT", 2, -2 - (i - 1) * ROW)
+            b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            b.fs:SetPoint("LEFT", b, "LEFT", 4, 0)
+            local hl = b:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(b); hl:SetColorTexture(1, 1, 1, 0.10)
+            menu.buttons[i] = b
+        end
+        b.fs:SetText(e[1])
+        b:SetScript("OnClick", function() menu:Hide(); e[2]() end)
+        b:Show()
+    end
+    for i = #entries + 1, #menu.buttons do menu.buttons[i]:Hide() end
+    menu:SetSize(W, 4 + #entries * ROW)
+    menu:ClearAllPoints()
+    local scale = UIParent:GetEffectiveScale()
+    local x, y = GetCursorPosition()
+    menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale, y / scale)
+    menu:Show()
+end
+
+-- Désactive le module (Disable + masque). Réactivable via menu, /sp enable <Nom> ou options.
 function SP:DisableModuleUI(m)
     local cfg = SP:GetModuleConfig(m.name)
     if not cfg then return end

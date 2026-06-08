@@ -10,6 +10,7 @@ Core.lua
 Config.lua
 PanelFrame.lua
 ModuleSystem.lua
+Config_UI.lua
 Modules\QuestTracker.lua
 Modules\Chat.lua
 Modules\DamageMeter.lua
