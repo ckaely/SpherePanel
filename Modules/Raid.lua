@@ -61,6 +61,10 @@ function M:Init(body)
     self.body = body
     self.bars = {}          -- pool
     self.unitToBar = {}     -- unit -> bar (refresh ciblé sur UNIT_HEALTH)
+    self.emptyText = body:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    self.emptyText:SetPoint("TOP", body, "TOP", 0, -6)
+    self.emptyText:SetText("Hors groupe")
+    self.emptyText:Hide()
     self.ev = CreateFrame("Frame")
     self.ev:SetScript("OnEvent", function(_, event, unit)
         if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
@@ -91,8 +95,9 @@ function M:Prewarm(n)
     for i = #self.bars + 1, n do self.bars[i] = CreateBar(self) end
 end
 
--- Liste des unités du groupe (joueur inclus).
+-- Liste des unités du groupe (joueur inclus). Vide hors groupe → module inactif.
 local function BuildUnitList()
+    if not IsInGroup() then return {} end
     local units = {}
     local n = GetNumGroupMembers() or 0
     if IsInRaid() then
@@ -100,7 +105,6 @@ local function BuildUnitList()
     else
         units[#units + 1] = "player"
         for i = 1, n - 1 do units[#units + 1] = "party" .. i end
-        if n == 0 then units = { "player" } end
     end
     return units
 end
@@ -109,6 +113,7 @@ function M:Rebuild()
     if not self._enabled or not self.body then return end
     wipe(self.unitToBar)
     local units = BuildUnitList()
+    if self.emptyText then self.emptyText:SetShown(#units == 0) end
     local twoCol = IsInRaid() and #units > 5
     local colW = twoCol and (self.body:GetWidth() / 2 - 2) or self.body:GetWidth()
 

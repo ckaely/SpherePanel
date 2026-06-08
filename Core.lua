@@ -99,8 +99,8 @@ function SP:HandleSlash(msg)
     elseif cmd == "config" or cmd == "options" then
         if SP.OpenConfig then SP:OpenConfig() else SP:Print("Panneau d'options indisponible.") end
     elseif cmd == "mbscan" then
-        local mb = SP.modulesByName and SP.modulesByName["MinimapButtons"]
-        if mb and mb.Scan then mb:Scan() else SP:Print("Module MinimapButtons indisponible.") end
+        local mb = SP.modulesByName and SP.modulesByName["GameMenu"]
+        if mb and mb.Scan then mb:Scan() else SP:Print("Module Menus indisponible.") end
     elseif cmd == "enable" and rest ~= "" then
         SP:EnableModule(rest)
     elseif cmd == "modules" then

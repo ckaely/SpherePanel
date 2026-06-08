@@ -97,15 +97,23 @@ local function CreateEntry(self)
     row.watch.text:SetPoint("CENTER")
     row.watch:SetScript("OnClick", function() self:OnWatchClick(row) end)
 
+    row.hl = row:CreateTexture(nil, "BACKGROUND")
+    row.hl:SetAllPoints(row)
+    row.hl:SetColorTexture(1, 1, 1, 0.10)
+    row.hl:Hide()
+
     row.title = CreateFrame("Button", nil, row)
     row.title:SetHeight(14)
     row.title:SetPoint("TOPLEFT", row, "TOPLEFT", 16, 0)
     row.title:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
+    row.title:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     row.title.text = row.title:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.title.text:SetAllPoints(row.title)
     row.title.text:SetJustifyH("LEFT")
     row.title.text:SetWordWrap(false)
-    row.title:SetScript("OnClick", function() self:OnTitleClick(row) end)
+    row.title:SetScript("OnClick", function(_, button) self:OnTitleClick(row, button) end)
+    row.title:SetScript("OnEnter", function() row.hl:Show() end)
+    row.title:SetScript("OnLeave", function() row.hl:Hide() end)
 
     row.objs = {}
     return row
@@ -212,6 +220,14 @@ function M:Init(body)
     self.list:SetPoint("TOPLEFT", self.toolbar, "BOTTOMLEFT", -2, -2)
     self.list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
     self.list:SetClipsChildren(true)
+    self.scroll = 0
+    self.list:EnableMouseWheel(true)
+    self.list:SetScript("OnMouseWheel", function(_, delta)
+        local visible = self.list:GetHeight() or 1
+        local maxS = math.max(0, (self._contentH or 0) - visible)
+        self.scroll = math.min(maxS, math.max(0, self.scroll - delta * 24))
+        self:Refresh()
+    end)
 
     self.emptyText = self.list:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     self.emptyText:SetPoint("TOP", self.list, "TOP", 0, -8)
@@ -375,8 +391,8 @@ function M:Refresh()
             local row = self:AcquireEntry()
             if not row then break end
             row:ClearAllPoints()
-            row:SetPoint("TOPLEFT",  self.list, "TOPLEFT",  2, -y)
-            row:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -y)
+            row:SetPoint("TOPLEFT",  self.list, "TOPLEFT",  2, -(y - self.scroll))
+            row:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -(y - self.scroll))
             local ok, h = pcall(RenderRow, self, row, qid, cat, isPvp, isAccount)
             if not ok or type(h) ~= "number" then h = 15 end
             row:Show()
@@ -384,6 +400,9 @@ function M:Refresh()
             count = count + 1
         end
     end
+    self._contentH = y
+    local visible = self.list:GetHeight() or 1
+    if self.scroll > math.max(0, y - visible) then self.scroll = math.max(0, y - visible) end
     self.emptyText:SetShown(count == 0)
     if self._placeholder then self._placeholder:Hide() end
 end

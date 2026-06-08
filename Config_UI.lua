@@ -71,6 +71,97 @@ local function BuildComportement(page)
     note:SetText("|cFF777777Astuce : épingle un module (cadenas) pour qu'il reste visible même estompé.|r")
 end
 
+local function BuildGeneral(page)
+    local cfg = SP:GetModuleConfig("GameMenu")
+    if not cfg then return end
+    local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText("Général — module Menus")
+    MakeCheck(page, "Afficher l'horloge", 8, -34,
+        function() return cfg.showClock end, function(v) cfg.showClock = v end)
+    MakeCheck(page, "Format 24h (sinon 12h AM/PM)", 24, -58,
+        function() return cfg.clock24h end, function(v) cfg.clock24h = v end)
+    MakeCheck(page, "Afficher les FPS", 8, -86,
+        function() return cfg.showFPS end, function(v) cfg.showFPS = v end)
+end
+
+local function BuildChat(page)
+    local cfg = SP:GetModuleConfig("Chat")
+    if not cfg then return end
+    local function applyChat()
+        local m = SP.modulesByName and SP.modulesByName["Chat"]
+        if m and m.ApplyConfig then m:ApplyConfig() end
+    end
+
+    local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText("Chat")
+    MakeCheck(page, "Colorer les noms par classe", 8, -34,
+        function() return cfg.classColorNames end, function(v) cfg.classColorNames = v; applyChat() end)
+    MakeSlider(page, "Taille de police", 16, -74, 8, 24, 1,
+        function() return cfg.fontSize or 12 end, function(v) cfg.fontSize = v; applyChat() end,
+        function(v) return tostring(v) end)
+
+    local listHdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    listHdr:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -120)
+    listHdr:SetText("Canaux — activer / couleur / ordre")
+
+    page.chRows = {}
+    page.RefreshChannels = function()
+        local y = -142
+        for i, ch in ipairs(cfg.channels) do
+            local row = page.chRows[i]
+            if not row then
+                row = CreateFrame("Frame", nil, page); row:SetSize(360, 22)
+                row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+                row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
+                row.swatch = CreateFrame("Button", nil, row); row.swatch:SetSize(16, 16)
+                row.swatch:SetPoint("LEFT", row.check, "RIGHT", 4, 0)
+                row.swatch.tex = row.swatch:CreateTexture(nil, "ARTWORK"); row.swatch.tex:SetAllPoints(row.swatch)
+                row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                row.label:SetPoint("LEFT", row.swatch, "RIGHT", 6, 0)
+                row.up = CreateFrame("Button", nil, row); row.up:SetSize(18, 18); row.up:SetPoint("LEFT", row, "LEFT", 160, 0)
+                row.up:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
+                row.down = CreateFrame("Button", nil, row); row.down:SetSize(18, 18); row.down:SetPoint("LEFT", row.up, "RIGHT", 2, 0)
+                row.down:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+                page.chRows[i] = row
+            end
+            row:ClearAllPoints(); row:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y)
+            row.label:SetText(("%s (%s)"):format(ch.label or ch.key, ch.key))
+            row.check:SetChecked(ch.enabled and true or false)
+            row.check:SetScript("OnClick", function(c) ch.enabled = c:GetChecked() and true or false; applyChat() end)
+            row.swatch.tex:SetColorTexture(ch.r, ch.g, ch.b)
+            row.swatch:SetScript("OnClick", function()
+                if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
+                    ColorPickerFrame:SetupColorPickerAndShow({
+                        r = ch.r, g = ch.g, b = ch.b, hasOpacity = false,
+                        swatchFunc = function()
+                            local r, g, b = ColorPickerFrame:GetColorRGB()
+                            ch.r, ch.g, ch.b = r, g, b
+                            row.swatch.tex:SetColorTexture(r, g, b); applyChat()
+                        end,
+                        cancelFunc = function() end,
+                    })
+                end
+            end)
+            row.up:SetScript("OnClick", function()
+                if i > 1 then
+                    cfg.channels[i], cfg.channels[i - 1] = cfg.channels[i - 1], cfg.channels[i]
+                    page.RefreshChannels(); applyChat()
+                end
+            end)
+            row.down:SetScript("OnClick", function()
+                if i < #cfg.channels then
+                    cfg.channels[i], cfg.channels[i + 1] = cfg.channels[i + 1], cfg.channels[i]
+                    page.RefreshChannels(); applyChat()
+                end
+            end)
+            row:Show()
+            y = y - 24
+        end
+        for j = #cfg.channels + 1, #page.chRows do page.chRows[j]:Hide() end
+    end
+    page:SetScript("OnShow", function() page.RefreshChannels() end)
+end
+
 -- Rafraîchit la liste des modules (section "Modules").
 function SP:_RefreshModulesPage(page)
     local mods = SP:GetOrderedModules()
@@ -190,9 +281,11 @@ local function CreateOptions()
 
     -- Page "Comportement" (auto-fade, phase 2)
     BuildComportement(f.pages["Comportement"])
+    BuildGeneral(f.pages["Général"])
+    BuildChat(f.pages["Chat"])
 
     -- Pages stub (options à venir dans les passes suivantes)
-    for _, sec in ipairs({ "Général", "Chat", "Addons", "Quêtes", "Apparence" }) do
+    for _, sec in ipairs({ "Addons", "Quêtes", "Apparence" }) do
         local page = f.pages[sec]
         local fs = page:CreateFontString(nil, "OVERLAY", "GameFontDisable")
         fs:SetPoint("CENTER")

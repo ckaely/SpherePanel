@@ -33,8 +33,8 @@ SP.defaults = {
     modules = {
         -- Ordre initial. Le drag-to-reorder réécrit cette liste dans SPDB.
         order = {
-            "QuestTracker", "Chat", "DamageMeter", "Raid",
-            "SilverDragon", "GameMenu", "MinimapButtons", "SquareMap",
+            "QuestTracker", "Chat", "DamageMeter", "Raid", "Auras",
+            "SilverDragon", "GameMenu", "SquareMap",
         },
         -- Config par module : enabled / collapsed / height.
         QuestTracker   = { enabled = true,  collapsed = false, height = 300,
@@ -43,16 +43,26 @@ SP.defaults = {
                 dungeon = true, raid = true, pvp = true, account = true, worldquest = true,
             },
         },
-        Chat           = { enabled = true,  collapsed = false, height = 200 },
+        Chat           = { enabled = true,  collapsed = false, height = 200,
+            font = STANDARD_TEXT_FONT, fontSize = 12, classColorNames = true,
+            channels = {  -- ordre + activation + couleur (personnalisable dans les options)
+                { key = "A", label = "A", enabled = true,  r = 1.0, g = 1.0, b = 1.0 },
+                { key = "W", label = "W", enabled = true,  r = 1.0, g = 0.5, b = 1.0 },
+                { key = "I", label = "I", enabled = true,  r = 1.0, g = 0.5, b = 0.4 },
+                { key = "M", label = "M", enabled = true,  r = 0.5, g = 1.0, b = 0.5 },  -- Market = vert clair
+                { key = "G", label = "G", enabled = false, r = 0.25, g = 1.0, b = 0.25 },
+                { key = "S", label = "S", enabled = false, r = 1.0, g = 1.0, b = 1.0 },
+            },
+        },
         DamageMeter    = { enabled = true,  collapsed = false, height = 150 },
         Raid           = { enabled = true,  collapsed = false, height = 180 },
+        Auras          = { enabled = true,  collapsed = false, height = 90, tab = "all", iconSize = 26 },
         SilverDragon   = { enabled = true,  collapsed = false, height = 80  },
-        GameMenu       = { enabled = true,  collapsed = false, height = 60  },
-        MinimapButtons = { enabled = true,  collapsed = false, height = 40,
-            align = "left",          -- "left" ou "center" (phase 5)
-            blacklist = {            -- motifs Lua de noms à NE PAS aspirer (parasites)
-                "ProfessionTodo", "ProfessionsTodo", "ProfTodo",
-            },
+        GameMenu       = { enabled = true,  collapsed = false, height = 64,
+            activeTab = "menus",     -- "menus" ou "addons"
+            showClock = true, clock24h = true, showFPS = true,
+            addonAlign = "left",
+            addonBlacklist = { "ProfessionTodo", "ProfessionsTodo", "ProfTodo" },
         },
         SquareMap      = { enabled = true,  collapsed = false, height = 200 },
     },

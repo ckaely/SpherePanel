@@ -15,7 +15,7 @@ Modules\QuestTracker.lua
 Modules\Chat.lua
 Modules\DamageMeter.lua
 Modules\Raid.lua
+Modules\Auras.lua
 Modules\SilverDragon.lua
 Modules\GameMenu.lua
-Modules\MinimapButtons.lua
 Modules\SquareMap.lua

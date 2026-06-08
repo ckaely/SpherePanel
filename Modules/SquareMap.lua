@@ -58,10 +58,21 @@ end
 
 function M:Init(body)
     self.body = body
+    self.ev = CreateFrame("Frame")
+    self.ev:SetScript("OnEvent", function() self:UpdateZone() end)
+end
+
+function M:UpdateZone()
+    local z = (GetMinimapZoneText and GetMinimapZoneText()) or (GetZoneText and GetZoneText()) or ""
+    SP:SetModuleHeaderText(self, z)
 end
 
 function M:Enable()
     self._enabled = true
+    for _, e in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD" }) do
+        pcall(self.ev.RegisterEvent, self.ev, e)
+    end
+    self:UpdateZone()
     if InCombatLockdown() then return end
     if not Minimap then return end
     if not self.saved then self.saved = SaveMapState() end
@@ -79,6 +90,8 @@ end
 
 function M:Disable()
     self._enabled = false
+    if self.ev then self.ev:UnregisterAllEvents() end
+    SP:SetModuleHeaderText(self, "")
     if self._ticker then self._ticker:Cancel(); self._ticker = nil end
     local mm = Minimap
     if mm and self.saved then
