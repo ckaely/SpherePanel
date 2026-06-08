@@ -48,10 +48,10 @@ end
 
 -- OnLogin : UI prête. C'est ici qu'on construit le panneau et qu'on active les modules.
 function SP:OnLogin()
-    -- TODO(dev étape 1) : SP:CreatePanel()  -- PanelFrame.lua
-    -- TODO(dev étape 2) : SP:BuildModules()  -- ModuleSystem.lua : header + content par module
-    -- TODO(dev étape 2) : SP:RebuildLayout()
-    -- RÈGLE : ObjectiveTrackerFrame:Hide() doit être déclenché par QuestTracker
+    SP:CreatePanel()      -- PanelFrame.lua : frame déplaçable + resize
+    SP:BuildModules()     -- ModuleSystem.lua : header + content par module (appelle RebuildLayout)
+    SP:SetupSlash()
+    -- RÈGLE : ObjectiveTrackerFrame:Hide() sera déclenché par QuestTracker (étape 4),
     --         UNIQUEMENT à partir d'ici (PLAYER_LOGIN), jamais au chargement du fichier.
 end
 
@@ -68,4 +68,44 @@ end
 -- Log console simple, throttle-able plus tard. Préfixe coloré.
 function SP:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cFF4AA3FFSpherePanel|r " .. tostring(msg))
+end
+
+-- ------------------------------------------------------------
+-- Commandes slash : /sp et /spanel
+-- ------------------------------------------------------------
+function SP:SetupSlash()
+    if SP._slashReady then return end
+    SP._slashReady = true
+    SLASH_SPHEREPANEL1 = "/sp"
+    SLASH_SPHEREPANEL2 = "/spanel"
+    SlashCmdList["SPHEREPANEL"] = function(msg) SP:HandleSlash(msg or "") end
+end
+
+function SP:HandleSlash(msg)
+    msg = msg:gsub("^%s+", ""):gsub("%s+$", "")
+    local cmd, rest = msg:match("^(%S*)%s*(.-)$")
+    cmd = (cmd or ""):lower()
+
+    if cmd == "lock" then
+        SP:SetPanelLocked(not SP.db.panel.locked)
+        SP:Print("Panneau " .. (SP.db.panel.locked and "verrouillé." or "déverrouillé."))
+    elseif cmd == "reset" then
+        SP:ResetPanel()
+        SP:Print("Position et largeur réinitialisées.")
+    elseif cmd == "show" then
+        if SP.panel then SP.panel:Show() end
+    elseif cmd == "hide" then
+        if SP.panel then SP.panel:Hide() end
+    elseif cmd == "enable" and rest ~= "" then
+        SP:EnableModule(rest)
+    elseif cmd == "modules" then
+        SP:Print("Modules :")
+        for _, m in ipairs(SP:GetOrderedModules()) do
+            local cfg = SP:GetModuleConfig(m.name)
+            local state = (cfg and cfg.enabled) and "|cFF55FF55on|r" or "|cFFFF5555off|r"
+            SP:Print(("  %s (%s) — %s"):format(m.name, m.label, state))
+        end
+    else
+        SP:Print("Commandes : |cFFFFFFFF/sp|r lock | reset | show | hide | modules | enable <Nom>")
+    end
 end

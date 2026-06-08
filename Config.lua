@@ -4,6 +4,17 @@
 local ADDON_NAME, SP = ...
 
 -- ------------------------------------------------------------
+-- Constantes de layout (partagées PanelFrame / ModuleSystem)
+-- ------------------------------------------------------------
+SP.UI = {
+    TITLE_H  = 22,    -- hauteur de la barre de titre du panneau
+    HEADER_H = 20,    -- hauteur du bandeau header d'un module
+    GAP      = 2,     -- espace vertical entre modules
+    MIN_W    = 180,   -- largeur min du panneau
+    MAX_W    = 600,   -- largeur max du panneau
+}
+
+-- ------------------------------------------------------------
 -- Valeurs par défaut
 -- ------------------------------------------------------------
 SP.defaults = {
