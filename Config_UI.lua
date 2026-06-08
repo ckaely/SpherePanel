@@ -14,6 +14,63 @@ local MODULE_SECTION = {
     QuestTracker   = "Quêtes",
 }
 
+-- Helpers de contrôles -----------------------------------------------------
+local function MakeCheck(parent, label, x, y, getf, setf)
+    local c = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    c:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    c.text = c:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    c.text:SetPoint("LEFT", c, "RIGHT", 2, 0)
+    c.text:SetText(label)
+    c:SetChecked(getf() and true or false)
+    c:SetScript("OnClick", function(s) setf(s:GetChecked() and true or false) end)
+    return c
+end
+
+local sliderCount = 0
+local function MakeSlider(parent, label, x, y, minV, maxV, step, getf, setf, fmt)
+    sliderCount = sliderCount + 1
+    local s = CreateFrame("Slider", "SpherePanelCfgSlider" .. sliderCount, parent, "OptionsSliderTemplate")
+    s:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    s:SetWidth(220)
+    s:SetMinMaxValues(minV, maxV)
+    s:SetValueStep(step)
+    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+    local nm = s:GetName()
+    if _G[nm .. "Low"] then _G[nm .. "Low"]:SetText(tostring(minV)) end
+    if _G[nm .. "High"] then _G[nm .. "High"]:SetText(tostring(maxV)) end
+    local txt = _G[nm .. "Text"]
+    local function refresh(v) if txt then txt:SetText(label .. " : " .. (fmt and fmt(v) or v)) end end
+    s:SetValue(getf())
+    refresh(getf())
+    s:SetScript("OnValueChanged", function(_, v)
+        if step >= 1 then v = math.floor(v + 0.5) end
+        setf(v)
+        refresh(v)
+    end)
+    return s
+end
+
+local function BuildComportement(page)
+    local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4)
+    hdr:SetText("Comportement — estompage automatique")
+    local af = SP.db.panel.autofade
+    MakeCheck(page, "Estomper automatiquement après inactivité", 8, -36,
+        function() return af.enabled end, function(v) af.enabled = v end)
+    MakeSlider(page, "Délai avant estompage", 16, -78, 1, 30, 1,
+        function() return af.delay end, function(v) af.delay = v end,
+        function(v) return v .. " s" end)
+    MakeSlider(page, "Opacité estompée", 16, -126, 0.05, 1, 0.05,
+        function() return af.alpha end, function(v) af.alpha = v end,
+        function(v) return string.format("%d%%", math.floor(v * 100)) end)
+    MakeSlider(page, "Durée de transition", 16, -174, 0.1, 1, 0.05,
+        function() return af.fadeDuration end, function(v) af.fadeDuration = v end,
+        function(v) return string.format("%.2f s", v) end)
+    local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -222)
+    note:SetText("|cFF777777Astuce : épingle un module (cadenas) pour qu'il reste visible même estompé.|r")
+end
+
 -- Rafraîchit la liste des modules (section "Modules").
 function SP:_RefreshModulesPage(page)
     local mods = SP:GetOrderedModules()
@@ -131,8 +188,11 @@ local function CreateOptions()
         page:SetScript("OnShow", function() SP:_RefreshModulesPage(page) end)
     end
 
+    -- Page "Comportement" (auto-fade, phase 2)
+    BuildComportement(f.pages["Comportement"])
+
     -- Pages stub (options à venir dans les passes suivantes)
-    for _, sec in ipairs({ "Général", "Chat", "Addons", "Quêtes", "Apparence", "Comportement" }) do
+    for _, sec in ipairs({ "Général", "Chat", "Addons", "Quêtes", "Apparence" }) do
         local page = f.pages[sec]
         local fs = page:CreateFontString(nil, "OVERLAY", "GameFontDisable")
         fs:SetPoint("CENTER")

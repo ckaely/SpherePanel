@@ -98,6 +98,9 @@ function SP:HandleSlash(msg)
         if SP.panel then SP.panel:Hide() end
     elseif cmd == "config" or cmd == "options" then
         if SP.OpenConfig then SP:OpenConfig() else SP:Print("Panneau d'options indisponible.") end
+    elseif cmd == "mbscan" then
+        local mb = SP.modulesByName and SP.modulesByName["MinimapButtons"]
+        if mb and mb.Scan then mb:Scan() else SP:Print("Module MinimapButtons indisponible.") end
     elseif cmd == "enable" and rest ~= "" then
         SP:EnableModule(rest)
     elseif cmd == "modules" then
@@ -108,6 +111,6 @@ function SP:HandleSlash(msg)
             SP:Print(("  %s (%s) — %s"):format(m.name, m.label, state))
         end
     else
-        SP:Print("Commandes : |cFFFFFFFF/sp|r config | lock | reset | show | hide | modules | enable <Nom>")
+        SP:Print("Commandes : |cFFFFFFFF/sp|r config | mbscan | lock | reset | show | hide | modules | enable <Nom>")
     end
 end

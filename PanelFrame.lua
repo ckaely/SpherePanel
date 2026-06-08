@@ -85,8 +85,46 @@ function SP:CreatePanel()
     end)
     p.sizer = sizer
 
+    SP:_InitAutoFade(p)
     SP.panel = p
     return p
+end
+
+-- ------------------------------------------------------------
+-- Auto-fade : estompe le panneau après inactivité, réapparaît au survol.
+-- Les modules épinglés (SetIgnoreParentAlpha) restent opaques.
+-- ------------------------------------------------------------
+local FADE_THROTTLE = 0.1
+function SP:_InitAutoFade(p)
+    p._fadeAccum  = 0
+    p._lastActive = GetTime()
+    p._curAlpha   = 1
+    p:SetScript("OnUpdate", function(self, elapsed)
+        self._fadeAccum = self._fadeAccum + elapsed
+        if self._fadeAccum < FADE_THROTTLE then return end
+        local dt = self._fadeAccum
+        self._fadeAccum = 0
+
+        local af = SP.db and SP.db.panel and SP.db.panel.autofade
+        if not af or not af.enabled then
+            if self._curAlpha ~= 1 then self._curAlpha = 1; self:SetAlpha(1) end
+            return
+        end
+
+        local now = GetTime()
+        local over = self:IsMouseOver()
+            or (SP.optionsFrame and SP.optionsFrame:IsShown() and SP.optionsFrame:IsMouseOver())
+        if over then self._lastActive = now end
+
+        local target = ((now - self._lastActive) > (af.delay or 5)) and (af.alpha or 0.25) or 1
+        local step = dt / math.max(0.05, af.fadeDuration or 0.35)
+        local a = self._curAlpha + (target - self._curAlpha) * math.min(1, step)
+        if math.abs(a - target) < 0.01 then a = target end
+        if a ~= self._curAlpha then
+            self._curAlpha = a
+            self:SetAlpha(a)
+        end
+    end)
 end
 
 -- ------------------------------------------------------------

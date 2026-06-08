@@ -23,6 +23,12 @@ SP.defaults = {
         y       = -200,
         width   = 280,
         locked  = false,
+        autofade = {          -- estompage automatique (phase 2)
+            enabled      = false,
+            delay        = 5,     -- secondes d'inactivité avant fade
+            alpha        = 0.25,  -- opacité en mode estompé
+            fadeDuration = 0.35,  -- durée de transition
+        },
     },
     modules = {
         -- Ordre initial. Le drag-to-reorder réécrit cette liste dans SPDB.
@@ -31,13 +37,23 @@ SP.defaults = {
             "SilverDragon", "GameMenu", "MinimapButtons", "SquareMap",
         },
         -- Config par module : enabled / collapsed / height.
-        QuestTracker   = { enabled = true,  collapsed = false, height = 300 },
+        QuestTracker   = { enabled = true,  collapsed = false, height = 300,
+            filters = {  -- catégories affichées (phase 3) ; false = masquée
+                classic = true, daily = true, weekly = true, campaign = true,
+                dungeon = true, raid = true, pvp = true, account = true, worldquest = true,
+            },
+        },
         Chat           = { enabled = true,  collapsed = false, height = 200 },
         DamageMeter    = { enabled = true,  collapsed = false, height = 150 },
         Raid           = { enabled = true,  collapsed = false, height = 180 },
         SilverDragon   = { enabled = true,  collapsed = false, height = 80  },
         GameMenu       = { enabled = true,  collapsed = false, height = 60  },
-        MinimapButtons = { enabled = true,  collapsed = false, height = 40  },
+        MinimapButtons = { enabled = true,  collapsed = false, height = 40,
+            align = "left",          -- "left" ou "center" (phase 5)
+            blacklist = {            -- motifs Lua de noms à NE PAS aspirer (parasites)
+                "ProfessionTodo", "ProfessionsTodo", "ProfTodo",
+            },
+        },
         SquareMap      = { enabled = true,  collapsed = false, height = 200 },
     },
 }

@@ -27,17 +27,29 @@ local BLIZZARD = {
     Minimap = true, MinimapBackdropFrame = true,
 }
 
-local function IsAddonButton(child)
+-- Un frame est-il réellement interactif (clic) ? Les sphères décoratives (ex : Profession Todo)
+-- n'ont en général aucun handler de clic → on les exclut.
+local function HasClick(f)
+    if not f.GetScript then return false end
+    return (f:GetScript("OnClick") or f:GetScript("OnMouseUp") or f:GetScript("OnMouseDown")) and true or false
+end
+
+local function IsAddonButton(child, blacklist)
     if not child then return false end
     local name = child:GetName()
     if not name or BLIZZARD[name] then return false end
+    if blacklist then
+        for _, pat in ipairs(blacklist) do
+            if name:find(pat) then return false end
+        end
+    end
     local otype = child:GetObjectType()
     if otype ~= "Button" and otype ~= "Frame" then return false end
     local w = child:GetWidth() or 0
     if w == 0 or w > 44 then return false end
-    if name:match("^LibDBIcon") then return true end
     if name:match("^Minimap") or name:match("^MiniMap") then return false end
-    return true
+    if name:match("^LibDBIcon") then return true end
+    return HasClick(child)   -- exclut les icônes parasites non-cliquables
 end
 
 function M:Init(body)
@@ -82,17 +94,32 @@ end
 function M:Collect()
     if not self._enabled or not self.body then return end
     if InCombatLockdown() then return end
+    local cfg = SP:GetModuleConfig(self.name)
+    local blacklist = (cfg and cfg.blacklist) or {}
     local children = { Minimap:GetChildren() }
     table.sort(children, function(a, b)
         return (a:GetName() or "") < (b:GetName() or "")
     end)
     for _, child in ipairs(children) do
-        if IsAddonButton(child) and not self.stolen[child] then
+        if IsAddonButton(child, blacklist) and not self.stolen[child] then
             StealButton(self, child)
             self.order[#self.order + 1] = child
         end
     end
     self:Layout()
+end
+
+-- /sp mbscan : liste tous les enfants de la minimap (pour identifier les parasites à blacklister).
+function M:Scan()
+    SP:Print("Enfants de la minimap (nom [type] largeur clic) :")
+    local children = { Minimap:GetChildren() }
+    table.sort(children, function(a, b) return (a:GetName() or "") < (b:GetName() or "") end)
+    for _, c in ipairs(children) do
+        local n = c:GetName() or "<anon>"
+        local w = math.floor((c:GetWidth() or 0) + 0.5)
+        SP:Print(("  %s [%s] w=%d %s"):format(n, c:GetObjectType(), w, HasClick(c) and "|cFF40FF40clic|r" or "|cFF888888-|r"))
+    end
+    SP:Print("Pour exclure un parasite : ajoute un motif de son nom dans SPDB.modules.MinimapButtons.blacklist.")
 end
 
 function M:Layout()
@@ -104,7 +131,9 @@ function M:Layout()
     local perRow = math.max(1, math.floor((w - GAP) / (ICON + GAP)))
     if perRow > count then perRow = count end
     local rowW = perRow * (ICON + GAP) - GAP
-    local leftPad = math.max(GAP, (w - rowW) / 2)   -- centrage horizontal
+    local cfg = SP:GetModuleConfig(self.name)
+    local align = (cfg and cfg.align) or "left"
+    local leftPad = (align == "center") and math.max(GAP, (w - rowW) / 2) or GAP
 
     for i, button in ipairs(self.order) do
         local col = (i - 1) % perRow
