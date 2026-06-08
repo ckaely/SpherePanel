@@ -1,8 +1,9 @@
 -- ============================================================
 -- Module : MinimapButtons — collecteur d'icônes minimap d'addons
 -- ============================================================
--- Étape 6. "Vole" les boutons d'addons de la minimap, les range en grille.
--- Restaure exactement à Disable. Reparenting runtime → /reload rétablit l'état natif.
+-- Étape 6. "Vole" les boutons d'addons, les range en grille centrée.
+-- Neutralise leur auto-repositionnement (sinon ils se replacent sur la minimap → chevauchement).
+-- Restaure exactement à Disable. Reparenting runtime → /reload rétablit le natif.
 local ADDON_NAME, SP = ...
 
 local M = {
@@ -11,9 +12,8 @@ local M = {
     defaultHeight = 40,
 }
 
-local ICON, GAP = 24, 4
+local ICON, GAP = 28, 4   -- taille de cellule (les boutons sont centrés dedans)
 
--- Frames Blizzard de la minimap à NE JAMAIS déplacer.
 local BLIZZARD = {
     MinimapBackdrop = true, MinimapCluster = true, MiniMapMailFrame = true,
     MiniMapMailIcon = true, MinimapZoneTextButton = true, MinimapZoomIn = true,
@@ -27,25 +27,23 @@ local BLIZZARD = {
     Minimap = true, MinimapBackdropFrame = true,
 }
 
--- Un bouton ressemble-t-il à une icône d'addon volable ?
 local function IsAddonButton(child)
-    if not child or BLIZZARD[child:GetName() or ""] then return false end
+    if not child then return false end
+    local name = child:GetName()
+    if not name or BLIZZARD[name] then return false end
     local otype = child:GetObjectType()
     if otype ~= "Button" and otype ~= "Frame" then return false end
-    local name = child:GetName()
-    if not name then return false end
-    -- heuristique : petit, possède un script clic ou une texture, nom non-Blizzard
     local w = child:GetWidth() or 0
-    if w == 0 or w > 40 then return false end
+    if w == 0 or w > 44 then return false end
     if name:match("^LibDBIcon") then return true end
-    -- évite les régions internes Blizzard nommées "Minimap..."
     if name:match("^Minimap") or name:match("^MiniMap") then return false end
     return true
 end
 
 function M:Init(body)
     self.body = body
-    self.stolen = {}   -- [button] = { parent, p1..pN, scale }
+    self.stolen = {}   -- [button] = origin
+    self.order  = {}   -- liste ordonnée (stable)
 end
 
 function M:Enable()
@@ -59,28 +57,39 @@ function M:Disable()
     self:RestoreAll()
 end
 
--- Sauvegarde l'état d'origine d'un bouton avant de le voler.
-local function SaveOrigin(button)
+-- Sauvegarde l'état d'origine + neutralise l'auto-positionnement.
+local function StealButton(self, button)
     local pts = {}
-    for i = 1, button:GetNumPoints() do
-        pts[i] = { button:GetPoint(i) }
-    end
-    return {
-        parent = button:GetParent(),
-        points = pts,
-        scale  = button:GetScale(),
+    for i = 1, button:GetNumPoints() do pts[i] = { button:GetPoint(i) } end
+    self.stolen[button] = {
+        parent      = button:GetParent(),
+        points      = pts,
+        scale       = button:GetScale(),
+        onUpdate    = button:GetScript("OnUpdate"),
+        onDragStart = button:GetScript("OnDragStart"),
+        onDragStop  = button:GetScript("OnDragStop"),
+        movable     = button:IsMovable(),
     }
+    -- coupe le repositionnement automatique (radius minimap) qui causerait des chevauchements
+    pcall(function() button:SetScript("OnUpdate", nil) end)
+    pcall(function() button:SetScript("OnDragStart", nil) end)
+    pcall(function() button:SetScript("OnDragStop", nil) end)
+    pcall(function() button:SetMovable(false) end)
+    button:SetParent(self.body)
+    button:SetScale(1)
 end
 
 function M:Collect()
     if not self._enabled or not self.body then return end
-    if InCombatLockdown() then return end   -- reparenting protégé interdit en combat
+    if InCombatLockdown() then return end
     local children = { Minimap:GetChildren() }
+    table.sort(children, function(a, b)
+        return (a:GetName() or "") < (b:GetName() or "")
+    end)
     for _, child in ipairs(children) do
         if IsAddonButton(child) and not self.stolen[child] then
-            self.stolen[child] = SaveOrigin(child)
-            child:SetParent(self.body)
-            child:SetScale(1)
+            StealButton(self, child)
+            self.order[#self.order + 1] = child
         end
     end
     self:Layout()
@@ -90,20 +99,25 @@ function M:Layout()
     if not self.body then return end
     local w = self.body:GetWidth()
     if not w or w < 1 then w = SP.db.panel.width or 280 end
+    local count = #self.order
+    if count == 0 then return end
     local perRow = math.max(1, math.floor((w - GAP) / (ICON + GAP)))
-    local i = 0
-    for button in pairs(self.stolen) do
-        if button:GetParent() == self.body then
-            local col = i % perRow
-            local rowN = math.floor(i / perRow)
-            button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", self.body, "TOPLEFT", GAP + col * (ICON + GAP), -(GAP + rowN * (ICON + GAP)))
-            button:Show()
-            i = i + 1
-        end
+    if perRow > count then perRow = count end
+    local rowW = perRow * (ICON + GAP) - GAP
+    local leftPad = math.max(GAP, (w - rowW) / 2)   -- centrage horizontal
+
+    for i, button in ipairs(self.order) do
+        local col = (i - 1) % perRow
+        local rowN = math.floor((i - 1) / perRow)
+        -- ancrage CENTER de chaque bouton au centre de sa cellule → alignement propre
+        local cx = leftPad + col * (ICON + GAP) + ICON / 2
+        local cy = -(GAP + rowN * (ICON + GAP) + ICON / 2)
+        button:ClearAllPoints()
+        button:SetPoint("CENTER", self.body, "TOPLEFT", cx, cy)
+        button:Show()
     end
-    local count = i
-    local rows = math.max(1, math.ceil(count / perRow))
+
+    local rows = math.ceil(count / perRow)
     local needed = GAP + rows * (ICON + GAP)
     local cfg = SP:GetModuleConfig(self.name)
     if cfg and cfg.height ~= needed then
@@ -114,20 +128,23 @@ end
 
 function M:RestoreAll()
     for button, origin in pairs(self.stolen) do
-        if origin then
-            pcall(function()
-                button:SetParent(origin.parent or Minimap)
-                button:SetScale(origin.scale or 1)
-                button:ClearAllPoints()
-                if origin.points and #origin.points > 0 then
-                    for _, p in ipairs(origin.points) do button:SetPoint(unpack(p)) end
-                else
-                    button:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
-                end
-            end)
-        end
+        pcall(function()
+            button:SetParent(origin.parent or Minimap)
+            button:SetScale(origin.scale or 1)
+            button:SetMovable(origin.movable and true or false)
+            button:SetScript("OnUpdate", origin.onUpdate)
+            button:SetScript("OnDragStart", origin.onDragStart)
+            button:SetScript("OnDragStop", origin.onDragStop)
+            button:ClearAllPoints()
+            if origin.points and #origin.points > 0 then
+                for _, p in ipairs(origin.points) do button:SetPoint(unpack(p)) end
+            else
+                button:SetPoint("CENTER", Minimap, "CENTER", 0, 0)
+            end
+        end)
     end
     wipe(self.stolen)
+    wipe(self.order)
 end
 
 function M:OnResize(w, h)

@@ -1,7 +1,8 @@
 -- ============================================================
--- Module : SquareMap — minimap carrée + réancrage dans le module
+-- Module : SquareMap — minimap carrée réancrée dans le module
 -- ============================================================
--- Étape 10. Masque carré + (optionnel) Minimap réancrée dans le body.
+-- Étape 10. Masque carré + Minimap ajustée à la largeur du panneau.
+-- Ticker d'enforcement : reprend la main sur les addons qui pilotent la minimap (ex : GW2UI).
 -- Reparenting runtime → /reload rétablit la minimap native.
 local ADDON_NAME, SP = ...
 
@@ -11,8 +12,8 @@ local M = {
     defaultHeight = 200,
 }
 
-local ROUND_MASK  = "Textures\\MinimapMask"                 -- masque rond natif
-local SQUARE_MASK = "Interface\\Buttons\\WHITE8x8"          -- masque carré plein
+local ROUND_MASK  = "Textures\\MinimapMask"
+local SQUARE_MASK = "Interface\\Buttons\\WHITE8x8"
 
 local function SaveMapState()
     local mm = Minimap
@@ -27,6 +28,34 @@ local function SaveMapState()
     }
 end
 
+-- Cible de côté = largeur du body (carré ajusté à l'addon).
+local function TargetSide(self)
+    local w = self.body:GetWidth()
+    if not w or w < 1 then w = SP.db.panel.width or 280 end
+    return math.max(40, w - 8)
+end
+
+-- Impose notre mise en forme (appelé à Enable + par le ticker, prioritaire sur GW2UI).
+local function Apply(self)
+    local mm = Minimap
+    if not mm or not self._enabled or InCombatLockdown() then return end
+    local side = TargetSide(self)
+
+    if mm:GetParent() ~= self.body then mm:SetParent(self.body) end
+    mm:ClearAllPoints()
+    mm:SetPoint("TOP", self.body, "TOP", 0, -4)
+    if math.abs((mm:GetScale() or 1) - 1) > 0.01 then mm:SetScale(1) end
+    if math.abs((mm:GetWidth() or 0) - side) > 1 then mm:SetSize(side, side) end
+    pcall(mm.SetMaskTexture, mm, SQUARE_MASK)
+
+    local cfg = SP:GetModuleConfig(self.name)
+    local needed = side + 8
+    if cfg and math.abs((cfg.height or 0) - needed) > 1 then
+        cfg.height = needed
+        SP:RebuildLayout()
+    end
+end
+
 function M:Init(body)
     self.body = body
 end
@@ -34,35 +63,23 @@ end
 function M:Enable()
     self._enabled = true
     if InCombatLockdown() then return end
-    local mm = Minimap
-    if not mm then return end
-
+    if not Minimap then return end
     if not self.saved then self.saved = SaveMapState() end
     if self._placeholder then self._placeholder:Hide() end
 
-    -- Masque carré
-    pcall(function() mm:SetMaskTexture(SQUARE_MASK) end)
-
-    -- Réancrage dans le module (carré côté = largeur du body)
-    local side = math.max(40, (self.body:GetWidth() or 200) - 8)
-    pcall(function()
-        mm:SetParent(self.body)
-        mm:ClearAllPoints()
-        mm:SetPoint("TOP", self.body, "TOP", 0, -4)
-        mm:SetSize(side, side)
-    end)
-
-    -- ajuste la hauteur du module au côté de la carte
-    local cfg = SP:GetModuleConfig(self.name)
-    local needed = side + 8
-    if cfg and cfg.height ~= needed then
-        cfg.height = needed
-        SP:RebuildLayout()
+    Apply(self)
+    -- ré-application différée : GW2UI peut repositionner après nous au login
+    C_Timer.After(0.2, function() Apply(self) end)
+    C_Timer.After(1.0, function() Apply(self) end)
+    -- ticker d'enforcement : on garde la main face aux autres addons
+    if not self._ticker then
+        self._ticker = C_Timer.NewTicker(0.5, function() Apply(self) end)
     end
 end
 
 function M:Disable()
     self._enabled = false
+    if self._ticker then self._ticker:Cancel(); self._ticker = nil end
     local mm = Minimap
     if mm and self.saved then
         pcall(function()
@@ -79,17 +96,7 @@ function M:Disable()
 end
 
 function M:OnResize(w, h)
-    if not self._enabled or InCombatLockdown() then return end
-    local mm = Minimap
-    if not mm or mm:GetParent() ~= self.body then return end
-    local side = math.max(40, (self.body:GetWidth() or 200) - 8)
-    pcall(function() mm:SetSize(side, side) end)
-    local cfg = SP:GetModuleConfig(self.name)
-    local needed = side + 8
-    if cfg and cfg.height ~= needed then
-        cfg.height = needed
-        SP:RebuildLayout()
-    end
+    Apply(self)
 end
 
 SP:RegisterModule(M)
