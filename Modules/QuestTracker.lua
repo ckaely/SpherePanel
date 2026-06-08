@@ -60,15 +60,12 @@ local function GetObjLine(row, idx)
 end
 
 -- Rendu d'une ligne. Retourne sa hauteur. Encapsulé sous pcall par l'appelant.
-local function RenderRow(self, row, info)
-    local qid = info.questID
+local function RenderRow(self, row, qid)
     row.questID = qid
 
-    local title = info.title
-    if not title or title == "" then
-        local ok, t = pcall(C_QuestLog.GetTitleForQuestID, qid)
-        if ok and type(t) == "string" then title = t end
-    end
+    local title
+    local okt, t = pcall(C_QuestLog.GetTitleForQuestID, qid)
+    if okt and type(t) == "string" and t ~= "" then title = t end
     title = title or ("Quête " .. tostring(qid))
 
     local complete = false
@@ -125,12 +122,13 @@ function M:Init(body)
 
     self.emptyText = body:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     self.emptyText:SetPoint("TOP", body, "TOP", 0, -8)
-    self.emptyText:SetText("Aucune quête active")
+    self.emptyText:SetText("Aucune quête suivie")
     self.emptyText:Hide()
 
     self.ev = CreateFrame("Frame")
     self.ev:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_ENTERING_WORLD" then self:PrewarmPool(30) end
+        self:HideBlizzard()      -- masquage immédiat → pas de flash du tracker natif
         self:RequestRefresh()
     end)
 end
@@ -210,6 +208,45 @@ function M:ReleaseAll()
 end
 
 -- ============================================================
+-- Quêtes suivies (= contenu du traqueur) : super-track + watch list + world quests.
+-- ============================================================
+function M:GetTrackedQuestIDs()
+    local ids, seen = {}, {}
+    local function add(qid)
+        if type(qid) == "number" and qid ~= 0 and not seen[qid] then
+            seen[qid] = true
+            ids[#ids + 1] = qid
+        end
+    end
+
+    -- Quête super-suivie en premier
+    if C_SuperTrack and C_SuperTrack.GetSuperTrackedQuestID then
+        local ok, sq = pcall(C_SuperTrack.GetSuperTrackedQuestID)
+        if ok then add(sq) end
+    end
+
+    -- Quêtes suivies (manuelles + auto-watch)
+    local nw = 0
+    pcall(function() nw = C_QuestLog.GetNumQuestWatches() or 0 end)
+    for i = 1, nw do
+        local ok, qid = pcall(C_QuestLog.GetQuestIDForQuestWatchIndex, i)
+        if ok then add(qid) end
+    end
+
+    -- World quests suivies
+    if C_QuestLog.GetNumWorldQuestWatches then
+        local nww = 0
+        pcall(function() nww = C_QuestLog.GetNumWorldQuestWatches() or 0 end)
+        for i = 1, nww do
+            local ok, qid = pcall(C_QuestLog.GetQuestIDForWorldQuestWatchIndex, i)
+            if ok then add(qid) end
+        end
+    end
+
+    return ids
+end
+
+-- ============================================================
 -- Refresh (débounced)
 -- ============================================================
 function M:RequestRefresh()
@@ -227,23 +264,20 @@ function M:Refresh()
     self:HideBlizzard()
     self:ReleaseAll()
 
-    local n = C_QuestLog.GetNumQuestLogEntries() or 0
+    local ids = self:GetTrackedQuestIDs()
     local y = 4
     local count = 0
-    for i = 1, n do
-        local info = C_QuestLog.GetInfo(i)
-        if info and not info.isHeader and not info.isHidden then
-            local row = self:AcquireEntry()
-            if not row then break end   -- pool épuisé en combat → on s'arrête proprement
-            row:ClearAllPoints()
-            row:SetPoint("TOPLEFT",  self.body, "TOPLEFT",  2, -y)
-            row:SetPoint("TOPRIGHT", self.body, "TOPRIGHT", -2, -y)
-            local ok, h = pcall(RenderRow, self, row, info)
-            if not ok or type(h) ~= "number" then h = 15 end
-            row:Show()
-            y = y + h + 4
-            count = count + 1
-        end
+    for _, qid in ipairs(ids) do
+        local row = self:AcquireEntry()
+        if not row then break end   -- pool épuisé en combat → on s'arrête proprement
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT",  self.body, "TOPLEFT",  2, -y)
+        row:SetPoint("TOPRIGHT", self.body, "TOPRIGHT", -2, -y)
+        local ok, h = pcall(RenderRow, self, row, qid)
+        if not ok or type(h) ~= "number" then h = 15 end
+        row:Show()
+        y = y + h + 4
+        count = count + 1
     end
 
     self.emptyText:SetShown(count == 0)
