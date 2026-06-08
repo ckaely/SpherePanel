@@ -91,38 +91,60 @@ function SP:CreatePanel()
 end
 
 -- ------------------------------------------------------------
--- Auto-fade : estompe le panneau après inactivité, réapparaît au survol.
--- Les modules épinglés (SetIgnoreParentAlpha) restent opaques.
+-- Auto-fade PAR MODULE : chaque module s'estompe individuellement après inactivité.
+-- Survol d'un module → seul celui-ci réapparaît. Modules épinglés/exclus restent opaques.
+-- Transition fluide (lerp chaque frame). alpha 0 = transparence totale (toujours cliquable).
 -- ------------------------------------------------------------
-local FADE_THROTTLE = 0.1
-function SP:_InitAutoFade(p)
-    p._fadeAccum  = 0
-    p._lastActive = GetTime()
-    p._curAlpha   = 1
-    p:SetScript("OnUpdate", function(self, elapsed)
-        self._fadeAccum = self._fadeAccum + elapsed
-        if self._fadeAccum < FADE_THROTTLE then return end
-        local dt = self._fadeAccum
-        self._fadeAccum = 0
+local function lerp(cur, goal, elapsed, dur)
+    local step = elapsed / math.max(0.05, dur or 0.35)
+    local a = cur + (goal - cur) * math.min(1, step)
+    if math.abs(a - goal) < 0.005 then a = goal end
+    return a
+end
 
+function SP:_InitAutoFade(p)
+    p._mActive = {}   -- [name] = dernier instant de survol
+    p._panelActive = GetTime()
+    p:SetScript("OnUpdate", function(self, elapsed)
         local af = SP.db and SP.db.panel and SP.db.panel.autofade
+        local now = GetTime()
+
         if not af or not af.enabled then
-            if self._curAlpha ~= 1 then self._curAlpha = 1; self:SetAlpha(1) end
+            if self.bg:GetAlpha() ~= 0.85 then self.bg:SetAlpha(0.85) end
+            self.title:SetAlpha(1)
+            for _, m in ipairs(SP.modules) do if m.frame and m.frame:GetAlpha() ~= 1 then m.frame:SetAlpha(1) end end
             return
         end
 
-        local now = GetTime()
-        local over = self:IsMouseOver()
-            or (SP.optionsFrame and SP.optionsFrame:IsShown() and SP.optionsFrame:IsMouseOver())
-        if over then self._lastActive = now end
+        local target = af.alpha or 0.25
+        local delay  = af.delay or 5
+        local dur    = af.fadeDuration or 0.35
+        local apply  = af.apply
 
-        local target = ((now - self._lastActive) > (af.delay or 5)) and (af.alpha or 0.25) or 1
-        local step = dt / math.max(0.05, af.fadeDuration or 0.35)
-        local a = self._curAlpha + (target - self._curAlpha) * math.min(1, step)
-        if math.abs(a - target) < 0.01 then a = target end
-        if a ~= self._curAlpha then
-            self._curAlpha = a
-            self:SetAlpha(a)
+        -- Barre de titre + fond : suivent le survol global du panneau.
+        if self:IsMouseOver() then self._panelActive = now end
+        local panelGoal = ((now - self._panelActive) > delay) and target or 1
+        self.title:SetAlpha(lerp(self.title:GetAlpha(), panelGoal, elapsed, dur))
+        self.bg:SetAlpha(lerp(self.bg:GetAlpha(), panelGoal * 0.85, elapsed, dur))
+
+        -- Chaque module individuellement.
+        for _, m in ipairs(SP.modules) do
+            local f = m.frame
+            if f and f:IsShown() then
+                local cfg = SP:GetModuleConfig(m.name)
+                local pinned  = cfg and cfg.pinned
+                local excluded = apply and apply[m.name] == false
+                local goal
+                if pinned or excluded then
+                    goal = 1
+                else
+                    if f:IsMouseOver() then self._mActive[m.name] = now end
+                    local last = self._mActive[m.name] or 0
+                    goal = ((now - last) > delay) and target or 1
+                end
+                local cur = f:GetAlpha()
+                if cur ~= goal then f:SetAlpha(lerp(cur, goal, elapsed, dur)) end
+            end
         end
     end)
 end

@@ -60,15 +60,43 @@ local function BuildComportement(page)
     MakeSlider(page, "Délai avant estompage", 16, -78, 1, 30, 1,
         function() return af.delay end, function(v) af.delay = v end,
         function(v) return v .. " s" end)
-    MakeSlider(page, "Opacité estompée", 16, -126, 0.05, 1, 0.05,
+    MakeSlider(page, "Opacité estompée (0% = transparent)", 16, -126, 0, 1, 0.05,
         function() return af.alpha end, function(v) af.alpha = v end,
         function(v) return string.format("%d%%", math.floor(v * 100)) end)
     MakeSlider(page, "Durée de transition", 16, -174, 0.1, 1, 0.05,
         function() return af.fadeDuration end, function(v) af.fadeDuration = v end,
         function(v) return string.format("%.2f s", v) end)
-    local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -222)
-    note:SetText("|cFF777777Astuce : épingle un module (cadenas) pour qu'il reste visible même estompé.|r")
+
+    local clHdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    clHdr:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -214)
+    clHdr:SetText("Appliquer l'estompage à :")
+    page.fadeRows = {}
+    page.RefreshFade = function()
+        af.apply = af.apply or {}
+        for i, m in ipairs(SP:GetOrderedModules()) do
+            local c = page.fadeRows[i]
+            if not c then
+                c = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+                c:SetSize(20, 20)
+                c.text = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                c.text:SetPoint("LEFT", c, "RIGHT", 2, 0)
+                page.fadeRows[i] = c
+            end
+            local col, rowN = (i - 1) % 2, math.floor((i - 1) / 2)
+            c:ClearAllPoints()
+            c:SetPoint("TOPLEFT", page, "TOPLEFT", 16 + col * 180, -236 - rowN * 24)
+            c.text:SetText(m.label)
+            local mcfg = SP:GetModuleConfig(m.name)
+            local enabled = mcfg and mcfg.enabled
+            c:SetEnabled(enabled and true or false)
+            c.text:SetTextColor(enabled and 1 or 0.5, enabled and 1 or 0.5, enabled and 1 or 0.5)
+            c:SetChecked(af.apply[m.name] ~= false)
+            c:SetScript("OnClick", function(s) af.apply[m.name] = s:GetChecked() and true or false end)
+            c:Show()
+        end
+        for i = #SP:GetOrderedModules() + 1, #page.fadeRows do page.fadeRows[i]:Hide() end
+    end
+    page:SetScript("OnShow", function() page.RefreshFade() end)
 end
 
 local function BuildGeneral(page)
@@ -116,16 +144,22 @@ local function BuildChat(page)
                 row.swatch = CreateFrame("Button", nil, row); row.swatch:SetSize(16, 16)
                 row.swatch:SetPoint("LEFT", row.check, "RIGHT", 4, 0)
                 row.swatch.tex = row.swatch:CreateTexture(nil, "ARTWORK"); row.swatch.tex:SetAllPoints(row.swatch)
-                row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                row.label:SetPoint("LEFT", row.swatch, "RIGHT", 6, 0)
-                row.up = CreateFrame("Button", nil, row); row.up:SetSize(18, 18); row.up:SetPoint("LEFT", row, "LEFT", 160, 0)
+                row.nameBox = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
+                row.nameBox:SetSize(90, 18); row.nameBox:SetAutoFocus(false)
+                row.nameBox:SetPoint("LEFT", row.swatch, "RIGHT", 10, 0)
+                row.label = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+                row.label:SetPoint("LEFT", row.nameBox, "RIGHT", 6, 0)
+                row.up = CreateFrame("Button", nil, row); row.up:SetSize(18, 18); row.up:SetPoint("LEFT", row, "LEFT", 200, 0)
                 row.up:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
                 row.down = CreateFrame("Button", nil, row); row.down:SetSize(18, 18); row.down:SetPoint("LEFT", row.up, "RIGHT", 2, 0)
                 row.down:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
                 page.chRows[i] = row
             end
             row:ClearAllPoints(); row:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y)
-            row.label:SetText(("%s (%s)"):format(ch.label or ch.key, ch.key))
+            row.label:SetText("(" .. ch.key .. ")")
+            row.nameBox:SetText(ch.label or ch.key)
+            row.nameBox:SetScript("OnEnterPressed", function(s) ch.label = s:GetText(); s:ClearFocus(); applyChat() end)
+            row.nameBox:SetScript("OnTextChanged", function(s, user) if user then ch.label = s:GetText(); applyChat() end end)
             row.check:SetChecked(ch.enabled and true or false)
             row.check:SetScript("OnClick", function(c) ch.enabled = c:GetChecked() and true or false; applyChat() end)
             row.swatch.tex:SetColorTexture(ch.r, ch.g, ch.b)
@@ -159,7 +193,41 @@ local function BuildChat(page)
         end
         for j = #cfg.channels + 1, #page.chRows do page.chRows[j]:Hide() end
     end
+
+    local imp = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+    imp:SetSize(210, 22)
+    imp:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 8, 8)
+    imp:SetText("Importer les canaux rejoints")
+    imp:SetScript("OnClick", function()
+        local list = { GetChannelList() }
+        for i = 1, #list, 3 do
+            local nm = list[i + 1]
+            if type(nm) == "string" and nm ~= "" then
+                local key = "C:" .. nm
+                local exists = false
+                for _, ch in ipairs(cfg.channels) do if ch.key == key then exists = true; break end end
+                if not exists then
+                    cfg.channels[#cfg.channels + 1] = { key = key, label = nm, channelName = nm, enabled = true, r = 0.9, g = 0.8, b = 0.5 }
+                end
+            end
+        end
+        page.RefreshChannels(); applyChat()
+    end)
     page:SetScript("OnShow", function() page.RefreshChannels() end)
+end
+
+local function BuildQuetes(page)
+    local cfg = SP:GetModuleConfig("QuestTracker")
+    if not cfg then return end
+    local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText("Quêtes")
+    MakeSlider(page, "Hauteur du module", 16, -44, 100, 600, 10,
+        function() return cfg.height or 300 end,
+        function(v) cfg.height = v; SP:RebuildLayout() end,
+        function(v) return v .. " px" end)
+    local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -100)
+    note:SetText("|cFF777777Les filtres par type se règlent via les icônes en haut du module.|r")
 end
 
 -- Rafraîchit la liste des modules (section "Modules").
@@ -283,9 +351,10 @@ local function CreateOptions()
     BuildComportement(f.pages["Comportement"])
     BuildGeneral(f.pages["Général"])
     BuildChat(f.pages["Chat"])
+    BuildQuetes(f.pages["Quêtes"])
 
     -- Pages stub (options à venir dans les passes suivantes)
-    for _, sec in ipairs({ "Addons", "Quêtes", "Apparence" }) do
+    for _, sec in ipairs({ "Addons", "Apparence" }) do
         local page = f.pages[sec]
         local fs = page:CreateFontString(nil, "OVERLAY", "GameFontDisable")
         fs:SetPoint("CENTER")

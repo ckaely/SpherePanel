@@ -211,6 +211,7 @@ function M:LayoutAddons(w)
         local col, rowN = (i - 1) % perRow, math.floor((i - 1) / perRow)
         local cx = leftPad + col * (ICON + IGAP) + ICON / 2
         local cy = -(IGAP + rowN * (ICON + IGAP) + ICON / 2)
+        pcall(button.SetSize, button, ICON, ICON)
         button:ClearAllPoints()
         button:SetPoint("CENTER", self.addonsPage, "TOPLEFT", cx, cy)
         button:Show()
@@ -247,7 +248,44 @@ function M:StealOne(button)
     pcall(function() button:SetMovable(false) end)
     button:SetParent(self.addonsPage)
     button:SetScale(1)
+    pcall(self.RestyleButton, self, button)
     self.order[#self.order + 1] = button
+end
+
+-- Style carré moderne : retire le cerclage circulaire, icône carrée, contour + highlight.
+function M:RestyleButton(button)
+    local o = self.stolen[button]
+    if not o then return end
+    if not button._spBorder then
+        local bd = button:CreateTexture(nil, "BACKGROUND")
+        bd:SetPoint("TOPLEFT", button, "TOPLEFT", -1, 1)
+        bd:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
+        bd:SetColorTexture(0.10, 0.10, 0.13, 1)
+        button._spBorder = bd
+        local hl = button:CreateTexture(nil, "OVERLAY")
+        hl:SetAllPoints(button); hl:SetColorTexture(0.30, 0.55, 0.95, 0.35); hl:Hide()
+        button._spHL = hl
+        button:HookScript("OnEnter", function() if button._spStyled then hl:Show() end end)
+        button:HookScript("OnLeave", function() hl:Hide() end)
+    end
+    local icon = button.icon or button.Icon or _G[(button:GetName() or "") .. "Icon"]
+    if icon and icon.SetTexCoord then
+        button._spIcon = icon
+        if not o.iconPts then
+            local pts = {}
+            for i = 1, icon:GetNumPoints() do pts[i] = { icon:GetPoint(i) } end
+            o.iconPts = pts
+        end
+        icon:ClearAllPoints()
+        icon:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
+        icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+        pcall(icon.SetTexCoord, icon, 0.08, 0.92, 0.08, 0.92)
+        pcall(icon.SetDrawLayer, icon, "ARTWORK")
+    end
+    local border = button.border or button.Border or _G[(button:GetName() or "") .. "Border"]
+    if border and border.Hide then o.hadBorder = border:IsShown(); border:Hide() end
+    button._spStyled = true
+    button._spBorder:Show()
 end
 
 function M:CollectAddons()
@@ -277,6 +315,21 @@ end
 function M:RestoreAddons()
     for button, o in pairs(self.stolen) do
         pcall(function()
+            -- défait le restyle
+            if button._spStyled then
+                if button._spBorder then button._spBorder:Hide() end
+                if button._spHL then button._spHL:Hide() end
+                local icon = button._spIcon
+                if icon then
+                    icon:ClearAllPoints()
+                    if o.iconPts and #o.iconPts > 0 then for _, p in ipairs(o.iconPts) do icon:SetPoint(unpack(p)) end
+                    else icon:SetAllPoints(button) end
+                    pcall(icon.SetTexCoord, icon, 0, 1, 0, 1)
+                end
+                local border = button.border or button.Border or _G[(button:GetName() or "") .. "Border"]
+                if border and o.hadBorder then border:Show() end
+                button._spStyled = false
+            end
             button:SetParent(o.parent or Minimap)
             button:SetScale(o.scale or 1)
             button:SetMovable(o.movable and true or false)

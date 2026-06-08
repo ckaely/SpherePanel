@@ -1,9 +1,10 @@
 -- ============================================================
 -- Module : Chat — panneaux filtrés configurables (additionnel)
 -- ============================================================
--- Boutons de canaux pilotés par la config (couleur/ordre/activation).
---   clic DROIT = affiche le panneau filtré ; clic GAUCHE = arme l'écriture.
--- Noms colorés par classe, liens cliquables (copie), police/taille configurables.
+-- Boutons de canaux config-driven (couleur/ordre/nom/activation, séparateurs).
+--   clic DROIT = affiche le panneau ; clic GAUCHE = arme l'écriture.
+-- Noms colorés par classe + cliquables (chuchotement), horodatage cliquable
+-- (survol = date/heure, clic = copie du message), liens URL copiables, police configurable.
 local ADDON_NAME, SP = ...
 
 local M = {
@@ -12,7 +13,7 @@ local M = {
     defaultHeight = 200,
 }
 
-local CAP = 200
+local CAP = 300
 
 local CHAT_EVENTS = {
     "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_EMOTE",
@@ -24,7 +25,6 @@ local CHAT_EVENTS = {
     "CHAT_MSG_CHANNEL",
 }
 
--- Définition statique des clés de canal : write = canal d'envoi ; types = events captés ; isTrade.
 local KEYDEF = {
     A = { write = "SAY",     all = true },
     S = { write = "SAY",     types = { SAY = true, YELL = true, EMOTE = true } },
@@ -37,13 +37,12 @@ local KEYDEF = {
 local function NormType(suffix)
     suffix = suffix:gsub("_LEADER$", "")
     if suffix == "WHISPER_INFORM" or suffix == "BN_WHISPER" or suffix == "BN_WHISPER_INFORM" then return "WHISPER" end
-    if suffix == "INSTANCE_CHAT" then return "INSTANCE_CHAT" end
     return suffix
 end
 
-local function IsTradeChannel(channelName)
-    if type(channelName) ~= "string" then return false end
-    local l = channelName:lower()
+local function IsTradeChannel(name)
+    if type(name) ~= "string" then return false end
+    local l = name:lower()
     return (l:find("commerce") or l:find("trade") or l:find("market")) and true or false
 end
 
@@ -58,8 +57,11 @@ function M:Init(body)
     self.body = body
     self.viewFilter = "A"
     self.writeType  = "SAY"
-    self.buf = { A = {}, S = {}, W = {}, I = {}, G = {}, M = {} }
+    self.buf = {}
     self.btns = {}
+    self.seps = {}
+    self.msgInfo = {}
+    self._idc = 0
 
     self.bar = CreateFrame("Frame", nil, body)
     self.bar:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -2)
@@ -79,8 +81,28 @@ function M:Init(body)
     self.smf:SetScript("OnMouseWheel", function(s, d) if d > 0 then s:ScrollUp() else s:ScrollDown() end end)
     self.smf:SetScript("OnHyperlinkClick", function(_, link, text, button)
         local url = link:match("^spurl:(.+)$")
-        if url then self:CopyLink(url) else SetItemRef(link, text, button) end
+        if url then self:CopyText(url); return end
+        local mid = link:match("^spMsg:(%d+)$")
+        if mid then local info = self.msgInfo[tonumber(mid)]; if info then self:CopyText(info.raw) end; return end
+        local who = link:match("^spWhisper:(.+)$")
+        if who then self:StartWhisper(who); return end
+        SetItemRef(link, text, button)
     end)
+    self.smf:SetScript("OnHyperlinkEnter", function(s, link)
+        local mid = link:match("^spMsg:(%d+)$")
+        if mid then
+            local info = self.msgInfo[tonumber(mid)]
+            if info then GameTooltip:SetOwner(s, "ANCHOR_LEFT"); GameTooltip:SetText(date("%d/%m/%Y %H:%M:%S", info.t)); GameTooltip:Show() end
+            return
+        end
+        local who = link:match("^spWhisper:(.+)$")
+        if who then
+            GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+            GameTooltip:SetText("Chuchoter à " .. (Ambiguate and Ambiguate(who, "none") or who))
+            GameTooltip:Show()
+        end
+    end)
+    self.smf:SetScript("OnHyperlinkLeave", function() GameTooltip:Hide() end)
 
     self.eb = CreateFrame("EditBox", nil, body)
     self.eb:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 4, 2)
@@ -91,7 +113,6 @@ function M:Init(body)
     self.eb:SetScript("OnEnterPressed", function(s) self:Send(s:GetText()); s:SetText(""); s:ClearFocus() end)
     self.eb:SetScript("OnEscapePressed", function(s) s:SetText(""); s:ClearFocus() end)
 
-    -- Éditbox de copie de lien (sélectionnée pour Ctrl+C)
     self.copyBox = CreateFrame("EditBox", nil, body)
     self.copyBox:SetPoint("TOPLEFT", self.smf, "TOPLEFT", 0, 0)
     self.copyBox:SetPoint("TOPRIGHT", self.smf, "TOPRIGHT", 0, 0)
@@ -130,24 +151,41 @@ end
 
 function M:OnResize(w, h) end
 
+function M:ChannelByKey(key)
+    for _, ch in ipairs(SP:GetModuleConfig(self.name).channels or {}) do
+        if ch.key == key then return ch end
+    end
+end
+
 -- ------------------------------------------------------------
--- Application de la config (couleurs / ordre / canaux / police)
+-- Application config : police, couleurs, boutons + séparateurs, buffers
 -- ------------------------------------------------------------
 function M:ApplyConfig()
     local cfg = SP:GetModuleConfig(self.name)
-    -- police
     pcall(function() self.smf:SetFont(cfg.font or STANDARD_TEXT_FONT, cfg.fontSize or 12, "") end)
-    -- couleurs par clé
+
     self.colorOf = {}
     for _, ch in ipairs(cfg.channels or {}) do
         self.colorOf[ch.key] = { ch.r or 1, ch.g or 1, ch.b or 1 }
+        self.buf[ch.key] = self.buf[ch.key] or {}
     end
-    -- (re)construction des boutons à partir des canaux activés
+    self.buf.A = self.buf.A or {}
+
     for _, b in ipairs(self.btns) do b:Hide() end
+    for _, s in ipairs(self.seps) do s:Hide() end
+
     local x, i = 0, 0
     for _, ch in ipairs(cfg.channels or {}) do
-        if ch.enabled and KEYDEF[ch.key] then
+        if ch.enabled then
             i = i + 1
+            if i > 1 then
+                local sep = self.seps[i - 1]
+                if not sep then
+                    sep = self.bar:CreateTexture(nil, "ARTWORK"); sep:SetSize(1, 12); self.seps[i - 1] = sep
+                end
+                sep:SetColorTexture(1, 1, 1, 0.25)
+                sep:ClearAllPoints(); sep:SetPoint("LEFT", self.bar, "LEFT", x - 3, 0); sep:Show()
+            end
             local b = self.btns[i]
             if not b then
                 b = CreateFrame("Button", nil, self.bar)
@@ -163,16 +201,15 @@ function M:ApplyConfig()
             b.fs:SetTextColor(ch.r or 1, ch.g or 1, ch.b or 1)
             b.key = ch.key
             b:SetScript("OnClick", function(s, mouse)
-                if mouse == "RightButton" then self:SetView(s.key)
-                else self:SetWrite(KEYDEF[s.key].write, s.key) end
+                if mouse == "RightButton" then self:SetView(s.key) else self:SetWrite(s.key) end
             end)
             b:SetScript("OnEnter", function(s)
                 GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
-                GameTooltip:SetText(s.key); GameTooltip:AddLine("Clic D : afficher | Clic G : écrire", 0.7, 0.7, 0.7); GameTooltip:Show()
+                GameTooltip:SetText(ch.label or ch.key); GameTooltip:AddLine("Clic D : afficher | Clic G : écrire", 0.7, 0.7, 0.7); GameTooltip:Show()
             end)
             b:SetScript("OnLeave", function() GameTooltip:Hide() end)
             b:Show()
-            x = x + 22
+            x = x + (#(ch.label or ch.key) > 1 and 30 or 24)
         end
     end
     self._btnUsed = i
@@ -184,29 +221,33 @@ end
 -- Messages
 -- ------------------------------------------------------------
 function M:PrimaryKey(typeKey, channelName)
-    local cfg = SP:GetModuleConfig(self.name)
-    for _, ch in ipairs(cfg.channels or {}) do
+    for _, ch in ipairs(SP:GetModuleConfig(self.name).channels or {}) do
         if ch.enabled and ch.key ~= "A" then
             local def = KEYDEF[ch.key]
             if def then
                 if def.types and def.types[typeKey] then return ch.key end
                 if def.isTrade and typeKey == "CHANNEL" and IsTradeChannel(channelName) then return ch.key end
+            elseif ch.channelName and typeKey == "CHANNEL" and type(channelName) == "string"
+                and channelName:lower():find(ch.channelName:lower(), 1, true) then
+                return ch.key
             end
         end
     end
     return "A"
 end
 
-function M:ColorName(author, guid)
+function M:BuildName(author, guid)
     if not author or author == "" then return nil end
     local short = Ambiguate and Ambiguate(author, "none") or author
     local cfg = SP:GetModuleConfig(self.name)
+    local colored
     if cfg.classColorNames and guid then
-        local ok, _, engClass = pcall(GetPlayerInfoByGUID, guid)
-        local c = ok and engClass and RAID_CLASS_COLORS and RAID_CLASS_COLORS[engClass]
-        if c then return ("|cff%02x%02x%02x%s|r"):format(c.r * 255, c.g * 255, c.b * 255, short) end
+        local ok, _, eng = pcall(GetPlayerInfoByGUID, guid)
+        local c = ok and eng and RAID_CLASS_COLORS and RAID_CLASS_COLORS[eng]
+        if c then colored = ("|cff%02x%02x%02x%s|r"):format(c.r * 255, c.g * 255, c.b * 255, short) end
     end
-    return "|cffffffff" .. short .. "|r"
+    colored = colored or ("|cffffffff" .. short .. "|r")
+    return ("|HspWhisper:%s|h%s|h"):format(author, colored)
 end
 
 function M:Push(key, entry)
@@ -218,16 +259,22 @@ end
 
 function M:AddMessage(typeKey, msg, author, channelName, guid)
     if type(msg) ~= "string" then return end
+    self._idc = self._idc + 1
+    local id = self._idc
+    self.msgInfo[id] = { t = time(), raw = (author and author ~= "" and (author .. ": ") or "") .. msg }
+    self.msgInfo[id - 2000] = nil
+
     local pk = self:PrimaryKey(typeKey, channelName)
     local col = self.colorOf[pk] or self.colorOf.A or { 1, 1, 1 }
-    local name = self:ColorName(author, guid)
-    local line = (name and (name .. ": ") or "") .. LinkifyURLs(msg)
+    local ts = ("|cff808080|HspMsg:%d|h[%s]|h|r "):format(id, date("%H:%M"))
+    local name = self:BuildName(author, guid)
+    local line = ts .. (name and (name .. ": ") or "") .. LinkifyURLs(msg)
     local entry = { line, col[1], col[2], col[3] }
 
     self:Push("A", entry)
     if pk ~= "A" then self:Push(pk, entry) end
     if self.viewFilter == "A" or self.viewFilter == pk then
-        self.smf:AddMessage(entry[1], entry[2], entry[3], entry[4])
+        self.smf:AddMessage(entry[1], col[1], col[2], col[3])
     end
 end
 
@@ -242,24 +289,32 @@ function M:SetView(key)
     if self.viewLabel then self.viewLabel:SetText("|cFFAAAAAAvue:|r " .. key) end
 end
 
-function M:SetWrite(write, key)
-    self.writeType = write
+function M:SetWrite(key)
+    local def = KEYDEF[key]
+    local ch = self:ChannelByKey(key)
+    if def then self.writeType, self.writeChannel = def.write, nil
+    elseif ch and ch.channelName then self.writeType, self.writeChannel = "CUSTOM", ch.channelName
+    else self.writeType, self.writeChannel = "SAY", nil end
     local col = self.colorOf[key] or { 1, 1, 1 }
     if self.eb then self.eb:SetTextColor(col[1], col[2], col[3]); self.eb:SetFocus() end
 end
 
--- ------------------------------------------------------------
--- Lien : copie (sélection Ctrl+C) + message dans le bandeau
--- ------------------------------------------------------------
-function M:CopyLink(url)
+function M:StartWhisper(name)
+    self.writeType, self.writeChannel = "WHISPER", nil
+    self._lastWhisper = name
+    if self.eb then self.eb:SetFocus() end
+    if self.viewLabel then
+        self.viewLabel:SetText("|cFF40FF40→ " .. (Ambiguate and Ambiguate(name, "none") or name) .. "|r")
+        C_Timer.After(4, function() if self.viewLabel then self:SetView(self.viewFilter) end end)
+    end
+end
+
+function M:CopyText(text)
     if self.copyBox then
-        self.copyBox:SetText(url)
-        self.copyBox:Show()
-        self.copyBox:HighlightText()
-        self.copyBox:SetFocus()
+        self.copyBox:SetText(text); self.copyBox:Show(); self.copyBox:HighlightText(); self.copyBox:SetFocus()
     end
     if self.viewLabel then
-        self.viewLabel:SetText("|cFF40FF40Lien — Ctrl+C|r")
+        self.viewLabel:SetText("|cFF40FF40Ctrl+C pour copier|r")
         C_Timer.After(4, function() if self.viewLabel then self:SetView(self.viewFilter) end end)
     end
 end
@@ -267,11 +322,12 @@ end
 -- ------------------------------------------------------------
 -- Envoi
 -- ------------------------------------------------------------
-function M:FindTradeChannel()
+function M:FindChannelByName(name)
+    if not name then return end
     local list = { GetChannelList() }
     for i = 1, #list, 3 do
-        local id, name = list[i], list[i + 1]
-        if IsTradeChannel(name) then return id end
+        local id, nm = list[i], list[i + 1]
+        if type(nm) == "string" and nm:lower():find(name:lower(), 1, true) then return id end
     end
 end
 
@@ -291,9 +347,13 @@ function M:Send(text)
     elseif w == "GUILD" then
         pcall(SendChatMessage, text, "GUILD")
     elseif w == "TRADE" then
-        local idx = self:FindTradeChannel()
+        local idx = self:FindChannelByName("commerce") or self:FindChannelByName("trade")
         if idx then pcall(SendChatMessage, text, "CHANNEL", nil, idx)
         else SP:Print("Chat : canal Commerce introuvable (rejoins-le d'abord).") end
+    elseif w == "CUSTOM" and self.writeChannel then
+        local idx = self:FindChannelByName(self.writeChannel)
+        if idx then pcall(SendChatMessage, text, "CHANNEL", nil, idx)
+        else SP:Print("Chat : canal '" .. self.writeChannel .. "' introuvable.") end
     else
         pcall(SendChatMessage, text, "SAY")
     end

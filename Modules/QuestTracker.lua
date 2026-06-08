@@ -113,7 +113,9 @@ local function CreateEntry(self)
     row.title.text:SetWordWrap(false)
     row.title:SetScript("OnClick", function(_, button) self:OnTitleClick(row, button) end)
     row.title:SetScript("OnEnter", function() row.hl:Show() end)
-    row.title:SetScript("OnLeave", function() row.hl:Hide() end)
+    row.title:SetScript("OnLeave", function()
+        if self._pinnedHL ~= row.questID then row.hl:Hide() end
+    end)
 
     row.objs = {}
     return row
@@ -152,6 +154,8 @@ local function RenderRow(self, row, qid, cat, isPvp, isAccount)
         watched = (C_QuestLog.GetQuestWatchType and C_QuestLog.GetQuestWatchType(qid) ~= nil) or false
     end)
     row.watch.text:SetText(watched and "|cFFFFD200*|r" or "|cFF777777*|r")
+
+    if row.hl then row.hl:SetShown(self._pinnedHL == qid) end
 
     local y = 15
     local objectives
@@ -203,7 +207,10 @@ function M:Init(body)
         b.icon:SetAllPoints(b)
         ApplyIcon(b.icon, item)
         b.fkey, b.tip = item.key, item.tip
-        b:SetScript("OnClick", function(s) self:ToggleFilter(s.fkey) end)
+        b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        b:SetScript("OnClick", function(s, mouse)
+            if mouse == "RightButton" then self:IsolateFilter(s.fkey) else self:ToggleFilter(s.fkey) end
+        end)
         b:SetScript("OnEnter", function(s)
             GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
             local f = SP:GetModuleConfig(self.name).filters
@@ -270,6 +277,25 @@ function M:OnResize(w, h) self:RequestRefresh() end
 function M:ToggleFilter(key)
     local f = SP:GetModuleConfig(self.name).filters
     f[key] = not f[key]
+    self._isolated = nil   -- un toggle manuel sort du mode isolé
+    self:UpdateFilterVisuals()
+    self:RequestRefresh()
+end
+
+-- Clic droit : n'afficher QUE cette catégorie ; reclic = restaure l'état précédent.
+function M:IsolateFilter(key)
+    local f = SP:GetModuleConfig(self.name).filters
+    if self._isolated == key then
+        if self._savedFilters then for k, v in pairs(self._savedFilters) do f[k] = v end end
+        self._isolated, self._savedFilters = nil, nil
+    else
+        if not self._savedFilters then
+            self._savedFilters = {}
+            for k, v in pairs(f) do self._savedFilters[k] = v end
+        end
+        for k in pairs(f) do f[k] = (k == key) end
+        self._isolated = key
+    end
     self:UpdateFilterVisuals()
     self:RequestRefresh()
 end
@@ -291,6 +317,14 @@ function M:HideBlizzard()
     if not otf then return end
     if self._otfHidden == nil then self._otfWasShown = otf:IsShown() and true or false end
     self._otfHidden = true
+    -- Post-hook sécurisé : re-masque dès que Blizzard tente de le ré-afficher
+    -- (fin de combat / Edit Mode / updates internes ne passent pas par nos events).
+    if not self._otfShowHook then
+        self._otfShowHook = true
+        hooksecurefunc(otf, "Show", function(s)
+            if self._enabled then pcall(s.Hide, s) end
+        end)
+    end
     if otf:IsShown() then pcall(otf.Hide, otf) end
 end
 
@@ -410,13 +444,24 @@ end
 -- ============================================================
 -- Actions
 -- ============================================================
-function M:OnTitleClick(row)
+function M:OnTitleClick(row, button)
     local qid = row.questID
     if not qid then return end
-    if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
-        pcall(C_SuperTrack.SetSuperTrackedQuestID, qid)
+    if button == "RightButton" then
+        -- suivi principal + highlight persistant, SANS ouvrir la carte ; reclic = retire
+        if self._pinnedHL == qid then
+            self._pinnedHL = nil
+        else
+            self._pinnedHL = qid
+            if C_SuperTrack and C_SuperTrack.SetSuperTrackedQuestID then
+                pcall(C_SuperTrack.SetSuperTrackedQuestID, qid)
+            end
+        end
+        self:RequestRefresh()
+    else
+        -- clic gauche : ouvre le journal de quête sur cette quête
+        if QuestMapFrame_OpenToQuestDetails then pcall(QuestMapFrame_OpenToQuestDetails, qid) end
     end
-    if QuestMapFrame_OpenToQuestDetails then pcall(QuestMapFrame_OpenToQuestDetails, qid) end
 end
 
 function M:OnWatchClick(row)

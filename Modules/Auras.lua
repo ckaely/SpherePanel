@@ -43,8 +43,25 @@ local function CreateIcon(self)
     f.cd = CreateFrame("Cooldown", nil, f, "CooldownFrameTemplate")
     f.cd:SetAllPoints(f.tex)
     f.cd:SetDrawEdge(false)
+    f.cd:EnableMouse(false)
     f.count = f:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
     f.count:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -1, 1)
+
+    f:EnableMouse(true)
+    f:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+        local ok = false
+        if s.auraInstanceID then
+            if s.isHarmful and GameTooltip.SetUnitDebuffByAuraInstanceID then
+                ok = pcall(GameTooltip.SetUnitDebuffByAuraInstanceID, GameTooltip, "player", s.auraInstanceID)
+            elseif GameTooltip.SetUnitBuffByAuraInstanceID then
+                ok = pcall(GameTooltip.SetUnitBuffByAuraInstanceID, GameTooltip, "player", s.auraInstanceID)
+            end
+        end
+        if not ok and s.spellId then pcall(GameTooltip.SetSpellByID, GameTooltip, s.spellId) end
+        GameTooltip:Show()
+    end)
+    f:SetScript("OnLeave", function() GameTooltip:Hide() end)
     return f
 end
 
@@ -150,6 +167,9 @@ function M:Refresh()
         ic:ClearAllPoints()
         ic:SetPoint("TOPLEFT", self.grid, "TOPLEFT", GAP + col * (size + GAP), -(GAP + rowN * (size + GAP)))
         ic.tex:SetTexture(aura.icon)
+        ic.auraInstanceID = aura.auraInstanceID
+        ic.spellId = aura.spellId
+        ic.isHarmful = (idx >= debuffStart and tab ~= "buff")
 
         -- bordure : rouge (débuff) selon type, sinon discrète
         local isDebuff = idx >= debuffStart and (tab ~= "buff")
