@@ -21,7 +21,8 @@ function SP:CreatePanel()
     -- Fond du panneau
     local bg = p:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(p)
-    bg:SetColorTexture(0.05, 0.05, 0.07, 0.85)
+    local c = SP.db.panel.bgColor or { r = 0.05, g = 0.05, b = 0.07, a = 0.85 }
+    bg:SetColorTexture(c.r, c.g, c.b, c.a)
     p.bg = bg
 
     -- --- Barre de titre (poignée de déplacement) ---
@@ -113,7 +114,7 @@ function SP:_TickFree(p, elapsed)
     local af = SP.db and SP.db.panel and SP.db.panel.autofade
     local now = GetTime()
     if not af or not af.enabled then
-        if p.bg:GetAlpha() ~= 0.85 then p.bg:SetAlpha(0.85) end
+        if p.bg:GetAlpha() ~= 1 then p.bg:SetAlpha(1) end
         p.title:SetAlpha(1)
         for _, m in ipairs(SP.modules) do if m.frame and m.frame:GetAlpha() ~= 1 then m.frame:SetAlpha(1) end end
         return
@@ -122,7 +123,7 @@ function SP:_TickFree(p, elapsed)
     if p:IsMouseOver() then p._panelActive = now end
     local pg = ((now - (p._panelActive or 0)) > delay) and target or 1
     p.title:SetAlpha(lerp(p.title:GetAlpha(), pg, elapsed, dur))
-    p.bg:SetAlpha(lerp(p.bg:GetAlpha(), pg * 0.85, elapsed, dur))
+    p.bg:SetAlpha(lerp(p.bg:GetAlpha(), pg, elapsed, dur))
     for _, m in ipairs(SP.modules) do
         local f = m.frame
         if f and f:IsShown() then
@@ -178,7 +179,7 @@ function SP:_TickSlide(p, elapsed)
         end
     end
 
-    local bgGoal = anyRevealed and 0.85 or 0
+    local bgGoal = anyRevealed and 1 or 0
     local tGoal  = anyRevealed and 1 or 0
     p.bg:SetAlpha(lerp(p.bg:GetAlpha(), bgGoal, elapsed, dur))
     p.title:SetAlpha(lerp(p.title:GetAlpha(), tGoal, elapsed, dur))
@@ -237,7 +238,7 @@ function SP:_ResetSlides(p)
             m.frame:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", 0, -m._layoutTop)
         end
     end
-    p.bg:SetAlpha(0.85); p.title:SetAlpha(1)
+    p.bg:SetAlpha(1); p.title:SetAlpha(1)
     SP:_HideEdgeGlows(p)
 end
 
@@ -315,6 +316,13 @@ end
 -- Verrouille / déverrouille le déplacement et le resize.
 function SP:SetPanelLocked(locked)
     SP.db.panel.locked = locked and true or false
+end
+
+-- Applique l'apparence (couleur + transparence du fond). Appelé au login + à chaque changement.
+function SP:ApplyAppearance()
+    if not SP.panel then return end
+    local c = SP.db.panel.bgColor or { r = 0.05, g = 0.05, b = 0.07, a = 0.85 }
+    SP.panel.bg:SetColorTexture(c.r, c.g, c.b, c.a)
 end
 
 -- Largeur changée : propager aux modules (les ancres LEFT/RIGHT gèrent déjà la largeur,

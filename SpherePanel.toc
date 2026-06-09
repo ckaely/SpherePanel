@@ -5,6 +5,7 @@
 ## Version: 0.1.0
 ## SavedVariables: SPDB
 ## DefaultState: enabled
+## OptionalDeps: MyusKnowledgePointsTracker, Details
 
 Core.lua
 Config.lua
@@ -17,6 +18,7 @@ Modules\DamageMeter.lua
 Modules\Raid.lua
 Modules\Auras.lua
 Modules\Bags.lua
+Modules\Knowledge.lua
 Modules\SilverDragon.lua
 Modules\GameMenu.lua
 Modules\SquareMap.lua

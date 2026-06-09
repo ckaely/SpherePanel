@@ -92,6 +92,15 @@ function M:CleanMinimap()
         local f = _G[nm]
         if f and f.IsShown and f:IsShown() then pcall(f.Hide, f); self._hiddenDecor[f] = true end
     end
+    -- texte de zone + décorations du MinimapCluster (retail moderne)
+    if _G.MinimapZoneText then local zt = _G.MinimapZoneText; if zt:IsShown() then pcall(zt.Hide, zt); self._hiddenDecor[zt] = true end end
+    local mc = _G.MinimapCluster
+    if mc then
+        for _, key in ipairs({ "ZoneTextButton", "BorderTop", "InstanceDifficulty", "Tracking", "TrackingFrame" }) do
+            local f = mc[key]
+            if f and f.IsShown and f:IsShown() then pcall(f.Hide, f); self._hiddenDecor[f] = true end
+        end
+    end
     -- icônes d'addons non LibDBIcon restées sur la minimap (déjà collectées dans Menus sinon)
     for _, c in ipairs({ Minimap:GetChildren() }) do
         local n = c:GetName()
@@ -136,20 +145,33 @@ function M:Disable()
     self._enabled = false
     if self.ev then self.ev:UnregisterAllEvents() end
     SP:SetModuleHeaderText(self, "")
-    self:RestoreMinimapDecor()
     if self._ticker then self._ticker:Cancel(); self._ticker = nil end
+    if InCombatLockdown() then return end
+
+    local cfg = SP:GetModuleConfig(self.name)
     local mm = Minimap
     if mm and self.saved then
         pcall(function()
-            mm:SetMaskTexture(ROUND_MASK)
             mm:SetParent(self.saved.parent or _G.MinimapCluster or UIParent)
             mm:ClearAllPoints()
             if self.saved.points and #self.saved.points > 0 then
                 for _, p in ipairs(self.saved.points) do mm:SetPoint(unpack(p)) end
+            elseif _G.MinimapCluster then
+                mm:SetPoint("TOPRIGHT", _G.MinimapCluster, "TOPRIGHT", 0, 0)
             end
-            if self.saved.w and self.saved.h then mm:SetSize(self.saved.w, self.saved.h) end
             mm:SetScale(self.saved.scale or 1)
+            if self.saved.w and self.saved.h then mm:SetSize(self.saved.w, self.saved.h) end
+            mm:SetMaskTexture(ROUND_MASK)
+            mm:SetZoom(mm:GetZoom())   -- force un rafraîchissement du rendu/blips
         end)
+    end
+
+    if cfg and cfg.hideWhenDisabled then
+        -- option : garder la minimap masquée même module désactivé
+        if _G.MinimapCluster then pcall(_G.MinimapCluster.Hide, _G.MinimapCluster) end
+    else
+        self:RestoreMinimapDecor()
+        if _G.MinimapCluster then pcall(_G.MinimapCluster.Show, _G.MinimapCluster) end
     end
 end
 

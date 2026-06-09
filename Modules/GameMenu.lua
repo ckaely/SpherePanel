@@ -77,7 +77,7 @@ function M:Init(body)
     self.tabs:SetPoint("TOPRIGHT", body, "TOPRIGHT", -4, -2)
     self.tabs:SetHeight(TAB_H)
     self.tabBtns = {}
-    local defs = { { "menus", "Menus" }, { "addons", "Addons" } }
+    local defs = { { "menus", "Menus" }, { "addons", "Addons" }, { "modules", "Modules" } }
     local x = 0
     for _, d in ipairs(defs) do
         local b = CreateFrame("Button", nil, self.tabs)
@@ -101,11 +101,18 @@ function M:Init(body)
     self.addonsPage:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -4, 0)
     self.addonsPage:Hide()
 
-    -- Molette = switch d'onglet
+    self.modulesPage = CreateFrame("Frame", nil, body)
+    self.modulesPage:SetPoint("TOPLEFT", self.tabs, "BOTTOMLEFT", 0, -2)
+    self.modulesPage:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -4, 0)
+    self.modulesPage:Hide()
+    self.modRows = {}
+
+    -- Molette = switch d'onglet (cycle menus → addons → modules)
+    local ORDER = { menus = "addons", addons = "modules", modules = "menus" }
     body:EnableMouseWheel(true)
     body:SetScript("OnMouseWheel", function()
-        local cur = SP:GetModuleConfig(self.name).activeTab
-        self:SetTab(cur == "menus" and "addons" or "menus")
+        local cur = SP:GetModuleConfig(self.name).activeTab or "menus"
+        self:SetTab(ORDER[cur] or "menus")
     end)
 
     -- Horloge / FPS dans le bandeau
@@ -155,8 +162,49 @@ function M:SetTab(tab)
     cfg.activeTab = tab
     self.menusPage:SetShown(tab == "menus")
     self.addonsPage:SetShown(tab == "addons")
+    self.modulesPage:SetShown(tab == "modules")
     for t, b in pairs(self.tabBtns) do b.sel:SetShown(t == tab) end
+    if tab == "modules" then self:RefreshModulesTab() end
     self:Layout()
+end
+
+-- Onglet "Modules" : liste les modules (sauf Menus) avec boîte verte(actif)/rouge(inactif).
+local MOD_GREEN, MOD_RED = { 0.20, 0.80, 0.30 }, { 0.85, 0.25, 0.25 }
+function M:RefreshModulesTab()
+    local list = {}
+    for _, m in ipairs(SP:GetOrderedModules()) do
+        if m.name ~= "GameMenu" then list[#list + 1] = m end
+    end
+    local y = 4
+    for i, m in ipairs(list) do
+        local row = self.modRows[i]
+        if not row then
+            row = CreateFrame("Button", nil, self.modulesPage)
+            row:SetHeight(18)
+            row.box = row:CreateTexture(nil, "ARTWORK"); row.box:SetSize(12, 12); row.box:SetPoint("LEFT", row, "LEFT", 2, 0)
+            row.fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); row.fs:SetPoint("LEFT", row.box, "RIGHT", 6, 0)
+            row.hl = row:CreateTexture(nil, "HIGHLIGHT"); row.hl:SetAllPoints(row); row.hl:SetColorTexture(1, 1, 1, 0.1)
+            self.modRows[i] = row
+        end
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", self.modulesPage, "TOPLEFT", 2, -y)
+        row:SetPoint("TOPRIGHT", self.modulesPage, "TOPRIGHT", -2, -y)
+        row.module = m
+        row.fs:SetText(m.label)
+        local cfg = SP:GetModuleConfig(m.name)
+        local on = cfg and cfg.enabled
+        local c = on and MOD_GREEN or MOD_RED
+        row.box:SetColorTexture(c[1], c[2], c[3], 1)
+        row:SetScript("OnClick", function()
+            local mc = SP:GetModuleConfig(m.name)
+            if mc and mc.enabled then SP:DisableModuleUI(m) else SP:EnableModule(m.name) end
+            self:RefreshModulesTab()
+        end)
+        row:Show()
+        y = y + 20
+    end
+    for i = #list + 1, #self.modRows do self.modRows[i]:Hide() end
+    self._modulesTabH = 4 + #list * 20
 end
 
 function M:UpdateHeaderInfo()
@@ -183,6 +231,8 @@ function M:Layout()
 
     if cfg.activeTab == "addons" then
         needed = self:LayoutAddons(w)
+    elseif cfg.activeTab == "modules" then
+        needed = self._modulesTabH or 40
     else
         local rowW = PER_ROW * (BTN + GAP) - GAP
         local leftPad = math.max(GAP, (w - rowW) / 2)

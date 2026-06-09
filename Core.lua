@@ -21,9 +21,19 @@ SP.eventFrame = CreateFrame("Frame")
 SP.eventFrame:RegisterEvent("ADDON_LOADED")
 SP.eventFrame:RegisterEvent("PLAYER_LOGIN")
 SP.eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+-- conditions d'affichage par module (zone / combat / groupe)
+SP.eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+SP.eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+SP.eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+SP.eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 SP.eventFrame:SetScript("OnEvent", function(_, event, ...)
     SP:OnEvent(event, ...)
 end)
+
+local CONDITION_EVENTS = {
+    PLAYER_REGEN_ENABLED = true, PLAYER_REGEN_DISABLED = true,
+    ZONE_CHANGED_NEW_AREA = true, GROUP_ROSTER_UPDATE = true,
+}
 
 function SP:OnEvent(event, arg1, ...)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
@@ -32,6 +42,9 @@ function SP:OnEvent(event, arg1, ...)
         SP:OnLogin()
     elseif event == "PLAYER_ENTERING_WORLD" then
         SP:OnEnteringWorld()
+        if SP.loaded and SP.panel then SP:RebuildLayout() end
+    elseif CONDITION_EVENTS[event] then
+        if SP.loaded and SP.panel then SP:RebuildLayout() end
     end
 end
 
@@ -51,6 +64,7 @@ function SP:OnLogin()
     SP:CreatePanel()      -- PanelFrame.lua : frame déplaçable + resize
     SP:BuildModules()     -- ModuleSystem.lua : header + content par module (appelle RebuildLayout)
     SP:ApplyPanelBehavior()  -- comportement 1/2/3 (magnétisation + bord déclencheur)
+    SP:ApplyAppearance()     -- couleur/transparence du fond
     SP:SetupSlash()
     -- RÈGLE : ObjectiveTrackerFrame:Hide() sera déclenché par QuestTracker (étape 4),
     --         UNIQUEMENT à partir d'ici (PLAYER_LOGIN), jamais au chargement du fichier.

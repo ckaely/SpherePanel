@@ -25,6 +25,7 @@ SP.defaults = {
         locked  = false,
         behavior = 3,         -- 1 = panneau magnétisé glissant ; 2 = modules individuels ; 3 = libre
         side     = "right",   -- "right" ou "left" : bord d'aimantation
+        bgColor  = { r = 0.05, g = 0.05, b = 0.07, a = 0.85 },  -- fond du panneau (Apparence)
         autofade = {          -- estompage automatique (comportement 3)
             enabled      = false,
             delay        = 5,     -- secondes d'inactivité avant fade
@@ -36,7 +37,7 @@ SP.defaults = {
         -- Ordre initial. Le drag-to-reorder réécrit cette liste dans SPDB.
         order = {
             "QuestTracker", "Chat", "DamageMeter", "Raid", "Auras", "Bags",
-            "SilverDragon", "GameMenu", "SquareMap",
+            "Knowledge", "SilverDragon", "GameMenu", "SquareMap",
         },
         -- Config par module : enabled / collapsed / height.
         QuestTracker   = { enabled = true,  collapsed = false, height = 300,
@@ -60,6 +61,7 @@ SP.defaults = {
         Raid           = { enabled = true,  collapsed = false, height = 180 },
         Auras          = { enabled = true,  collapsed = false, height = 90, tab = "all", iconSize = 26 },
         Bags           = { enabled = true,  collapsed = true,  height = 220 },
+        Knowledge      = { enabled = true,  collapsed = true,  height = 220 },
         SilverDragon   = { enabled = true,  collapsed = false, height = 80  },
         GameMenu       = { enabled = true,  collapsed = false, height = 64,
             activeTab = "menus",     -- "menus" ou "addons"
@@ -67,7 +69,7 @@ SP.defaults = {
             addonAlign = "left",
             addonBlacklist = { "ProfessionTodo", "ProfessionsTodo", "ProfTodo" },
         },
-        SquareMap      = { enabled = true,  collapsed = false, height = 200 },
+        SquareMap      = { enabled = true,  collapsed = false, height = 200, hideWhenDisabled = false },
     },
 }
 

@@ -57,7 +57,7 @@ function SP:GetOrderedModules()
     local order = (SP.db and SP.db.modules and SP.db.modules.order) or {}
     for _, name in ipairs(order) do
         local m = SP.modulesByName[name]
-        if m then
+        if m and not seen[name] then   -- déduplique (un ordre SPDB legacy peut contenir des doublons)
             result[#result + 1] = m
             seen[name] = true
         end
@@ -73,7 +73,7 @@ function SP:GetVisibleOrderedModules()
     local t = {}
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
-        if cfg and cfg.enabled and m.frame then t[#t + 1] = m end
+        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) then t[#t + 1] = m end
     end
     return t
 end
@@ -81,8 +81,38 @@ end
 -- ============================================================
 -- B) Construction visuelle
 -- ============================================================
+-- Nettoie SPDB.modules.order : retire doublons + noms non enregistrés, ajoute les modules manquants.
+function SP:SanitizeOrder()
+    if not (SP.db and SP.db.modules) then return end
+    local new, seen = {}, {}
+    for _, name in ipairs(SP.db.modules.order or {}) do
+        if SP.modulesByName[name] and not seen[name] then new[#new + 1] = name; seen[name] = true end
+    end
+    for _, m in ipairs(SP.modules) do
+        if not seen[m.name] then new[#new + 1] = m.name; seen[m.name] = true end
+    end
+    SP.db.modules.order = new
+end
+
+-- Conditions d'affichage : un module ne s'affiche que si ses conditions sont remplies.
+function SP:ModuleConditionsMet(m)
+    local cfg = SP:GetModuleConfig(m.name)
+    local c = cfg and cfg.conditions
+    if not c or not c.enabled then return true end
+    local _, instType = IsInInstance()
+    local inCombat = InCombatLockdown() or (UnitAffectingCombat and UnitAffectingCombat("player"))
+    if c.capital and instType == "none" and IsResting and IsResting() then return true end
+    if c.dungeon and instType == "party" then return true end
+    if c.raid and instType == "raid" then return true end
+    if c.group and IsInGroup and IsInGroup() then return true end
+    if c.combat and inCombat then return true end
+    if c.nocombat and not inCombat then return true end
+    return false
+end
+
 function SP:BuildModules()
     if not SP.panel then return end
+    SP:SanitizeOrder()
     SP:_EnsureDragWidgets()
     for _, m in ipairs(SP.modules) do
         if not m.frame then
@@ -329,7 +359,7 @@ function SP:RebuildLayout()
 
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
-        if cfg and cfg.enabled and m.frame then
+        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) then
             local h = UIc.HEADER_H
             if not cfg.collapsed then
                 local bodyH = cfg.height or m.defaultHeight or 100

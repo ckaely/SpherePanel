@@ -71,19 +71,70 @@ function M:Init(body)
     end)
 end
 
+-- Embarque la fenêtre Details (instance 1) dans le module si Details est chargé.
+function M:EmbedDetails()
+    local D = _G.Details
+    if not (C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Details")) then return false end
+    if not (D and D.GetInstance) then return false end
+    local inst = D:GetInstance(1)
+    local frame = inst and (inst.baseframe or (inst.GetBaseFrame and inst:GetBaseFrame()))
+    if not frame then return false end
+    if not self._detSaved then
+        local pts = {}
+        for i = 1, frame:GetNumPoints() do pts[i] = { frame:GetPoint(i) } end
+        self._detSaved = { parent = frame:GetParent(), points = pts, w = frame:GetWidth(), h = frame:GetHeight(), scale = frame:GetScale() }
+    end
+    pcall(function()
+        if inst.UnlockInstance then inst:UnlockInstance() end
+        frame:SetParent(self.body)
+        frame:SetScale(1)
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", self.body, "TOPLEFT", 0, 0)
+        frame:SetPoint("BOTTOMRIGHT", self.body, "BOTTOMRIGHT", 0, 0)
+        frame:Show()
+    end)
+    self._detEmbedded = true
+    return true
+end
+
+function M:RestoreDetails()
+    local D = _G.Details
+    local inst = D and D.GetInstance and D:GetInstance(1)
+    local frame = inst and (inst.baseframe or (inst.GetBaseFrame and inst:GetBaseFrame()))
+    if frame and self._detSaved then
+        pcall(function()
+            frame:SetParent(self._detSaved.parent or UIParent)
+            frame:ClearAllPoints()
+            if self._detSaved.points and #self._detSaved.points > 0 then
+                for _, p in ipairs(self._detSaved.points) do frame:SetPoint(unpack(p)) end
+            end
+            if self._detSaved.w then frame:SetSize(self._detSaved.w, self._detSaved.h) end
+            frame:SetScale(self._detSaved.scale or 1)
+        end)
+    end
+    self._detEmbedded = false
+end
+
 function M:Enable()
     self._enabled = true
+    if self._placeholder then self._placeholder:Hide() end
+
+    -- Si Details est présent : on force sa fenêtre dans le module, et on n'utilise pas le moteur interne.
+    if not InCombatLockdown() and self:EmbedDetails() then
+        if self.body then self.body:SetScript("OnUpdate", nil) end
+        for _, b in ipairs(self.bars) do b:Hide() end
+        SP:SetModuleHeaderText(self, "|cFF888888Details|r")
+        return
+    end
+
+    -- Moteur interne (fallback).
     self:Prewarm(12)
     self.ev:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
     self.ev:RegisterEvent("PLAYER_REGEN_DISABLED")
     self.ev:RegisterEvent("PLAYER_REGEN_ENABLED")
-    if self._placeholder then self._placeholder:Hide() end
     self.body:SetScript("OnUpdate", function(_, elapsed)
         self._accum = self._accum + elapsed
-        if self._accum >= REFRESH then
-            self._accum = 0
-            self:Refresh()
-        end
+        if self._accum >= REFRESH then self._accum = 0; self:Refresh() end
     end)
     self:Refresh()
 end
@@ -93,6 +144,8 @@ function M:Disable()
     if self.ev then self.ev:UnregisterAllEvents() end
     if self.body then self.body:SetScript("OnUpdate", nil) end
     for _, b in ipairs(self.bars) do b:Hide() end
+    if self._detEmbedded then self:RestoreDetails() end
+    SP:SetModuleHeaderText(self, "")
 end
 
 function M:Prewarm(n)
