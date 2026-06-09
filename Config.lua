@@ -61,14 +61,17 @@ SP.defaults = {
         Raid           = { enabled = true,  collapsed = false, height = 180 },
         Auras          = { enabled = true,  collapsed = false, height = 90, tab = "all", iconSize = 26 },
         Bags           = { enabled = true,  collapsed = true,  height = 240,
-            categories = {  -- ordre + activation + repli ; `search` = filtre custom par nom
-                { key = "junk",       label = "Camelote",   enabled = true,  collapsed = false },
-                { key = "equipment",  label = "Équipement", enabled = true,  collapsed = false },
-                { key = "trade",      label = "Artisanat",  enabled = true,  collapsed = false },
-                { key = "consumable", label = "Utilisable", enabled = true,  collapsed = false },
-                { key = "quest",      label = "Quêtes",     enabled = true,  collapsed = false },
-                { key = "misc",       label = "Divers",     enabled = true,  collapsed = false },
-                { key = "empty",      label = "Vide",       enabled = true,  collapsed = true  },
+            known = {},   -- snapshot itemID connus (pour la section Récent)
+            -- color = couleur du titre ; group/groupPrefix = sous-catégories par sous-type ; search = filtre nom
+            categories = {
+                { key = "recent",     label = "Récent",     enabled = true,  collapsed = false, color = { 0.40, 0.90, 0.40 } },
+                { key = "junk",       label = "Camelote",   enabled = true,  collapsed = false, color = { 0.62, 0.62, 0.62 } },
+                { key = "equipment",  label = "Stuff",      enabled = true,  collapsed = false, color = { 0.70, 0.40, 0.95 }, group = true },
+                { key = "trade",      label = "Artisanat",  enabled = true,  collapsed = false, color = { 1.00, 0.55, 0.25 }, group = true, groupPrefix = "Composant" },
+                { key = "consumable", label = "Utilisable", enabled = true,  collapsed = false, color = { 1.00, 0.70, 0.25 }, group = true, groupPrefix = "Conso" },
+                { key = "quest",      label = "Quêtes",     enabled = true,  collapsed = false, color = { 1.00, 0.82, 0.00 } },
+                { key = "misc",       label = "Divers",     enabled = true,  collapsed = false, color = { 0.90, 0.85, 0.45 } },
+                { key = "empty",      label = "Vide",       enabled = true,  collapsed = true,  color = { 0.50, 0.50, 0.50 } },
             },
         },
         Knowledge      = { enabled = true,  collapsed = true,  height = 220 },

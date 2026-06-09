@@ -195,30 +195,59 @@ local function BagsOptions(page, y)
         function(v) _G.BAGANATOR_CONFIG = _G.BAGANATOR_CONFIG or {}; _G.BAGANATOR_CONFIG.bag_icon_size = v; apply() end,
         function(v) return v .. " px" end)
     local lh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 48); lh:SetText("Catégories — activer / nom / filtre par nom / ordre")
+    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 48); lh:SetText("Catégories — glisser ≡ pour l'ordre · couleur · nom · filtre")
     page.bagRows = {}
     page.RefreshBags = function()
         local yy = y - 70
         for i, c in ipairs(cfg.categories) do
             local row = page.bagRows[i]
             if not row then
-                row = CreateFrame("Frame", nil, page); row:SetSize(440, 22)
-                row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
-                row.name = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.name:SetSize(80, 18); row.name:SetAutoFocus(false); row.name:SetPoint("LEFT", row.check, "RIGHT", 6, 0)
+                row = CreateFrame("Frame", nil, page); row:SetSize(450, 22)
+                row.grip = CreateFrame("Button", nil, row); row.grip:SetSize(16, 18); row.grip:SetPoint("LEFT", row, "LEFT", 0, 0)
+                row.grip:RegisterForDrag("LeftButton")
+                row.grip.fs = row.grip:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge"); row.grip.fs:SetAllPoints(row.grip); row.grip.fs:SetText("|cFF888888≡|r")
+                row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row.grip, "RIGHT", 2, 0)
+                row.color = CreateFrame("Button", nil, row); row.color:SetSize(16, 16); row.color:SetPoint("LEFT", row.check, "RIGHT", 2, 0)
+                row.color.tex = row.color:CreateTexture(nil, "ARTWORK"); row.color.tex:SetAllPoints(row.color)
+                row.name = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.name:SetSize(80, 18); row.name:SetAutoFocus(false); row.name:SetPoint("LEFT", row.color, "RIGHT", 8, 0)
                 row.search = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.search:SetSize(100, 18); row.search:SetAutoFocus(false); row.search:SetPoint("LEFT", row.name, "RIGHT", 10, 0)
-                row.up = CreateFrame("Button", nil, row); row.up:SetSize(18, 18); row.up:SetPoint("LEFT", row, "LEFT", 290, 0); row.up:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-                row.down = CreateFrame("Button", nil, row); row.down:SetSize(18, 18); row.down:SetPoint("LEFT", row.up, "RIGHT", 2, 0); row.down:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
                 page.bagRows[i] = row
             end
+            row.catRef = c
             row:ClearAllPoints(); row:SetPoint("TOPLEFT", page, "TOPLEFT", 8, yy)
             row.check:SetChecked(c.enabled and true or false)
             row.check:SetScript("OnClick", function(s) c.enabled = s:GetChecked() and true or false; apply() end)
+            c.color = c.color or { 1, 0.82, 0 }
+            row.color.tex:SetColorTexture(c.color[1], c.color[2], c.color[3])
+            row.color:SetScript("OnClick", function()
+                if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
+                    ColorPickerFrame:SetupColorPickerAndShow({ r = c.color[1], g = c.color[2], b = c.color[3], hasOpacity = false,
+                        swatchFunc = function() local r, g, b = ColorPickerFrame:GetColorRGB(); c.color = { r, g, b }; row.color.tex:SetColorTexture(r, g, b); apply() end,
+                        cancelFunc = function() end })
+                end
+            end)
             row.name:SetText(c.label or c.key)
             row.name:SetScript("OnTextChanged", function(s, u) if u then c.label = s:GetText(); apply() end end)
             row.search:SetText(c.search or "")
             row.search:SetScript("OnTextChanged", function(s, u) if u then c.search = s:GetText(); apply() end end)
-            row.up:SetScript("OnClick", function() if i > 1 then cfg.categories[i], cfg.categories[i - 1] = cfg.categories[i - 1], cfg.categories[i]; page.RefreshBags(); apply() end end)
-            row.down:SetScript("OnClick", function() if i < #cfg.categories then cfg.categories[i], cfg.categories[i + 1] = cfg.categories[i + 1], cfg.categories[i]; page.RefreshBags(); apply() end end)
+            row.grip:SetScript("OnDragStart", function() page._dragCat = c end)
+            row.grip:SetScript("OnDragStop", function()
+                local src = page._dragCat; page._dragCat = nil
+                if not src then return end
+                local target
+                for _, r in ipairs(page.bagRows) do
+                    if r:IsShown() and r:IsMouseOver() and r.catRef then target = r.catRef; break end
+                end
+                if target and target ~= src then
+                    local cats, si, ti = cfg.categories
+                    for idx, cc in ipairs(cats) do if cc == src then si = idx end; if cc == target then ti = idx end end
+                    if si and ti then
+                        table.remove(cats, si)
+                        table.insert(cats, (si < ti) and (ti - 1) or ti, src)
+                        page.RefreshBags(); apply()
+                    end
+                end
+            end)
             row:Show(); yy = yy - 24
         end
         for j = #cfg.categories + 1, #page.bagRows do page.bagRows[j]:Hide() end
@@ -226,8 +255,8 @@ local function BagsOptions(page, y)
     local add = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
     add:SetSize(170, 22); add:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 8, 8); add:SetText("Ajouter un filtre (par nom)")
     add:SetScript("OnClick", function()
-        local n = 0; for _, c in ipairs(cfg.categories) do if c.key:match("^C%d+$") then n = n + 1 end end
-        table.insert(cfg.categories, 1, { key = "C" .. (n + 1), label = "Filtre " .. (n + 1), enabled = true, collapsed = false, search = "" })
+        local n = 0; for _, c in ipairs(cfg.categories) do if type(c.key) == "string" and c.key:match("^C%d+$") then n = n + 1 end end
+        table.insert(cfg.categories, 1, { key = "C" .. (n + 1), label = "Filtre " .. (n + 1), enabled = true, collapsed = false, search = "", color = { 0.5, 0.85, 1 } })
         page.RefreshBags(); apply()
     end)
     page:SetScript("OnShow", function() page.RefreshBags() end)

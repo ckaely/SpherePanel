@@ -1,10 +1,9 @@
 -- ============================================================
 -- Module : Bags — sac catégorisé (méthode inspirée de Baganator)
 -- ============================================================
--- Vue par catégories pliables (Camelote, Équipement, Artisanat, Utilisable, Quêtes, Divers, Vide).
--- Catégories configurables (activation / ordre / filtre custom par nom) dans les options.
--- Boutons SÉCURISÉS → l'usage/équipement des objets fonctionne (clic droit), clic gauche = déplacer.
--- Touche B → affiche le sac (réduit les autres modules ; restaure à la fermeture).
+-- Sections pliables + couleurs par section + sous-catégories (par sous-type) + section "Récent"
+-- (items pas vus depuis la dernière ouverture). Catégories configurables (ordre/couleur/filtre).
+-- Boutons SÉCURISÉS : clic droit = utiliser/équiper, clic gauche = déplacer.
 local ADDON_NAME, SP = ...
 
 local M = {
@@ -14,7 +13,8 @@ local M = {
 }
 
 local BAGS = { 0, 1, 2, 3, 4, 5 }
-local GAP, HDR_H = 2, 18
+local GAP, HDR_H, SUB_H = 2, 18, 15
+local SUB_COLOR = { 0.45, 0.75, 0.95 }
 
 local function BagCfg(key, default)
     local c = _G.BAGANATOR_CONFIG
@@ -23,7 +23,6 @@ local function BagCfg(key, default)
 end
 local function Ct() return C_Container end
 
--- Clé de catégorie "built-in" d'un objet (classID Blizzard + camelote).
 local function ClassKey(info)
     if (info.quality or 1) == 0 then return "junk" end
     local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(info.itemID)
@@ -34,15 +33,23 @@ local function ClassKey(info)
     else return "misc" end
 end
 
--- Catégorie d'un objet : filtres custom (par nom) prioritaires, sinon built-in.
-local function CategoryForItem(info, cats, enabledSet)
+-- Libellé de sous-catégorie (sous-type d'objet).
+local function GroupLabel(info, cat)
+    local _, itype, isub, _, _, classID = C_Item.GetItemInfoInstant(info.itemID)
+    if cat.groupPrefix and cat.groupPrefix ~= "" then
+        return cat.groupPrefix .. ": " .. (isub or itype or "Autres")
+    end
+    if classID == 4 then return (itype or "Armure") .. (isub and (": " .. isub) or "") end  -- armure
+    return itype or "Autres"  -- armes / autres par type
+end
+
+function M:CategoryForItem(info, cats, enabledSet)
+    if self.recentSet and self.recentSet[info.itemID] and enabledSet["recent"] then return "recent" end
     local name = info.hyperlink and (GetItemInfo(info.hyperlink))
     if name then
         local low = name:lower()
         for _, c in ipairs(cats) do
-            if c.enabled and c.search and c.search ~= "" and low:find(c.search:lower(), 1, true) then
-                return c.key
-            end
+            if c.enabled and c.search and c.search ~= "" and low:find(c.search:lower(), 1, true) then return c.key end
         end
     end
     local k = ClassKey(info)
@@ -65,11 +72,8 @@ local function CreateSlot(self, i)
         if s.bag and s.slot then GameTooltip:SetOwner(s, "ANCHOR_LEFT"); pcall(GameTooltip.SetBagItem, GameTooltip, s.bag, s.slot); GameTooltip:Show() end
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    -- clic gauche = ramasser/déposer (insécurisé, OK hors combat) ; clic droit = usage (sécurisé)
     b:SetScript("PreClick", function(s, btn)
-        if btn == "LeftButton" and s.bag and not InCombatLockdown() then
-            C_Container.PickupContainerItem(s.bag, s.slot)
-        end
+        if btn == "LeftButton" and s.bag and not InCombatLockdown() then C_Container.PickupContainerItem(s.bag, s.slot) end
     end)
     return b
 end
@@ -83,11 +87,16 @@ local function CreateHeader(self, i)
     return h
 end
 
+local function CreateSub(self, i)
+    local s = self.list:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    s:SetJustifyH("LEFT")
+    return s
+end
+
 -- ===== cycle de vie =========================================================
 function M:Init(body)
     self.body = body
-    self.slots = {}
-    self.headers = {}
+    self.slots, self.headers, self.subs = {}, {}, {}
     self.list = CreateFrame("Frame", nil, body)
     self.list:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
     self.list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -2, 2)
@@ -95,8 +104,7 @@ function M:Init(body)
 
     self.ev = CreateFrame("Frame")
     self.ev:SetScript("OnEvent", function(_, e)
-        if e == "PLAYER_REGEN_ENABLED" and self._dirty then self:RequestRefresh() end
-        if e ~= "PLAYER_REGEN_ENABLED" then self:RequestRefresh() end
+        if e == "PLAYER_REGEN_ENABLED" then if self._dirty then self:RequestRefresh() end else self:RequestRefresh() end
     end)
 
     self.toggle = CreateFrame("Button", "SpherePanelBagToggle", UIParent)
@@ -123,6 +131,7 @@ function M:Disable()
     if not InCombatLockdown() then pcall(ClearOverrideBindings, self.toggle) end
     for _, b in ipairs(self.slots) do b:Hide() end
     for _, h in ipairs(self.headers) do h:Hide() end
+    for _, s in ipairs(self.subs) do s:Hide() end
     SP:SetModuleHeaderText(self, "")
 end
 
@@ -146,6 +155,25 @@ function M:CollapseOthers(collapse)
     end
 end
 
+-- "Récent" : items pas vus depuis la dernière ouverture (diff de snapshot).
+function M:SnapshotOnOpen()
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.known = cfg.known or {}
+    local current = {}
+    for _, bag in ipairs(BAGS) do
+        local n = Ct().GetContainerNumSlots(bag) or 0
+        for slot = 1, n do
+            local info = Ct().GetContainerItemInfo(bag, slot)
+            if info and info.itemID then current[info.itemID] = true end
+        end
+    end
+    self.recentSet = {}
+    if next(cfg.known) ~= nil then
+        for id in pairs(current) do if not cfg.known[id] then self.recentSet[id] = true end end
+    end
+    cfg.known = current
+end
+
 function M:ToggleBags()
     if CloseAllBags then pcall(CloseAllBags) end
     local cfg = SP:GetModuleConfig(self.name)
@@ -154,6 +182,7 @@ function M:ToggleBags()
     cfg.collapsed = not cfg.collapsed
     SP:UpdateCollapseVisual(self)
     self:CollapseOthers(not cfg.collapsed)
+    if not cfg.collapsed and not InCombatLockdown() then self:SnapshotOnOpen() end
     SP:RebuildLayout()
     if not cfg.collapsed then self:RequestRefresh() end
 end
@@ -165,10 +194,14 @@ function M:RequestRefresh()
     C_Timer.After(0.1, function() self._pending = false; self:Refresh() end)
 end
 
--- ===== rendu catégorisé =====================================================
+-- ===== rendu ================================================================
+function M:_AcquireSlot(i) local b = self.slots[i] or CreateSlot(self, i); self.slots[i] = b; return b end
+function M:_AcquireHeader(i) local h = self.headers[i] or CreateHeader(self, i); self.headers[i] = h; return h end
+function M:_AcquireSub(i) local s = self.subs[i] or CreateSub(self, i); self.subs[i] = s; return s end
+
 function M:Refresh()
     if not self._enabled or not self.body or not C_Container then return end
-    if InCombatLockdown() then self._dirty = true; return end   -- attributs sécurisés non modifiables en combat
+    if InCombatLockdown() then self._dirty = true; return end
     self._dirty = false
 
     local cfg = SP:GetModuleConfig(self.name)
@@ -176,7 +209,6 @@ function M:Refresh()
     local enabledSet = {}
     for _, c in ipairs(cats) do if c.enabled then enabledSet[c.key] = true end end
 
-    -- collecte par catégorie
     local buckets, total, free = {}, 0, 0
     for _, c in ipairs(cats) do buckets[c.key] = {} end
     for _, bag in ipairs(BAGS) do
@@ -185,7 +217,7 @@ function M:Refresh()
         for slot = 1, n do
             local info = Ct().GetContainerItemInfo(bag, slot)
             if info and info.itemID then
-                local key = CategoryForItem(info, cats, enabledSet)
+                local key = self:CategoryForItem(info, cats, enabledSet)
                 if not buckets[key] then key = "misc"; buckets[key] = buckets[key] or {} end
                 buckets[key][#buckets[key] + 1] = { bag = bag, slot = slot, info = info }
             else
@@ -195,66 +227,90 @@ function M:Refresh()
     end
 
     local size = BagCfg("bag_icon_size", 30)
+    local greyJunk = BagCfg("icon_grey_junk", true)
     local w = self.list:GetWidth(); if not w or w < 1 then w = (SP.db.panel.width or 280) - 4 end
     local perRow = math.max(1, math.floor((w + GAP) / (size + GAP)))
+    local si, hi, subi, y = 0, 0, 0, 2
 
-    local si, hi, y = 0, 0, 2
+    local function placeItem(it, col, rowN, baseY)
+        si = si + 1
+        local b = self:_AcquireSlot(si)
+        b:SetSize(size, size); b:ClearAllPoints()
+        b:SetPoint("TOPLEFT", self.list, "TOPLEFT", col * (size + GAP), -(baseY + rowN * (size + GAP)))
+        b.bag, b.slot = it.bag, it.slot
+        b.icon:SetTexture(it.info.iconFileID)
+        local q = it.info.quality or 1
+        b.icon:SetDesaturated((q == 0) and greyJunk or false)
+        local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
+        if qc then b.border:SetColorTexture(qc.r, qc.g, qc.b, 1) else b.border:SetColorTexture(0.3, 0.3, 0.3, 1) end
+        local cnt = it.info.stackCount or 1
+        b.count:SetText(cnt > 1 and tostring(cnt) or "")
+        pcall(function() b:SetAttribute("type2", "item"); b:SetAttribute("bag", it.bag); b:SetAttribute("slot", it.slot) end)
+        b:Show()
+    end
+
+    local function grid(items, baseY)
+        for j, it in ipairs(items) do
+            placeItem(it, (j - 1) % perRow, math.floor((j - 1) / perRow), baseY)
+        end
+        return math.ceil(#items / perRow) * (size + GAP)
+    end
+
     for _, c in ipairs(cats) do
         if c.enabled then
             local items = buckets[c.key] or {}
             local count = (c.key == "empty") and free or #items
             if count > 0 then
-                -- header pliable
                 hi = hi + 1
-                local hdr = self.headers[hi] or CreateHeader(self, hi)
-                self.headers[hi] = hdr
-                hdr.cat = c
+                local hdr = self:_AcquireHeader(hi)
                 hdr.arrow:SetText(c.collapsed and "|cFFFFFFFF+|r" or "|cFFFFFFFF-|r")
-                hdr.fs:SetText(("|cFFFFD200%s|r  |cFF888888%d|r"):format(c.label, count))
+                local col = c.color or { 1, 0.82, 0 }
+                hdr.fs:SetText(("%s  |cFF888888%d|r"):format(c.label, count))
+                hdr.fs:SetTextColor(col[1], col[2], col[3])
                 hdr:ClearAllPoints()
                 hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
                 hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
-                hdr:SetScript("OnClick", function() c.collapsed = not c.collapsed; self:RequestRefresh() end)
+                hdr:SetScript("OnClick", function()
+                    if c.key == "recent" then self.recentSet = {} else c.collapsed = not c.collapsed end
+                    self:RequestRefresh()
+                end)
                 hdr:Show()
                 y = y + HDR_H + 1
 
                 if not c.collapsed then
                     if c.key == "empty" then
                         si = si + 1
-                        local b = self.slots[si] or CreateSlot(self, si); self.slots[si] = b
+                        local b = self:_AcquireSlot(si)
                         b.bag, b.slot = nil, nil
-                        b:SetSize(size, size); b:ClearAllPoints()
-                        b:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
-                        b.icon:SetTexture(nil); b.border:SetColorTexture(0.2, 0.2, 0.2, 1)
-                        b.icon:SetDesaturated(false)
+                        b:SetSize(size, size); b:ClearAllPoints(); b:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
+                        b.icon:SetTexture(nil); b.icon:SetDesaturated(false); b.border:SetColorTexture(0.2, 0.2, 0.2, 1)
                         b.count:SetText(tostring(free))
                         pcall(function() b:SetAttribute("type2", nil) end)
                         b:Show()
                         y = y + size + GAP
-                    else
-                        for j, it in ipairs(items) do
-                            si = si + 1
-                            local b = self.slots[si] or CreateSlot(self, si); self.slots[si] = b
-                            local col, rowN = (j - 1) % perRow, math.floor((j - 1) / perRow)
-                            b:SetSize(size, size); b:ClearAllPoints()
-                            b:SetPoint("TOPLEFT", self.list, "TOPLEFT", col * (size + GAP), -(y + rowN * (size + GAP)))
-                            b.bag, b.slot = it.bag, it.slot
-                            b.icon:SetTexture(it.info.iconFileID)
-                            local q = it.info.quality or 1
-                            b.icon:SetDesaturated((q == 0) and BagCfg("icon_grey_junk", true) or false)
-                            local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
-                            if qc then b.border:SetColorTexture(qc.r, qc.g, qc.b, 1) else b.border:SetColorTexture(0.3, 0.3, 0.3, 1) end
-                            local cnt = it.info.stackCount or 1
-                            b.count:SetText(cnt > 1 and tostring(cnt) or "")
-                            pcall(function()
-                                b:SetAttribute("type2", "item"); b:SetAttribute("bag", it.bag); b:SetAttribute("slot", it.slot)
-                            end)
-                            b:Show()
+                    elseif c.group then
+                        -- sous-catégories par sous-type
+                        local groups, order = {}, {}
+                        for _, it in ipairs(items) do
+                            local gl = GroupLabel(it.info, c)
+                            if not groups[gl] then groups[gl] = {}; order[#order + 1] = gl end
+                            local g = groups[gl]; g[#g + 1] = it
                         end
-                        local rows = math.ceil(#items / perRow)
-                        y = y + rows * (size + GAP)
+                        table.sort(order)
+                        for _, gl in ipairs(order) do
+                            subi = subi + 1
+                            local sf = self:_AcquireSub(subi)
+                            sf:ClearAllPoints(); sf:SetPoint("TOPLEFT", self.list, "TOPLEFT", 4, -y)
+                            sf:SetText(gl); sf:SetTextColor(SUB_COLOR[1], SUB_COLOR[2], SUB_COLOR[3])
+                            sf:Show()
+                            y = y + SUB_H
+                            y = y + grid(groups[gl], y)
+                            y = y + 2
+                        end
+                    else
+                        y = y + grid(items, y)
+                        y = y + 2
                     end
-                    y = y + 4
                 end
             end
         end
@@ -262,6 +318,7 @@ function M:Refresh()
 
     for i = si + 1, #self.slots do self.slots[i]:Hide() end
     for i = hi + 1, #self.headers do self.headers[i]:Hide() end
+    for i = subi + 1, #self.subs do self.subs[i]:Hide() end
 
     SP:SetModuleHeaderText(self, ("%d / %d"):format(free, total))
     local needed = math.max(HDR_H, y)
