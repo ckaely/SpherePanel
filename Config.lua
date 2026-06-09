@@ -35,7 +35,7 @@ SP.defaults = {
     modules = {
         -- Ordre initial. Le drag-to-reorder réécrit cette liste dans SPDB.
         order = {
-            "QuestTracker", "Chat", "DamageMeter", "Raid", "Auras",
+            "QuestTracker", "Chat", "DamageMeter", "Raid", "Auras", "Bags",
             "SilverDragon", "GameMenu", "SquareMap",
         },
         -- Config par module : enabled / collapsed / height.
@@ -59,6 +59,7 @@ SP.defaults = {
         DamageMeter    = { enabled = true,  collapsed = false, height = 150 },
         Raid           = { enabled = true,  collapsed = false, height = 180 },
         Auras          = { enabled = true,  collapsed = false, height = 90, tab = "all", iconSize = 26 },
+        Bags           = { enabled = true,  collapsed = true,  height = 220 },
         SilverDragon   = { enabled = true,  collapsed = false, height = 80  },
         GameMenu       = { enabled = true,  collapsed = false, height = 64,
             activeTab = "menus",     -- "menus" ou "addons"

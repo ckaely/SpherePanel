@@ -16,6 +16,7 @@ Modules\Chat.lua
 Modules\DamageMeter.lua
 Modules\Raid.lua
 Modules\Auras.lua
+Modules\Bags.lua
 Modules\SilverDragon.lua
 Modules\GameMenu.lua
 Modules\SquareMap.lua
