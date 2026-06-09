@@ -33,6 +33,47 @@ local function ClassKey(info)
     else return "misc" end
 end
 
+-- ===== iLvl + upgrade (Pawn si présent, sinon comparaison à l'équipé) =======
+local EQUIP_SLOT = {
+    INVTYPE_HEAD = 1, INVTYPE_NECK = 2, INVTYPE_SHOULDER = 3, INVTYPE_CHEST = 5, INVTYPE_ROBE = 5,
+    INVTYPE_WAIST = 6, INVTYPE_LEGS = 7, INVTYPE_FEET = 8, INVTYPE_WRIST = 9, INVTYPE_HAND = 10,
+    INVTYPE_CLOAK = 15, INVTYPE_2HWEAPON = 16, INVTYPE_WEAPON = 16, INVTYPE_WEAPONMAINHAND = 16,
+    INVTYPE_RANGED = 16, INVTYPE_RANGEDRIGHT = 16, INVTYPE_SHIELD = 17, INVTYPE_WEAPONOFFHAND = 17, INVTYPE_HOLDABLE = 17,
+}
+local MULTI_SLOT = { INVTYPE_FINGER = { 11, 12 }, INVTYPE_TRINKET = { 13, 14 } }
+
+local function NativeUpgrade(link, equipLoc)
+    local ilvl = link and GetDetailedItemLevelInfo(link)
+    if not ilvl then return false end
+    if MULTI_SLOT[equipLoc] then
+        local worst
+        for _, s in ipairs(MULTI_SLOT[equipLoc]) do
+            local el = GetInventoryItemLink("player", s)
+            local eil = el and GetDetailedItemLevelInfo(el) or 0
+            if not worst or eil < worst then worst = eil end
+        end
+        return ilvl > (worst or 0)
+    end
+    local slot = EQUIP_SLOT[equipLoc]
+    if not slot then return false end
+    local el = GetInventoryItemLink("player", slot)
+    if not el then return true end   -- slot vide → upgrade
+    return ilvl > (GetDetailedItemLevelInfo(el) or 0)
+end
+
+-- Upgrade ? Pawn prioritaire (poids de stats), sinon fallback ilvl natif.
+local function IsUpgrade(link, equipLoc)
+    if _G.PawnShouldItemLinkHaveUpgradeArrow then
+        local ok, res = pcall(_G.PawnShouldItemLinkHaveUpgradeArrow, link, true)
+        if ok then return res and true or false end
+    end
+    if _G.PawnShouldItemLinkHaveUpgradeArrowUnbudgeted then
+        local ok, res = pcall(_G.PawnShouldItemLinkHaveUpgradeArrowUnbudgeted, link, true)
+        if ok then return res and true or false end
+    end
+    return NativeUpgrade(link, equipLoc)
+end
+
 -- Libellé de sous-catégorie (sous-type d'objet).
 local function GroupLabel(info, cat)
     local _, itype, isub, _, _, classID = C_Item.GetItemInfoInstant(info.itemID)
@@ -67,6 +108,13 @@ local function CreateSlot(self, i)
     b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     b.count = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
     b.count:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
+    b.ilvl = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    b.ilvl:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 1, 1)
+    b.ilvl:SetTextColor(1, 0.82, 0)
+    b.upg = b:CreateTexture(nil, "OVERLAY"); b.upg:SetSize(13, 13); b.upg:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0); b.upg:Hide()
+    if not pcall(function() b.upg:SetAtlas("bags-greenarrow") end) or not b.upg:GetAtlas() then
+        b.upg:SetTexture("Interface\\Buttons\\UI-MicroStream-Green")
+    end
     b.hl = b:CreateTexture(nil, "HIGHLIGHT"); b.hl:SetAllPoints(b); b.hl:SetColorTexture(1, 1, 1, 0.2)
     b:SetScript("OnEnter", function(s)
         if s.bag and s.slot then GameTooltip:SetOwner(s, "ANCHOR_LEFT"); pcall(GameTooltip.SetBagItem, GameTooltip, s.bag, s.slot); GameTooltip:Show() end
@@ -245,6 +293,20 @@ function M:Refresh()
         if qc then b.border:SetColorTexture(qc.r, qc.g, qc.b, 1) else b.border:SetColorTexture(0.3, 0.3, 0.3, 1) end
         local cnt = it.info.stackCount or 1
         b.count:SetText(cnt > 1 and tostring(cnt) or "")
+        -- iLvl + flèche d'upgrade (équipement uniquement)
+        local link = it.info.hyperlink
+        local _, _, _, equipLoc, _, classID = C_Item.GetItemInfoInstant(it.info.itemID)
+        if (classID == 2 or classID == 4) and link then
+            if cfg.showIlvl ~= false then
+                local ilvl = GetDetailedItemLevelInfo(link)
+                b.ilvl:SetText(ilvl and tostring(ilvl) or "")
+            else
+                b.ilvl:SetText("")
+            end
+            b.upg:SetShown((cfg.showUpgrade ~= false) and IsUpgrade(link, equipLoc) or false)
+        else
+            b.ilvl:SetText(""); b.upg:Hide()
+        end
         pcall(function() b:SetAttribute("type2", "item"); b:SetAttribute("bag", it.bag); b:SetAttribute("slot", it.slot) end)
         b:Show()
     end
@@ -284,7 +346,7 @@ function M:Refresh()
                         b.bag, b.slot = nil, nil
                         b:SetSize(size, size); b:ClearAllPoints(); b:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
                         b.icon:SetTexture(nil); b.icon:SetDesaturated(false); b.border:SetColorTexture(0.2, 0.2, 0.2, 1)
-                        b.count:SetText(tostring(free))
+                        b.count:SetText(tostring(free)); b.ilvl:SetText(""); b.upg:Hide()
                         pcall(function() b:SetAttribute("type2", nil) end)
                         b:Show()
                         y = y + size + GAP

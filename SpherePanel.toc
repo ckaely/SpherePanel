@@ -5,7 +5,7 @@
 ## Version: 0.1.0
 ## SavedVariables: SPDB
 ## DefaultState: enabled
-## OptionalDeps: MyusKnowledgePointsTracker, Details
+## OptionalDeps: MyusKnowledgePointsTracker, Details, Pawn
 
 Core.lua
 Config.lua

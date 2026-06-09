@@ -194,11 +194,15 @@ local function BagsOptions(page, y)
         function() return _G.BAGANATOR_CONFIG and _G.BAGANATOR_CONFIG.bag_icon_size or 30 end,
         function(v) _G.BAGANATOR_CONFIG = _G.BAGANATOR_CONFIG or {}; _G.BAGANATOR_CONFIG.bag_icon_size = v; apply() end,
         function(v) return v .. " px" end)
+    MakeCheck(page, "Afficher l'iLvl", 16, y - 34,
+        function() return cfg.showIlvl end, function(v) cfg.showIlvl = v; apply() end)
+    MakeCheck(page, "Flèche d'upgrade (Pawn)", 160, y - 34,
+        function() return cfg.showUpgrade end, function(v) cfg.showUpgrade = v; apply() end)
     local lh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 48); lh:SetText("Catégories — glisser ≡ pour l'ordre · couleur · nom · filtre")
+    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 62); lh:SetText("Catégories — glisser ≡ pour l'ordre · couleur · nom · filtre")
     page.bagRows = {}
     page.RefreshBags = function()
-        local yy = y - 70
+        local yy = y - 84
         for i, c in ipairs(cfg.categories) do
             local row = page.bagRows[i]
             if not row then
