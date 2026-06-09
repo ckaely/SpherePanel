@@ -187,8 +187,55 @@ local function ChatOptions(page, y)
     page.RefreshChannels()
 end
 
+local function BagsOptions(page, y)
+    local cfg = SP:GetModuleConfig("Bags")
+    local function apply() local m = SP.modulesByName and SP.modulesByName["Bags"]; if m and m.RequestRefresh then m:RequestRefresh() end end
+    MakeSlider(page, "Taille des icônes", 16, y - 4, 20, 48, 1,
+        function() return _G.BAGANATOR_CONFIG and _G.BAGANATOR_CONFIG.bag_icon_size or 30 end,
+        function(v) _G.BAGANATOR_CONFIG = _G.BAGANATOR_CONFIG or {}; _G.BAGANATOR_CONFIG.bag_icon_size = v; apply() end,
+        function(v) return v .. " px" end)
+    local lh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 48); lh:SetText("Catégories — activer / nom / filtre par nom / ordre")
+    page.bagRows = {}
+    page.RefreshBags = function()
+        local yy = y - 70
+        for i, c in ipairs(cfg.categories) do
+            local row = page.bagRows[i]
+            if not row then
+                row = CreateFrame("Frame", nil, page); row:SetSize(440, 22)
+                row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
+                row.name = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.name:SetSize(80, 18); row.name:SetAutoFocus(false); row.name:SetPoint("LEFT", row.check, "RIGHT", 6, 0)
+                row.search = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.search:SetSize(100, 18); row.search:SetAutoFocus(false); row.search:SetPoint("LEFT", row.name, "RIGHT", 10, 0)
+                row.up = CreateFrame("Button", nil, row); row.up:SetSize(18, 18); row.up:SetPoint("LEFT", row, "LEFT", 290, 0); row.up:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
+                row.down = CreateFrame("Button", nil, row); row.down:SetSize(18, 18); row.down:SetPoint("LEFT", row.up, "RIGHT", 2, 0); row.down:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
+                page.bagRows[i] = row
+            end
+            row:ClearAllPoints(); row:SetPoint("TOPLEFT", page, "TOPLEFT", 8, yy)
+            row.check:SetChecked(c.enabled and true or false)
+            row.check:SetScript("OnClick", function(s) c.enabled = s:GetChecked() and true or false; apply() end)
+            row.name:SetText(c.label or c.key)
+            row.name:SetScript("OnTextChanged", function(s, u) if u then c.label = s:GetText(); apply() end end)
+            row.search:SetText(c.search or "")
+            row.search:SetScript("OnTextChanged", function(s, u) if u then c.search = s:GetText(); apply() end end)
+            row.up:SetScript("OnClick", function() if i > 1 then cfg.categories[i], cfg.categories[i - 1] = cfg.categories[i - 1], cfg.categories[i]; page.RefreshBags(); apply() end end)
+            row.down:SetScript("OnClick", function() if i < #cfg.categories then cfg.categories[i], cfg.categories[i + 1] = cfg.categories[i + 1], cfg.categories[i]; page.RefreshBags(); apply() end end)
+            row:Show(); yy = yy - 24
+        end
+        for j = #cfg.categories + 1, #page.bagRows do page.bagRows[j]:Hide() end
+    end
+    local add = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+    add:SetSize(170, 22); add:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 8, 8); add:SetText("Ajouter un filtre (par nom)")
+    add:SetScript("OnClick", function()
+        local n = 0; for _, c in ipairs(cfg.categories) do if c.key:match("^C%d+$") then n = n + 1 end end
+        table.insert(cfg.categories, 1, { key = "C" .. (n + 1), label = "Filtre " .. (n + 1), enabled = true, collapsed = false, search = "" })
+        page.RefreshBags(); apply()
+    end)
+    page:SetScript("OnShow", function() page.RefreshBags() end)
+    page.RefreshBags()
+end
+
 local SPECIFIC = {
-    GameMenu = MenusOptions, QuestTracker = QuestOptions, SquareMap = SquareMapOptions, Chat = ChatOptions,
+    GameMenu = MenusOptions, QuestTracker = QuestOptions, SquareMap = SquareMapOptions, Chat = ChatOptions, Bags = BagsOptions,
 }
 
 -- ===== Page d'un module =====================================================
