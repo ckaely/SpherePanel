@@ -104,7 +104,7 @@ local function CreateSlot(self, i)
     b:RegisterForClicks("AnyUp")
     b.border = b:CreateTexture(nil, "BACKGROUND"); b.border:SetAllPoints(b)
     b.icon = b:CreateTexture(nil, "ARTWORK")
-    b.icon:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1); b.icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
+    b.icon:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -2); b.icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
     b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     b.count = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
     b.count:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
@@ -291,6 +291,7 @@ function M:Refresh()
         b.icon:SetDesaturated((q == 0) and greyJunk or false)
         local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
         if qc then b.border:SetColorTexture(qc.r, qc.g, qc.b, 1) else b.border:SetColorTexture(0.3, 0.3, 0.3, 1) end
+        b.ilvl:SetTextColor((qc and qc.r) or 1, (qc and qc.g) or 0.82, (qc and qc.b) or 0)
         local cnt = it.info.stackCount or 1
         b.count:SetText(cnt > 1 and tostring(cnt) or "")
         -- iLvl + flèche d'upgrade (équipement uniquement)
