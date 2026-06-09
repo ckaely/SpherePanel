@@ -92,7 +92,30 @@ end
 
 function M:OnResize(w, h) self:RequestRefresh() end
 
--- B : affiche le sac dans le panneau (déplie le module + montre le panneau).
+-- Réduit (collapse=true) tous les autres modules pour donner l'espace au sac, ou restaure leur état.
+function M:CollapseOthers(collapse)
+    if collapse then
+        self._savedStates = {}
+        for _, m in ipairs(SP.modules) do
+            if m.name ~= self.name then
+                local c = SP:GetModuleConfig(m.name)
+                if c then
+                    self._savedStates[m.name] = c.collapsed
+                    c.collapsed = true
+                    SP:UpdateCollapseVisual(m)
+                end
+            end
+        end
+    elseif self._savedStates then
+        for name, st in pairs(self._savedStates) do
+            local c, m = SP:GetModuleConfig(name), SP.modulesByName[name]
+            if c and m then c.collapsed = st; SP:UpdateCollapseVisual(m) end
+        end
+        self._savedStates = nil
+    end
+end
+
+-- B : affiche le sac dans le panneau (réduit les autres modules ; restaure à la fermeture).
 function M:ToggleBags()
     if CloseAllBags then pcall(CloseAllBags) end
     local cfg = SP:GetModuleConfig(self.name)
@@ -100,6 +123,7 @@ function M:ToggleBags()
     if SP.panel then SP.panel:Show() end
     cfg.collapsed = not cfg.collapsed
     SP:UpdateCollapseVisual(self)
+    self:CollapseOthers(not cfg.collapsed)   -- ouverture → réduit les autres ; fermeture → restaure
     SP:RebuildLayout()
     if not cfg.collapsed then self:RequestRefresh() end
 end
@@ -116,9 +140,10 @@ function M:Refresh()
     local greyJunk = BagCfg("icon_grey_junk", true)
 
     -- collecte
-    local items, free = {}, 0
+    local items, free, total = {}, 0, 0
     for _, bag in ipairs(BAGS) do
         local n = Ct().GetContainerNumSlots(bag) or 0
+        total = total + n
         for slot = 1, n do
             local info = Ct().GetContainerItemInfo(bag, slot)
             if info and info.itemID then
@@ -163,7 +188,7 @@ function M:Refresh()
     end
     for i = #items + 1, #self.slots do self.slots[i]:Hide() end
 
-    SP:SetModuleHeaderText(self, ("%d libres"):format(free))
+    SP:SetModuleHeaderText(self, ("%d / %d"):format(free, total))
 
     -- hauteur dynamique
     local rows = math.max(1, math.ceil(#items / perRow))

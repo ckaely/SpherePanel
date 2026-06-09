@@ -123,23 +123,28 @@ function M:Init(body)
     end)
 end
 
+-- Construction des boutons-icônes maison (fallback si le vrai micro-menu est indisponible).
+function M:BuildCustomMenus()
+    for i, item in ipairs(ITEMS) do
+        local b = CreateFrame("Button", nil, self.menusPage)
+        b:SetSize(BTN, BTN)
+        local tex = b:CreateTexture(nil, "ARTWORK")
+        tex:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -2)
+        tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
+        ApplyIcon(tex, item)
+        b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        b.label, b.action = item[1], item.fn
+        b:SetScript("OnClick", function(s) pcall(s.action) end)
+        b:SetScript("OnEnter", function(s) GameTooltip:SetOwner(s, "ANCHOR_RIGHT"); GameTooltip:SetText(s.label); GameTooltip:Show() end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        self.buttons[i] = b
+    end
+end
+
 function M:Enable()
     if not self._built then
         if InCombatLockdown() then return end
-        for i, item in ipairs(ITEMS) do
-            local b = CreateFrame("Button", nil, self.menusPage)
-            b:SetSize(BTN, BTN)
-            local tex = b:CreateTexture(nil, "ARTWORK")
-            tex:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -2)
-            tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
-            ApplyIcon(tex, item)
-            b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-            b.label, b.action = item[1], item.fn
-            b:SetScript("OnClick", function(s) pcall(s.action) end)
-            b:SetScript("OnEnter", function(s) GameTooltip:SetOwner(s, "ANCHOR_RIGHT"); GameTooltip:SetText(s.label); GameTooltip:Show() end)
-            b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-            self.buttons[i] = b
-        end
+        if not self:EmbedMicroMenu() then self:BuildCustomMenus() end  -- vrai micro-menu Blizzard en priorité
         self._built = true
         if self._placeholder then self._placeholder:Hide() end
     end
@@ -151,7 +156,77 @@ end
 function M:Disable()
     for _, b in ipairs(self.buttons) do b:Hide() end
     self:RestoreAddons()
+    self:RestoreMicroMenu()
     SP:SetModuleHeaderText(self, "")
+end
+
+-- ------------------------------------------------------------
+-- Vrai micro-menu Blizzard intégré dans l'onglet Menus
+-- ------------------------------------------------------------
+function M:EmbedMicroMenu()
+    local names = _G.MICRO_BUTTONS
+    if type(names) ~= "table" then return false end
+    self.microButtons = self.microButtons or {}
+    self.microSaved = self.microSaved or {}
+    local got = false
+    for _, name in ipairs(names) do
+        local b = _G[name]
+        if b and not self.microSaved[b] then
+            local pts = {}
+            for i = 1, b:GetNumPoints() do pts[i] = { b:GetPoint(i) } end
+            self.microSaved[b] = { parent = b:GetParent(), points = pts, scale = b:GetScale() }
+            b:SetParent(self.menusPage)
+            b:SetScale(1)
+            self.microButtons[#self.microButtons + 1] = b
+            got = true
+        end
+    end
+    if got and not self._microHooked then
+        self._microHooked = true
+        if _G.UpdateMicroButtons then
+            hooksecurefunc("UpdateMicroButtons", function()
+                if self._microEmbedded and not InCombatLockdown()
+                    and SP:GetModuleConfig(self.name).activeTab == "menus" then
+                    self:LayoutMicroMenu()
+                end
+            end)
+        end
+    end
+    self._microEmbedded = got
+    return got
+end
+
+function M:LayoutMicroMenu()
+    if not self.microButtons then return 40 end
+    local w = self.menusPage:GetWidth()
+    if not w or w < 1 then w = (SP.db.panel.width or 280) - 8 end
+    local x, y, rowH = 0, 0, 0
+    for _, b in ipairs(self.microButtons) do
+        if b:GetParent() ~= self.menusPage then pcall(b.SetParent, b, self.menusPage) end
+        local bw, bh = b:GetWidth() or 24, b:GetHeight() or 30
+        if x + bw > w then x = 0; y = y + rowH + 2; rowH = 0 end
+        b:ClearAllPoints()
+        b:SetPoint("TOPLEFT", self.menusPage, "TOPLEFT", x, -y)
+        b:Show()
+        x = x + bw + 2
+        if bh > rowH then rowH = bh end
+    end
+    return y + rowH
+end
+
+function M:RestoreMicroMenu()
+    if not self.microSaved then return end
+    for b, o in pairs(self.microSaved) do
+        pcall(function()
+            b:SetParent(o.parent or _G.MicroMenu or UIParent)
+            b:SetScale(o.scale or 1)
+            b:ClearAllPoints()
+            if o.points and #o.points > 0 then for _, p in ipairs(o.points) do b:SetPoint(unpack(p)) end end
+        end)
+    end
+    self._microEmbedded = false
+    wipe(self.microSaved); if self.microButtons then wipe(self.microButtons) end
+    if _G.UpdateMicroButtons then pcall(_G.UpdateMicroButtons) end
 end
 
 -- ------------------------------------------------------------
@@ -168,43 +243,53 @@ function M:SetTab(tab)
     self:Layout()
 end
 
--- Onglet "Modules" : liste les modules (sauf Menus) avec boîte verte(actif)/rouge(inactif).
-local MOD_GREEN, MOD_RED = { 0.20, 0.80, 0.30 }, { 0.85, 0.25, 0.25 }
+-- Onglet "Modules" : boutons côte à côte (flow) qui s'illuminent quand le module est actif.
+local MOD_GREEN, MOD_RED = { 0.20, 0.80, 0.30 }, { 0.55, 0.20, 0.20 }
+local MBTN_H, MBTN_PAD, MBTN_GAP = 20, 10, 4
 function M:RefreshModulesTab()
     local list = {}
     for _, m in ipairs(SP:GetOrderedModules()) do
         if m.name ~= "GameMenu" then list[#list + 1] = m end
     end
-    local y = 4
+    local w = self.modulesPage:GetWidth()
+    if not w or w < 1 then w = (SP.db.panel.width or 280) - 8 end
+
+    local x, y, rowMax = 0, 4, 0
     for i, m in ipairs(list) do
-        local row = self.modRows[i]
-        if not row then
-            row = CreateFrame("Button", nil, self.modulesPage)
-            row:SetHeight(18)
-            row.box = row:CreateTexture(nil, "ARTWORK"); row.box:SetSize(12, 12); row.box:SetPoint("LEFT", row, "LEFT", 2, 0)
-            row.fs = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); row.fs:SetPoint("LEFT", row.box, "RIGHT", 6, 0)
-            row.hl = row:CreateTexture(nil, "HIGHLIGHT"); row.hl:SetAllPoints(row); row.hl:SetColorTexture(1, 1, 1, 0.1)
-            self.modRows[i] = row
+        local b = self.modRows[i]
+        if not b then
+            b = CreateFrame("Button", nil, self.modulesPage)
+            b:SetHeight(MBTN_H)
+            b.lit = b:CreateTexture(nil, "BACKGROUND"); b.lit:SetAllPoints(b)
+            b.glow = b:CreateTexture(nil, "ARTWORK"); b.glow:SetAllPoints(b)
+            b.glow:SetColorTexture(1, 1, 1, 0.18); b.glow:Hide()  -- "illumination" active
+            b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetPoint("CENTER")
+            b.hl = b:CreateTexture(nil, "HIGHLIGHT"); b.hl:SetAllPoints(b); b.hl:SetColorTexture(1, 1, 1, 0.12)
+            self.modRows[i] = b
         end
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", self.modulesPage, "TOPLEFT", 2, -y)
-        row:SetPoint("TOPRIGHT", self.modulesPage, "TOPRIGHT", -2, -y)
-        row.module = m
-        row.fs:SetText(m.label)
+        b.fs:SetText(m.label)
+        local bw = (b.fs:GetStringWidth() or 40) + MBTN_PAD * 2
+        if x + bw > w and x > 0 then x = 0; y = y + MBTN_H + MBTN_GAP end
+        b:SetWidth(bw)
+        b:ClearAllPoints()
+        b:SetPoint("TOPLEFT", self.modulesPage, "TOPLEFT", x, -y)
         local cfg = SP:GetModuleConfig(m.name)
         local on = cfg and cfg.enabled
         local c = on and MOD_GREEN or MOD_RED
-        row.box:SetColorTexture(c[1], c[2], c[3], 1)
-        row:SetScript("OnClick", function()
+        b.lit:SetColorTexture(c[1], c[2], c[3], on and 0.85 or 0.5)
+        b.glow:SetShown(on and true or false)   -- illuminé si actif
+        b.fs:SetTextColor(1, 1, 1)
+        b:SetScript("OnClick", function()
             local mc = SP:GetModuleConfig(m.name)
             if mc and mc.enabled then SP:DisableModuleUI(m) else SP:EnableModule(m.name) end
             self:RefreshModulesTab()
         end)
-        row:Show()
-        y = y + 20
+        b:Show()
+        x = x + bw + MBTN_GAP
+        if y + MBTN_H > rowMax then rowMax = y + MBTN_H end
     end
     for i = #list + 1, #self.modRows do self.modRows[i]:Hide() end
-    self._modulesTabH = 4 + #list * 20
+    self._modulesTabH = rowMax + 4
 end
 
 function M:UpdateHeaderInfo()
@@ -233,6 +318,8 @@ function M:Layout()
         needed = self:LayoutAddons(w)
     elseif cfg.activeTab == "modules" then
         needed = self._modulesTabH or 40
+    elseif self._microEmbedded then
+        needed = self:LayoutMicroMenu()
     else
         local rowW = PER_ROW * (BTN + GAP) - GAP
         local leftPad = math.max(GAP, (w - rowW) / 2)
