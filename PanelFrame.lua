@@ -85,7 +85,7 @@ function SP:CreatePanel()
     end)
     p.sizer = sizer
 
-    SP:_InitAutoFade(p)
+    SP:_InitPanelController(p)
     SP.panel = p
     return p
 end
@@ -102,51 +102,186 @@ local function lerp(cur, goal, elapsed, dur)
     return a
 end
 
-function SP:_InitAutoFade(p)
-    p._mActive = {}   -- [name] = dernier instant de survol
-    p._panelActive = GetTime()
-    p:SetScript("OnUpdate", function(self, elapsed)
-        local af = SP.db and SP.db.panel and SP.db.panel.autofade
-        local now = GetTime()
+-- Couleurs de glow par module (comportement 2).
+local GLOW_COLORS = {
+    { 0.95, 0.3, 0.3 }, { 0.3, 0.7, 0.95 }, { 0.4, 0.9, 0.4 }, { 0.95, 0.8, 0.3 },
+    { 0.8, 0.4, 0.95 }, { 0.3, 0.9, 0.85 }, { 0.95, 0.55, 0.25 }, { 0.6, 0.6, 0.95 }, { 0.9, 0.5, 0.7 },
+}
 
-        if not af or not af.enabled then
-            if self.bg:GetAlpha() ~= 0.85 then self.bg:SetAlpha(0.85) end
-            self.title:SetAlpha(1)
-            for _, m in ipairs(SP.modules) do if m.frame and m.frame:GetAlpha() ~= 1 then m.frame:SetAlpha(1) end end
-            return
+-- ===== Comportement 3 : libre + auto-fade alpha par module (option) =====
+function SP:_TickFree(p, elapsed)
+    local af = SP.db and SP.db.panel and SP.db.panel.autofade
+    local now = GetTime()
+    if not af or not af.enabled then
+        if p.bg:GetAlpha() ~= 0.85 then p.bg:SetAlpha(0.85) end
+        p.title:SetAlpha(1)
+        for _, m in ipairs(SP.modules) do if m.frame and m.frame:GetAlpha() ~= 1 then m.frame:SetAlpha(1) end end
+        return
+    end
+    local target, delay, dur, apply = af.alpha or 0.25, af.delay or 5, af.fadeDuration or 0.35, af.apply
+    if p:IsMouseOver() then p._panelActive = now end
+    local pg = ((now - (p._panelActive or 0)) > delay) and target or 1
+    p.title:SetAlpha(lerp(p.title:GetAlpha(), pg, elapsed, dur))
+    p.bg:SetAlpha(lerp(p.bg:GetAlpha(), pg * 0.85, elapsed, dur))
+    for _, m in ipairs(SP.modules) do
+        local f = m.frame
+        if f and f:IsShown() then
+            local cfg = SP:GetModuleConfig(m.name)
+            local goal
+            if (cfg and cfg.pinned) or (apply and apply[m.name] == false) then goal = 1
+            else
+                if f:IsMouseOver() then p._mActive[m.name] = now end
+                goal = ((now - (p._mActive[m.name] or 0)) > delay) and target or 1
+            end
+            local cur = f:GetAlpha()
+            if cur ~= goal then f:SetAlpha(lerp(cur, goal, elapsed, dur)) end
         end
+    end
+end
 
-        local target = af.alpha or 0.25
-        local delay  = af.delay or 5
-        local dur    = af.fadeDuration or 0.35
-        local apply  = af.apply
+-- ===== Comportements 1/2 : glissement sur le côté =====
+function SP:_TickSlide(p, elapsed)
+    local b = SP.db.panel.behavior
+    local side = SP.db.panel.side or "right"
+    local dir = (side == "left") and -1 or 1
+    local hidden = ((p:GetWidth() or 280) + 40) * dir
+    local af = SP.db.panel.autofade or {}
+    local delay, dur = af.delay or 5, af.fadeDuration or 0.35
+    local now = GetTime()
 
-        -- Barre de titre + fond : suivent le survol global du panneau.
-        if self:IsMouseOver() then self._panelActive = now end
-        local panelGoal = ((now - self._panelActive) > delay) and target or 1
-        self.title:SetAlpha(lerp(self.title:GetAlpha(), panelGoal, elapsed, dur))
-        self.bg:SetAlpha(lerp(self.bg:GetAlpha(), panelGoal * 0.85, elapsed, dur))
+    local revealAll
+    if b == 1 then
+        if p:IsMouseOver() or (p.edge and p.edge:IsMouseOver()) then p._panelActive = now end
+        revealAll = (now - (p._panelActive or 0)) <= delay
+    end
 
-        -- Chaque module individuellement.
-        for _, m in ipairs(SP.modules) do
-            local f = m.frame
-            if f and f:IsShown() then
-                local cfg = SP:GetModuleConfig(m.name)
-                local pinned  = cfg and cfg.pinned
-                local excluded = apply and apply[m.name] == false
-                local goal
-                if pinned or excluded then
-                    goal = 1
-                else
-                    if f:IsMouseOver() then self._mActive[m.name] = now end
-                    local last = self._mActive[m.name] or 0
-                    goal = ((now - last) > delay) and target or 1
-                end
-                local cur = f:GetAlpha()
-                if cur ~= goal then f:SetAlpha(lerp(cur, goal, elapsed, dur)) end
+    local anyRevealed = false
+    for _, m in ipairs(SP.modules) do
+        local f = m.frame
+        if f and f:IsShown() and m._layoutTop then
+            local cfg = SP:GetModuleConfig(m.name)
+            local reveal
+            if cfg and cfg.pinned then reveal = true
+            elseif b == 1 then reveal = revealAll
+            else
+                if f:IsMouseOver() or m._glowHover then p._mActive[m.name] = now end
+                reveal = (now - (p._mActive[m.name] or 0)) <= delay
+            end
+            if reveal then anyRevealed = true end
+            local goal = reveal and 0 or hidden
+            local cur = lerp(m._curSlide or 0, goal, elapsed, dur)
+            if math.abs(cur - goal) < 0.5 then cur = goal end
+            m._curSlide = cur
+            f:ClearAllPoints()
+            f:SetPoint("TOPLEFT", p.content, "TOPLEFT", cur, -m._layoutTop)
+            f:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", cur, -m._layoutTop)
+        end
+    end
+
+    local bgGoal = anyRevealed and 0.85 or 0
+    local tGoal  = anyRevealed and 1 or 0
+    p.bg:SetAlpha(lerp(p.bg:GetAlpha(), bgGoal, elapsed, dur))
+    p.title:SetAlpha(lerp(p.title:GetAlpha(), tGoal, elapsed, dur))
+
+    if b == 2 then SP:_UpdateEdgeGlows(p) else SP:_HideEdgeGlows(p) end
+end
+
+function SP:_HideEdgeGlows(p)
+    if p.edge and p.edge.glows then for _, g in ipairs(p.edge.glows) do g:Hide() end end
+end
+
+function SP:_UpdateEdgeGlows(p)
+    local edge = p.edge
+    local uh = UIParent:GetTop()
+    local leftSide = (SP.db.panel.side or "right") == "left"
+    local i = 0
+    for _, m in ipairs(SP.modules) do
+        local f = m.frame
+        if f and f:IsShown() and m._layoutTop then
+            local cfg = SP:GetModuleConfig(m.name)
+            local slidOff = (math.abs(m._curSlide or 0) > 4) and not (cfg and cfg.pinned)
+            i = i + 1
+            local g = edge.glows[i]
+            if not g then
+                g = CreateFrame("Frame", nil, edge)
+                g:EnableMouse(true)
+                g.tex = g:CreateTexture(nil, "OVERLAY"); g.tex:SetAllPoints(g)
+                g:SetScript("OnEnter", function(s) if s._m then s._m._glowHover = true end end)
+                g:SetScript("OnLeave", function(s) if s._m then s._m._glowHover = false end end)
+                edge.glows[i] = g
+            end
+            g._m = m
+            local c = GLOW_COLORS[((i - 1) % #GLOW_COLORS) + 1]
+            g.tex:SetColorTexture(c[1], c[2], c[3], 0.85)
+            local top = f:GetTop()
+            if top and uh and slidOff then
+                g:ClearAllPoints()
+                g:SetWidth(6); g:SetHeight(f:GetHeight() or 20)
+                g:SetPoint(leftSide and "LEFT" or "RIGHT", edge, leftSide and "LEFT" or "RIGHT", 0, 0)
+                g:SetPoint("TOP", edge, "TOP", 0, -(uh - top))
+                g:Show()
+            else
+                g:Hide()
             end
         end
-    end)
+    end
+    for j = i + 1, #edge.glows do edge.glows[j]:Hide() end
+end
+
+function SP:_ResetSlides(p)
+    for _, m in ipairs(SP.modules) do
+        if m.frame and m._layoutTop then
+            m._curSlide = 0
+            m.frame:ClearAllPoints()
+            m.frame:SetPoint("TOPLEFT", p.content, "TOPLEFT", 0, -m._layoutTop)
+            m.frame:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", 0, -m._layoutTop)
+        end
+    end
+    p.bg:SetAlpha(0.85); p.title:SetAlpha(1)
+    SP:_HideEdgeGlows(p)
+end
+
+function SP:_PanelTick(p, elapsed)
+    local b = (SP.db and SP.db.panel and SP.db.panel.behavior) or 3
+    if b == 1 or b == 2 then SP:_TickSlide(p, elapsed) else SP:_TickFree(p, elapsed) end
+end
+
+function SP:_InitPanelController(p)
+    p._mActive = {}
+    p._panelActive = GetTime()
+    local edge = CreateFrame("Frame", "SpherePanelEdge", UIParent)
+    edge:SetWidth(10); edge:EnableMouse(true); edge:SetFrameStrata("HIGH"); edge:Hide()
+    edge.glows = {}
+    p.edge = edge
+    p:SetScript("OnUpdate", function(self, e) SP:_PanelTick(self, e) end)
+end
+
+-- Applique le comportement choisi (ancrage côté, bord déclencheur). Appelé au login + à chaque changement.
+function SP:ApplyPanelBehavior()
+    local p = SP.panel
+    if not p then return end
+    local b = SP.db.panel.behavior or 3
+    local side = SP.db.panel.side or "right"
+    if b == 1 or b == 2 then
+        -- aimante le panneau au bord choisi
+        local y = SP.db.panel.y or -200
+        p:ClearAllPoints()
+        if side == "left" then
+            p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", math.abs(SP.db.panel.x or 20), y)
+        else
+            p:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -math.abs(SP.db.panel.x or 20), y)
+        end
+    end
+    if p.edge then
+        p.edge:ClearAllPoints()
+        if side == "left" then
+            p.edge:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0); p.edge:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+        else
+            p.edge:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0); p.edge:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", 0, 0)
+        end
+        p.edge:SetShown(b == 1 or b == 2)
+    end
+    if b == 3 then SP:_ResetSlides(p) else p._panelActive = 0 end  -- 1/2 : démarre réduit
 end
 
 -- ------------------------------------------------------------

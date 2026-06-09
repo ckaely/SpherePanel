@@ -84,22 +84,26 @@ function M:Init(body)
         if url then self:CopyText(url); return end
         local mid = link:match("^spMsg:(%d+)$")
         if mid then local info = self.msgInfo[tonumber(mid)]; if info then self:CopyText(info.raw) end; return end
-        local who = link:match("^spWhisper:(.+)$")
+        local who = link:match("^spWhisper:(.-);;%d+$")
         if who then self:StartWhisper(who); return end
         SetItemRef(link, text, button)
     end)
     self.smf:SetScript("OnHyperlinkEnter", function(s, link)
         local mid = link:match("^spMsg:(%d+)$")
-        if mid then
-            local info = self.msgInfo[tonumber(mid)]
-            if info then GameTooltip:SetOwner(s, "ANCHOR_LEFT"); GameTooltip:SetText(date("%d/%m/%Y %H:%M:%S", info.t)); GameTooltip:Show() end
-            return
-        end
-        local who = link:match("^spWhisper:(.+)$")
-        if who then
-            GameTooltip:SetOwner(s, "ANCHOR_LEFT")
-            GameTooltip:SetText("Chuchoter à " .. (Ambiguate and Ambiguate(who, "none") or who))
-            GameTooltip:Show()
+        local _, wid = nil, nil
+        if not mid then _, wid = link:match("^spWhisper:(.-);;(%d+)$") end
+        local id = mid or wid
+        if id then
+            local info = self.msgInfo[tonumber(id)]
+            if info then
+                -- popup à gauche du panneau : date + heure du message
+                GameTooltip:SetOwner(s, "ANCHOR_NONE")
+                GameTooltip:ClearAllPoints()
+                GameTooltip:SetPoint("TOPRIGHT", self.body, "TOPLEFT", -4, 0)
+                GameTooltip:SetText(date("%A %d/%m/%Y", info.t), 1, 1, 1)
+                GameTooltip:AddLine(date("%H:%M:%S", info.t), 0.8, 0.8, 0.8)
+                GameTooltip:Show()
+            end
         end
     end)
     self.smf:SetScript("OnHyperlinkLeave", function() GameTooltip:Hide() end)
@@ -236,7 +240,7 @@ function M:PrimaryKey(typeKey, channelName)
     return "A"
 end
 
-function M:BuildName(author, guid)
+function M:BuildName(author, guid, id)
     if not author or author == "" then return nil end
     local short = Ambiguate and Ambiguate(author, "none") or author
     local cfg = SP:GetModuleConfig(self.name)
@@ -247,7 +251,8 @@ function M:BuildName(author, guid)
         if c then colored = ("|cff%02x%02x%02x%s|r"):format(c.r * 255, c.g * 255, c.b * 255, short) end
     end
     colored = colored or ("|cffffffff" .. short .. "|r")
-    return ("|HspWhisper:%s|h%s|h"):format(author, colored)
+    -- lien : survol = date/heure (popup gauche), clic = chuchotement
+    return ("|HspWhisper:%s;;%d|h%s|h"):format(author, id or 0, colored)
 end
 
 function M:Push(key, entry)
@@ -267,7 +272,7 @@ function M:AddMessage(typeKey, msg, author, channelName, guid)
     local pk = self:PrimaryKey(typeKey, channelName)
     local col = self.colorOf[pk] or self.colorOf.A or { 1, 1, 1 }
     local ts = ("|cff808080|HspMsg:%d|h[%s]|h|r "):format(id, date("%H:%M"))
-    local name = self:BuildName(author, guid)
+    local name = self:BuildName(author, guid, id)
     local line = ts .. (name and (name .. ": ") or "") .. LinkifyURLs(msg)
     local entry = { line, col[1], col[2], col[3] }
 

@@ -64,7 +64,50 @@ end
 
 function M:UpdateZone()
     local z = (GetMinimapZoneText and GetMinimapZoneText()) or (GetZoneText and GetZoneText()) or ""
-    SP:SetModuleHeaderText(self, z)
+    local coords = ""
+    if C_Map and C_Map.GetBestMapForUnit then
+        local mid = C_Map.GetBestMapForUnit("player")
+        if mid then
+            local pos = C_Map.GetPlayerMapPosition(mid, "player")
+            if pos then
+                local x, y = pos:GetXY()
+                if x and y and (x > 0 or y > 0) then
+                    coords = ("  |cFFAAAAAA%.1f, %.1f|r"):format(x * 100, y * 100)
+                end
+            end
+        end
+    end
+    SP:SetModuleHeaderText(self, z .. coords)
+end
+
+-- Masque les décorations Blizzard (anneau, boussole, zoom) et les icônes parasites restées sur la minimap.
+function M:CleanMinimap()
+    if InCombatLockdown() then return end
+    self._hiddenDecor = self._hiddenDecor or {}
+    for _, nm in ipairs({
+        "MinimapBorder", "MinimapBorderTop", "MinimapCompassTexture", "MinimapNorthTag",
+        "MinimapZoomIn", "MinimapZoomOut", "Minimap_ZoomIn", "Minimap_ZoomOut",
+        "MiniMapWorldMapButton", "MinimapZoneTextButton", "MiniMapTracking", "MinimapBackdrop",
+    }) do
+        local f = _G[nm]
+        if f and f.IsShown and f:IsShown() then pcall(f.Hide, f); self._hiddenDecor[f] = true end
+    end
+    -- icônes d'addons non LibDBIcon restées sur la minimap (déjà collectées dans Menus sinon)
+    for _, c in ipairs({ Minimap:GetChildren() }) do
+        local n = c:GetName()
+        local w = c:GetWidth() or 0
+        if c:IsShown() and c:GetObjectType() == "Button" and w > 0 and w < 44
+            and not (n and (n:match("^Minimap") or n:match("^MiniMap"))) then
+            pcall(c.Hide, c); self._hiddenDecor[c] = true
+        end
+    end
+end
+
+function M:RestoreMinimapDecor()
+    if self._hiddenDecor then
+        for f in pairs(self._hiddenDecor) do pcall(f.Show, f) end
+        wipe(self._hiddenDecor)
+    end
 end
 
 function M:Enable()
@@ -79,12 +122,13 @@ function M:Enable()
     if self._placeholder then self._placeholder:Hide() end
 
     Apply(self)
+    self:CleanMinimap()
     -- ré-application différée : GW2UI peut repositionner après nous au login
-    C_Timer.After(0.2, function() Apply(self) end)
-    C_Timer.After(1.0, function() Apply(self) end)
-    -- ticker d'enforcement : on garde la main face aux autres addons
+    C_Timer.After(0.2, function() Apply(self); self:CleanMinimap() end)
+    C_Timer.After(1.0, function() Apply(self); self:CleanMinimap() end)
+    -- ticker d'enforcement : on garde la main face aux autres addons + coords live
     if not self._ticker then
-        self._ticker = C_Timer.NewTicker(0.5, function() Apply(self) end)
+        self._ticker = C_Timer.NewTicker(0.5, function() Apply(self); self:UpdateZone() end)
     end
 end
 
@@ -92,6 +136,7 @@ function M:Disable()
     self._enabled = false
     if self.ev then self.ev:UnregisterAllEvents() end
     SP:SetModuleHeaderText(self, "")
+    self:RestoreMinimapDecor()
     if self._ticker then self._ticker:Cancel(); self._ticker = nil end
     local mm = Minimap
     if mm and self.saved then

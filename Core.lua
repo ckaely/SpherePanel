@@ -50,6 +50,7 @@ end
 function SP:OnLogin()
     SP:CreatePanel()      -- PanelFrame.lua : frame déplaçable + resize
     SP:BuildModules()     -- ModuleSystem.lua : header + content par module (appelle RebuildLayout)
+    SP:ApplyPanelBehavior()  -- comportement 1/2/3 (magnétisation + bord déclencheur)
     SP:SetupSlash()
     -- RÈGLE : ObjectiveTrackerFrame:Hide() sera déclenché par QuestTracker (étape 4),
     --         UNIQUEMENT à partir d'ici (PLAYER_LOGIN), jamais au chargement du fichier.

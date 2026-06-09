@@ -68,7 +68,8 @@ function M:Init(body)
     self.body = body
     self.buttons = {}
     self.stolen = {}
-    self.order = {}
+    self.order = {}      -- holders affichés
+    self.holders = {}    -- pool de cases carrées
 
     -- Barre d'onglets
     self.tabs = CreateFrame("Frame", nil, body)
@@ -207,14 +208,12 @@ function M:LayoutAddons(w)
     if perRow > count then perRow = count end
     local rowW = perRow * (ICON + IGAP) - IGAP
     local leftPad = (cfg.addonAlign == "center") and math.max(IGAP, (w - rowW) / 2) or IGAP
-    for i, button in ipairs(self.order) do
+    for i, h in ipairs(self.order) do
         local col, rowN = (i - 1) % perRow, math.floor((i - 1) / perRow)
-        local cx = leftPad + col * (ICON + IGAP) + ICON / 2
-        local cy = -(IGAP + rowN * (ICON + IGAP) + ICON / 2)
-        pcall(button.SetSize, button, ICON, ICON)
-        button:ClearAllPoints()
-        button:SetPoint("CENTER", self.addonsPage, "TOPLEFT", cx, cy)
-        button:Show()
+        h:ClearAllPoints()
+        h:SetSize(ICON, ICON)
+        h:SetPoint("TOPLEFT", self.addonsPage, "TOPLEFT", leftPad + col * (ICON + IGAP), -(IGAP + rowN * (ICON + IGAP)))
+        h:Show()
     end
     local rows = math.ceil(count / perRow)
     return IGAP + rows * (ICON + IGAP)
@@ -231,61 +230,96 @@ local function Blacklisted(name, list)
     return false
 end
 
+-- Trouve la texture d'icône d'un bouton minimap (LibDBIcon ou heuristique).
+local function GrabIcon(button)
+    local cand = button.icon or button.Icon
+    if cand and cand.GetTexture then return cand end
+    for _, r in ipairs({ button:GetRegions() }) do
+        if r.GetObjectType and r:GetObjectType() == "Texture" then
+            local tx = r:GetTexture()
+            local at = r.GetAtlas and r:GetAtlas()
+            local s = tostring(tx or at or ""):lower()
+            if (tx or at) and not (s:find("border") or s:find("background")
+                or s:find("tracking") or s:find("ring") or s:find("highlight")) then
+                return r
+            end
+        end
+    end
+end
+
+-- Case carrée uniforme (contour clair + fond sombre + icône + highlight).
+function M:AcquireHolder(i)
+    local h = self.holders[i]
+    if not h then
+        if InCombatLockdown() then return nil end
+        h = CreateFrame("Frame", nil, self.addonsPage)
+        h:Hide()
+        h.outline = h:CreateTexture(nil, "BACKGROUND")
+        h.outline:SetAllPoints(h); h.outline:SetColorTexture(0.35, 0.35, 0.42, 1)
+        h.bg = h:CreateTexture(nil, "BORDER")
+        h.bg:SetPoint("TOPLEFT", h, "TOPLEFT", 1, -1); h.bg:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -1, 1)
+        h.bg:SetColorTexture(0.09, 0.09, 0.11, 1)
+        h.icon = h:CreateTexture(nil, "ARTWORK")
+        h.icon:SetPoint("TOPLEFT", h, "TOPLEFT", 2, -2); h.icon:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -2, 2)
+        h.hl = h:CreateTexture(nil, "OVERLAY")
+        h.hl:SetAllPoints(h); h.hl:SetColorTexture(0.30, 0.55, 0.95, 0.35); h.hl:Hide()
+        self.holders[i] = h
+    end
+    return h
+end
+
+-- Capture un bouton d'addon dans une case carrée uniforme (icône copiée, textures natives masquées).
 function M:StealOne(button)
     if not button or self.stolen[button] then return end
+    local idx = #self.order + 1
+    local h = self:AcquireHolder(idx)
+    if not h then return end
+
+    -- copie l'icône dans la case
+    local src = GrabIcon(button)
+    if src then
+        local at = src.GetAtlas and src:GetAtlas()
+        if at and at ~= "" then
+            pcall(h.icon.SetAtlas, h.icon, at, false)
+        else
+            local tx = src:GetTexture()
+            if tx then h.icon:SetTexture(tx); h.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+        end
+    end
+
+    -- sauvegarde + masque toutes les textures natives du bouton
     local pts = {}
     for i = 1, button:GetNumPoints() do pts[i] = { button:GetPoint(i) } end
+    local hidden = {}
+    for _, r in ipairs({ button:GetRegions() }) do
+        if r.GetObjectType and r:GetObjectType() == "Texture" and r:IsShown() then
+            hidden[#hidden + 1] = r; r:Hide()
+        end
+    end
     self.stolen[button] = {
         parent = button:GetParent(), points = pts, scale = button:GetScale(),
         onUpdate = button:GetScript("OnUpdate"),
         onDragStart = button:GetScript("OnDragStart"),
         onDragStop = button:GetScript("OnDragStop"),
-        movable = button:IsMovable(),
+        movable = button:IsMovable(), hidden = hidden, holder = h,
     }
     pcall(function() button:SetScript("OnUpdate", nil) end)
     pcall(function() button:SetScript("OnDragStart", nil) end)
     pcall(function() button:SetScript("OnDragStop", nil) end)
     pcall(function() button:SetMovable(false) end)
-    button:SetParent(self.addonsPage)
-    button:SetScale(1)
-    pcall(self.RestyleButton, self, button)
-    self.order[#self.order + 1] = button
-end
 
--- Style carré moderne : retire le cerclage circulaire, icône carrée, contour + highlight.
-function M:RestyleButton(button)
-    local o = self.stolen[button]
-    if not o then return end
-    if not button._spBorder then
-        local bd = button:CreateTexture(nil, "BACKGROUND")
-        bd:SetPoint("TOPLEFT", button, "TOPLEFT", -1, 1)
-        bd:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
-        bd:SetColorTexture(0.10, 0.10, 0.13, 1)
-        button._spBorder = bd
-        local hl = button:CreateTexture(nil, "OVERLAY")
-        hl:SetAllPoints(button); hl:SetColorTexture(0.30, 0.55, 0.95, 0.35); hl:Hide()
-        button._spHL = hl
-        button:HookScript("OnEnter", function() if button._spStyled then hl:Show() end end)
-        button:HookScript("OnLeave", function() hl:Hide() end)
+    -- le bouton devient une couche de clic transparente par-dessus la case
+    button:SetParent(h)
+    button:ClearAllPoints(); button:SetAllPoints(h)
+    button:SetScale(1)
+    if not button._spHooked then
+        button._spHooked = true
+        button:HookScript("OnEnter", function() if button._spH then button._spH.hl:Show() end end)
+        button:HookScript("OnLeave", function() if button._spH then button._spH.hl:Hide() end end)
     end
-    local icon = button.icon or button.Icon or _G[(button:GetName() or "") .. "Icon"]
-    if icon and icon.SetTexCoord then
-        button._spIcon = icon
-        if not o.iconPts then
-            local pts = {}
-            for i = 1, icon:GetNumPoints() do pts[i] = { icon:GetPoint(i) } end
-            o.iconPts = pts
-        end
-        icon:ClearAllPoints()
-        icon:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
-        icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
-        pcall(icon.SetTexCoord, icon, 0.08, 0.92, 0.08, 0.92)
-        pcall(icon.SetDrawLayer, icon, "ARTWORK")
-    end
-    local border = button.border or button.Border or _G[(button:GetName() or "") .. "Border"]
-    if border and border.Hide then o.hadBorder = border:IsShown(); border:Hide() end
-    button._spStyled = true
-    button._spBorder:Show()
+    button._spH = h
+    h.button = button
+    self.order[idx] = h
 end
 
 function M:CollectAddons()
@@ -309,27 +343,15 @@ function M:CollectAddons()
             self:StealOne(c)
         end
     end
-    table.sort(self.order, function(a, b) return (a:GetName() or "") < (b:GetName() or "") end)
+    table.sort(self.order, function(a, b) return (a.button:GetName() or "") < (b.button:GetName() or "") end)
 end
 
 function M:RestoreAddons()
     for button, o in pairs(self.stolen) do
         pcall(function()
-            -- défait le restyle
-            if button._spStyled then
-                if button._spBorder then button._spBorder:Hide() end
-                if button._spHL then button._spHL:Hide() end
-                local icon = button._spIcon
-                if icon then
-                    icon:ClearAllPoints()
-                    if o.iconPts and #o.iconPts > 0 then for _, p in ipairs(o.iconPts) do icon:SetPoint(unpack(p)) end
-                    else icon:SetAllPoints(button) end
-                    pcall(icon.SetTexCoord, icon, 0, 1, 0, 1)
-                end
-                local border = button.border or button.Border or _G[(button:GetName() or "") .. "Border"]
-                if border and o.hadBorder then border:Show() end
-                button._spStyled = false
-            end
+            if o.hidden then for _, r in ipairs(o.hidden) do r:Show() end end
+            if o.holder then o.holder.button = nil; o.holder:Hide() end
+            button._spH = nil
             button:SetParent(o.parent or Minimap)
             button:SetScale(o.scale or 1)
             button:SetMovable(o.movable and true or false)

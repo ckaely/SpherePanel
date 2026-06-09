@@ -23,7 +23,9 @@ SP.defaults = {
         y       = -200,
         width   = 280,
         locked  = false,
-        autofade = {          -- estompage automatique (phase 2)
+        behavior = 3,         -- 1 = panneau magnétisé glissant ; 2 = modules individuels ; 3 = libre
+        side     = "right",   -- "right" ou "left" : bord d'aimantation
+        autofade = {          -- estompage automatique (comportement 3)
             enabled      = false,
             delay        = 5,     -- secondes d'inactivité avant fade
             alpha        = 0.25,  -- opacité en mode estompé

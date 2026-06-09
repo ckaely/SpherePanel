@@ -51,25 +51,64 @@ local function MakeSlider(parent, label, x, y, minV, maxV, step, getf, setf, fmt
 end
 
 local function BuildComportement(page)
+    local pcfg = SP.db.panel
+    local af = pcfg.autofade
+    local function applyBeh() if SP.ApplyPanelBehavior then SP:ApplyPanelBehavior() end end
+
     local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4)
-    hdr:SetText("Comportement — estompage automatique")
-    local af = SP.db.panel.autofade
-    MakeCheck(page, "Estomper automatiquement après inactivité", 8, -36,
+    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText("Comportement du panneau")
+
+    local modeL = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    modeL:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -32); modeL:SetText("Mode :")
+    local BEH = {
+        { 1, "1 — Panneau glissant magnétisé (revient au bord)" },
+        { 2, "2 — Modules individuels + glow coloré au bord" },
+        { 3, "3 — Libre, toujours visible" },
+    }
+    page.behChecks = {}
+    for i, d in ipairs(BEH) do
+        local c = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+        c:SetPoint("TOPLEFT", page, "TOPLEFT", 16, -50 - (i - 1) * 22)
+        c.text = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        c.text:SetPoint("LEFT", c, "RIGHT", 2, 0); c.text:SetText(d[2])
+        c.val = d[1]
+        c:SetChecked(pcfg.behavior == d[1])
+        c:SetScript("OnClick", function(s)
+            pcfg.behavior = s.val
+            for _, o in ipairs(page.behChecks) do o:SetChecked(o.val == s.val) end
+            applyBeh()
+        end)
+        page.behChecks[i] = c
+    end
+
+    local sideL = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    sideL:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -124); sideL:SetText("Côté d'aimantation :")
+    local cR = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+    cR:SetPoint("TOPLEFT", page, "TOPLEFT", 16, -144)
+    cR.text = cR:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); cR.text:SetPoint("LEFT", cR, "RIGHT", 2, 0); cR.text:SetText("Droite")
+    local cL = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+    cL:SetPoint("TOPLEFT", page, "TOPLEFT", 130, -144)
+    cL.text = cL:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); cL.text:SetPoint("LEFT", cL, "RIGHT", 2, 0); cL.text:SetText("Gauche")
+    cR:SetChecked(pcfg.side ~= "left"); cL:SetChecked(pcfg.side == "left")
+    cR:SetScript("OnClick", function() pcfg.side = "right"; cL:SetChecked(false); cR:SetChecked(true); applyBeh() end)
+    cL:SetScript("OnClick", function() pcfg.side = "left"; cR:SetChecked(false); cL:SetChecked(true); applyBeh() end)
+
+    local fh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    fh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -176); fh:SetText("Estompage (mode libre)")
+    MakeCheck(page, "Estomper après inactivité", 16, -196,
         function() return af.enabled end, function(v) af.enabled = v end)
-    MakeSlider(page, "Délai avant estompage", 16, -78, 1, 30, 1,
-        function() return af.delay end, function(v) af.delay = v end,
-        function(v) return v .. " s" end)
-    MakeSlider(page, "Opacité estompée (0% = transparent)", 16, -126, 0, 1, 0.05,
+    MakeSlider(page, "Délai", 24, -226, 1, 30, 1,
+        function() return af.delay end, function(v) af.delay = v end, function(v) return v .. " s" end)
+    MakeSlider(page, "Opacité (0% = transparent)", 24, -270, 0, 1, 0.05,
         function() return af.alpha end, function(v) af.alpha = v end,
         function(v) return string.format("%d%%", math.floor(v * 100)) end)
-    MakeSlider(page, "Durée de transition", 16, -174, 0.1, 1, 0.05,
+    MakeSlider(page, "Transition", 24, -314, 0.1, 1, 0.05,
         function() return af.fadeDuration end, function(v) af.fadeDuration = v end,
         function(v) return string.format("%.2f s", v) end)
 
     local clHdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    clHdr:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -214)
-    clHdr:SetText("Appliquer l'estompage à :")
+    clHdr:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -352)
+    clHdr:SetText("Appliquer estompage/réduction à :")
     page.fadeRows = {}
     page.RefreshFade = function()
         af.apply = af.apply or {}
@@ -84,7 +123,7 @@ local function BuildComportement(page)
             end
             local col, rowN = (i - 1) % 2, math.floor((i - 1) / 2)
             c:ClearAllPoints()
-            c:SetPoint("TOPLEFT", page, "TOPLEFT", 16 + col * 180, -236 - rowN * 24)
+            c:SetPoint("TOPLEFT", page, "TOPLEFT", 16 + col * 180, -374 - rowN * 22)
             c.text:SetText(m.label)
             local mcfg = SP:GetModuleConfig(m.name)
             local enabled = mcfg and mcfg.enabled
@@ -264,7 +303,7 @@ local function CreateOptions()
     if SP.optionsFrame then return SP.optionsFrame end
 
     local f = CreateFrame("Frame", "SpherePanelOptions", UIParent)
-    f:SetSize(560, 420)
+    f:SetSize(560, 520)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:EnableMouse(true)
