@@ -427,7 +427,7 @@ local function CreateOptions()
     if SP.optionsFrame then return SP.optionsFrame end
 
     local f = CreateFrame("Frame", "SpherePanelOptions", UIParent)
-    f:SetSize(560, 520)
+    f:SetSize(620, 560)
     f:SetPoint("CENTER"); f:SetFrameStrata("DIALOG"); f:EnableMouse(true); f:SetMovable(true); f:SetClampedToScreen(true); f:Hide()
     tinsert(UISpecialFrames, "SpherePanelOptions")
     local bg = f:CreateTexture(nil, "BACKGROUND"); bg:SetAllPoints(f); bg:SetColorTexture(0.06, 0.06, 0.08, 0.97)
@@ -442,11 +442,15 @@ local function CreateOptions()
     close:SetScript("OnClick", function() f:Hide() end)
 
     local nav = CreateFrame("Frame", nil, f)
-    nav:SetPoint("TOPLEFT", f, "TOPLEFT", 6, -32); nav:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 6, 6); nav:SetWidth(140)
+    nav:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -34); nav:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 8); nav:SetWidth(150)
     local navbg = nav:CreateTexture(nil, "BACKGROUND"); navbg:SetAllPoints(nav); navbg:SetColorTexture(0, 0, 0, 0.3)
+    -- séparateur sous la barre de titre (respiration)
+    local sep = f:CreateTexture(nil, "ARTWORK"); sep:SetHeight(1)
+    sep:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -27); sep:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -27)
+    sep:SetColorTexture(0.29, 0.64, 1, 0.25)
 
     local content = CreateFrame("Frame", nil, f)
-    content:SetPoint("TOPLEFT", nav, "TOPRIGHT", 8, 0); content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
+    content:SetPoint("TOPLEFT", nav, "TOPRIGHT", 12, -4); content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -12, 10)
 
     f.pages = {}; f.navButtons = {}
     function f:ShowSection(name)
@@ -465,15 +469,15 @@ local function CreateOptions()
     local y = -4
     for _, e in ipairs(entries) do
         local key, label = e[1], e[2]
-        local b = CreateFrame("Button", nil, nav); b:SetSize(134, 20); b:SetPoint("TOPLEFT", nav, "TOPLEFT", 3, y)
-        b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetPoint("LEFT", b, "LEFT", 6, 0); b.fs:SetText(label)
+        local b = CreateFrame("Button", nil, nav); b:SetSize(144, 22); b:SetPoint("TOPLEFT", nav, "TOPLEFT", 3, y)
+        b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetPoint("LEFT", b, "LEFT", 8, 0); b.fs:SetText(label)
         local hl = b:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(b); hl:SetColorTexture(1, 1, 1, 0.08)
         b:SetScript("OnClick", function() f:ShowSection(key) end)
         f.navButtons[key] = b
         local page = CreateFrame("Frame", nil, content); page:SetAllPoints(content); page:Hide()
         f.pages[key] = page
         if e[3] then BuildModulePage(page, e[3]) end
-        y = y - 21
+        y = y - 25
     end
 
     -- pages fixes

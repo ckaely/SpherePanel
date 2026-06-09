@@ -69,27 +69,27 @@ function M:Init(body)
     self.body = body
     self.icons = {}
 
-    self.tabs = CreateFrame("Frame", nil, body)
-    self.tabs:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -2)
-    self.tabs:SetPoint("TOPRIGHT", body, "TOPRIGHT", -4, -2)
-    self.tabs:SetHeight(TAB_H)
+    -- Onglets Tout/Buff/Débuff dans le bandeau (à côté du titre), avec highlight.
     self.tabBtns = {}
-    local x = 0
-    for _, d in ipairs(TABS) do
-        local b = CreateFrame("Button", nil, self.tabs)
-        b:SetSize(48, TAB_H)
-        b:SetPoint("LEFT", self.tabs, "LEFT", x, 0)
-        local sel = b:CreateTexture(nil, "BACKGROUND"); sel:SetAllPoints(b); sel:SetColorTexture(1, 1, 1, 0.16); sel:Hide()
-        b.sel = sel
+    local host = self.header or body          -- self.header = bandeau du module
+    local parentLevel = (host.GetFrameLevel and host:GetFrameLevel() or 0) + 3
+    local prev = self.lock
+    for i = #TABS, 1, -1 do
+        local d = TABS[i]
+        local b = CreateFrame("Button", nil, host)
+        b:SetHeight(16); b:SetFrameLevel(parentLevel)
+        b.sel = b:CreateTexture(nil, "BACKGROUND"); b.sel:SetAllPoints(b); b.sel:SetColorTexture(0.29, 0.64, 1, 0.30); b.sel:Hide()
         b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetAllPoints(b); b.fs:SetText(d[2])
+        b:SetWidth((b.fs:GetStringWidth() or 30) + 10)
+        if prev then b:SetPoint("RIGHT", prev, "LEFT", -3, 0) else b:SetPoint("RIGHT", host, "RIGHT", -3, 0) end
         b.tab = d[1]
         b:SetScript("OnClick", function(s) self:SetTab(s.tab) end)
         self.tabBtns[d[1]] = b
-        x = x + 50
+        prev = b
     end
 
     self.grid = CreateFrame("Frame", nil, body)
-    self.grid:SetPoint("TOPLEFT", self.tabs, "BOTTOMLEFT", 0, -2)
+    self.grid:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -2)
     self.grid:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -4, 0)
     self.grid:SetClipsChildren(true)
 
@@ -195,7 +195,7 @@ function M:Refresh()
 
     -- hauteur dynamique
     local rows = math.max(1, math.ceil(shown / perRow))
-    local needed = TAB_H + 4 + GAP + rows * (size + GAP)
+    local needed = 4 + GAP + rows * (size + GAP)
     if cfg.height ~= needed then cfg.height = needed; SP:RebuildLayout() end
 end
 

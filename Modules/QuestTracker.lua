@@ -95,6 +95,9 @@ local function CreateEntry(self)
     row.watch:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -1)
     row.watch.text = row.watch:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     row.watch.text:SetPoint("CENTER")
+    row.watch.icon = row.watch:CreateTexture(nil, "ARTWORK"); row.watch.icon:SetAllPoints(row.watch)
+    row.watch.hasIcon = (pcall(row.watch.icon.SetAtlas, row.watch.icon, "PetJournal-FavoritesIcon", true) and row.watch.icon:GetAtlas() ~= nil) or false
+    if not row.watch.hasIcon then row.watch.icon:Hide() end
     row.watch:SetScript("OnClick", function() self:OnWatchClick(row) end)
 
     row.hl = row:CreateTexture(nil, "BACKGROUND")
@@ -153,7 +156,13 @@ local function RenderRow(self, row, qid, cat, isPvp, isAccount)
     pcall(function()
         watched = (C_QuestLog.GetQuestWatchType and C_QuestLog.GetQuestWatchType(qid) ~= nil) or false
     end)
-    row.watch.text:SetText(watched and "|cFFFFD200*|r" or "|cFF777777*|r")
+    if row.watch.hasIcon then
+        row.watch.icon:SetDesaturated(not watched)
+        row.watch.icon:SetAlpha(watched and 1 or 0.4)
+        row.watch.text:SetText("")
+    else
+        row.watch.text:SetText(watched and "|cFFFFD200*|r" or "|cFF777777*|r")
+    end
 
     if row.hl then row.hl:SetShown(self._pinnedHL == qid) end
 

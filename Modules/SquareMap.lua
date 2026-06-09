@@ -101,15 +101,22 @@ function M:CleanMinimap()
             if f and f.IsShown and f:IsShown() then pcall(f.Hide, f); self._hiddenDecor[f] = true end
         end
     end
-    -- icônes d'addons non LibDBIcon restées sur la minimap (déjà collectées dans Menus sinon)
-    for _, c in ipairs({ Minimap:GetChildren() }) do
-        local n = c:GetName()
-        local w = c:GetWidth() or 0
-        if c:IsShown() and c:GetObjectType() == "Button" and w > 0 and w < 44
-            and not (n and (n:match("^Minimap") or n:match("^MiniMap"))) then
-            pcall(c.Hide, c); self._hiddenDecor[c] = true
+    -- icônes d'addons restées sur la minimap / le cluster (déjà collectées dans Menus sinon)
+    local function scan(parent)
+        if not parent or not parent.GetChildren then return end
+        for _, c in ipairs({ parent:GetChildren() }) do
+            local n = c:GetName()
+            local w = c:GetWidth() or 0
+            if c:IsShown() and (c:GetObjectType() == "Button" or c:GetObjectType() == "Frame")
+                and w > 0 and w < 48
+                and not (n and (n:match("^Minimap") or n:match("^MiniMap") or n:match("^SpherePanel"))) then
+                pcall(c.Hide, c); self._hiddenDecor[c] = true
+            end
         end
     end
+    scan(Minimap)
+    scan(_G.MinimapCluster)
+    scan(_G.MinimapBackdrop)
 end
 
 function M:RestoreMinimapDecor()
@@ -137,7 +144,7 @@ function M:Enable()
     C_Timer.After(1.0, function() Apply(self); self:CleanMinimap() end)
     -- ticker d'enforcement : on garde la main face aux autres addons + coords live
     if not self._ticker then
-        self._ticker = C_Timer.NewTicker(0.5, function() Apply(self); self:UpdateZone() end)
+        self._ticker = C_Timer.NewTicker(0.5, function() Apply(self); self:CleanMinimap(); self:UpdateZone() end)
     end
 end
 

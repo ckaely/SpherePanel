@@ -159,8 +159,20 @@ function M:Init(body)
     self.toggle:SetScript("OnClick", function() self:ToggleBags() end)
 end
 
+-- Déduplique les catégories par clé (un deepMerge legacy peut dupliquer ex. "empty").
+function M:SanitizeCategories()
+    local cfg = SP:GetModuleConfig(self.name)
+    if not (cfg and cfg.categories) then return end
+    local seen, out = {}, {}
+    for _, c in ipairs(cfg.categories) do
+        if c.key and not seen[c.key] then seen[c.key] = true; out[#out + 1] = c end
+    end
+    cfg.categories = out
+end
+
 function M:Enable()
     self._enabled = true
+    self:SanitizeCategories()
     if self._placeholder then self._placeholder:Hide() end
     for _, e in ipairs({ "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "PLAYER_REGEN_ENABLED" }) do
         pcall(self.ev.RegisterEvent, self.ev, e)
