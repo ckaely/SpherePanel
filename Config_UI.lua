@@ -327,8 +327,10 @@ local function BuildApparence(page)
         function() return bgc.a end,
         function(v) bgc.a = v; if SP.ApplyAppearance then SP:ApplyAppearance() end end,
         function(v) return string.format("%d%%", math.floor(v * 100)) end)
+    MakeCheck(page, "Effets visuels (orbe pulsant + shimmer + intro)", 16, -120,
+        function() return SP.db.panel.fx end, function(v) SP.db.panel.fx = v end)
     local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -130)
+    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -152)
     note:SetText("|cFF777777La couleur et la transparence s'appliquent immédiatement.|r")
 end
 

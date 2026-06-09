@@ -25,6 +25,7 @@ SP.defaults = {
         locked  = false,
         behavior = 3,         -- 1 = panneau magnétisé glissant ; 2 = modules individuels ; 3 = libre
         side     = "right",   -- "right" ou "left" : bord d'aimantation
+        fx       = true,      -- effets visuels (orbe pulsant + shimmer + intro)
         bgColor  = { r = 0.05, g = 0.05, b = 0.07, a = 0.85 },  -- fond du panneau (Apparence)
         autofade = {          -- estompage automatique (comportement 3)
             enabled      = false,

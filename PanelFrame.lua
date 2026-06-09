@@ -35,9 +35,26 @@ function SP:CreatePanel()
     local tbg = title:CreateTexture(nil, "ARTWORK")
     tbg:SetAllPoints(title)
     tbg:SetColorTexture(0.10, 0.10, 0.15, 0.95)
+    -- Orbe lumineux (signature SpherePanel)
+    local orb = title:CreateTexture(nil, "OVERLAY")
+    orb:SetTexture("Interface\\Cooldown\\ping4")
+    orb:SetBlendMode("ADD"); orb:SetVertexColor(0.29, 0.64, 1)
+    orb:SetSize(16, 16); orb:SetPoint("LEFT", title, "LEFT", 6, 0)
+    p.titleOrb = orb
+
     local tlabel = title:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    tlabel:SetPoint("LEFT", title, "LEFT", 8, 0)
+    tlabel:SetPoint("LEFT", orb, "RIGHT", 4, 0)
     tlabel:SetText("|cFF4AA3FFSphere|rPanel")
+
+    -- Ligne d'accent + shimmer animé qui balaie
+    local accent = title:CreateTexture(nil, "ARTWORK")
+    accent:SetPoint("BOTTOMLEFT", title, "BOTTOMLEFT", 0, 0)
+    accent:SetPoint("BOTTOMRIGHT", title, "BOTTOMRIGHT", 0, 0)
+    accent:SetHeight(2); accent:SetColorTexture(0.29, 0.64, 1, 0.35)
+    local shimmer = title:CreateTexture(nil, "OVERLAY")
+    shimmer:SetBlendMode("ADD"); shimmer:SetColorTexture(1, 1, 1, 0.5); shimmer:SetSize(44, 2)
+    shimmer:SetPoint("BOTTOMLEFT", title, "BOTTOMLEFT", 0, 0)
+    p.titleShimmer = shimmer
     p.title = title
 
     title:SetScript("OnDragStart", function()
@@ -242,7 +259,28 @@ function SP:_ResetSlides(p)
     SP:_HideEdgeGlows(p)
 end
 
+-- Effets visuels de la barre de titre (orbe pulsant + shimmer balayant).
+function SP:_TickCosmetics(p, elapsed)
+    local fx = SP.db and SP.db.panel and SP.db.panel.fx
+    if not fx then
+        if p.titleOrb then p.titleOrb:SetAlpha(0) end
+        if p.titleShimmer then p.titleShimmer:Hide() end
+        return
+    end
+    local now = GetTime()
+    if p.titleOrb then p.titleOrb:SetAlpha(0.45 + 0.40 * (math.sin(now * 2.2) * 0.5 + 0.5)) end
+    if p.titleShimmer and p.title then
+        p.titleShimmer:Show()
+        local w = (p.title:GetWidth() or 200) - 44
+        local t = (now * 0.30) % 1
+        p.titleShimmer:ClearAllPoints()
+        p.titleShimmer:SetPoint("BOTTOMLEFT", p.title, "BOTTOMLEFT", t * w, 0)
+        p.titleShimmer:SetAlpha(0.30 + 0.35 * (math.sin(now * 4) * 0.5 + 0.5))
+    end
+end
+
 function SP:_PanelTick(p, elapsed)
+    SP:_TickCosmetics(p, elapsed)
     local b = (SP.db and SP.db.panel and SP.db.panel.behavior) or 3
     if b == 1 or b == 2 then SP:_TickSlide(p, elapsed) else SP:_TickFree(p, elapsed) end
 end

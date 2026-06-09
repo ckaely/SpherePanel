@@ -65,6 +65,9 @@ function SP:OnLogin()
     SP:BuildModules()     -- ModuleSystem.lua : header + content par module (appelle RebuildLayout)
     SP:ApplyPanelBehavior()  -- comportement 1/2/3 (magnétisation + bord déclencheur)
     SP:ApplyAppearance()     -- couleur/transparence du fond
+    if SP.db.panel.fx and UIFrameFadeIn and SP.panel then
+        UIFrameFadeIn(SP.panel, 0.6, 0, 1)   -- apparition stylée
+    end
     SP:SetupSlash()
     -- RÈGLE : ObjectiveTrackerFrame:Hide() sera déclenché par QuestTracker (étape 4),
     --         UNIQUEMENT à partir d'ici (PLAYER_LOGIN), jamais au chargement du fichier.
