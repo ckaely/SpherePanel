@@ -83,6 +83,15 @@ end
 -- Helpers
 -- ------------------------------------------------------------
 
+-- Applique une icône de l'atlas Media/wow_ico.tga (via Media/IconAtlas.lua) sur une texture.
+function SP:SetIcon(tex, index)
+    local c = SP.ICONS and SP.ICONS[index]
+    if not (c and SP.ICON_TEXTURE) then return false end
+    tex:SetTexture(SP.ICON_TEXTURE)
+    tex:SetTexCoord(c[1], c[2], c[3], c[4])
+    return true
+end
+
 -- Log console simple, throttle-able plus tard. Préfixe coloré.
 function SP:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cFF4AA3FFSpherePanel|r " .. tostring(msg))

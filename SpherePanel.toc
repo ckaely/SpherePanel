@@ -11,6 +11,7 @@ Core.lua
 Config.lua
 PanelFrame.lua
 ModuleSystem.lua
+Media\IconAtlas.lua
 Config_UI.lua
 Modules\QuestTracker.lua
 Modules\Chat.lua
