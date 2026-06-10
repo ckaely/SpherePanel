@@ -363,6 +363,8 @@ function SP:ApplyPanelBehavior()
         p.edge:SetShown(b == 1 or b == 2)
     end
     if b == 3 then SP:_ResetSlides(p) else p._panelActive = 0 end  -- 1/2 : démarre réduit
+    -- le panneau ② suit : toujours du côté opposé au principal
+    if SP.db.panel.panel2 and SP.db.panel.panel2.enabled then SP:ApplyPanel2() end
 end
 
 -- ------------------------------------------------------------
@@ -447,15 +449,37 @@ function SP:CreatePanel2()
     content:SetHeight(1)
     p.content = content
 
+    -- zone de dépôt visible quand le panneau est vide
+    local hint = content:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+    hint:SetPoint("TOP", content, "TOP", 0, -28)
+    hint:SetText("|cFF777777Déposez des modules ici\n(glissez leur bandeau)|r")
+    p.emptyHint = hint
+
     SP.panel2 = p
     return p
 end
 
 -- Active/désactive le second panneau (option Comportement).
+-- Position automatique : TOUJOURS du côté opposé au panneau principal
+-- (principal à droite → ② à gauche, et inversement), même ancrage haut/bas.
 function SP:ApplyPanel2()
     local en = SP.db.panel.panel2 and SP.db.panel.panel2.enabled
     if en then
-        SP:CreatePanel2():Show()
+        local p2 = SP:CreatePanel2()
+        local mainSide = SP.db.panel.side or "right"
+        local vpos = SP.db.panel.vpos or "top"
+        local x = 20
+        p2:ClearAllPoints()
+        if mainSide == "right" then
+            -- principal à droite → ② à gauche
+            if vpos == "bottom" then p2:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 40)
+            else p2:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, -40) end
+        else
+            -- principal à gauche → ② à droite
+            if vpos == "bottom" then p2:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 40)
+            else p2:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, -40) end
+        end
+        p2:Show()
     elseif SP.panel2 then
         -- rapatrie les modules du panneau 2 vers le 1
         for _, m in ipairs(SP.modules) do

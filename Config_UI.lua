@@ -428,14 +428,21 @@ local function BuildComportement(page)
     cT:SetScript("OnClick", function() pcfg.vpos = "top"; cB:SetChecked(false); cT:SetChecked(true); applyBeh() end)
     cB:SetScript("OnClick", function() pcfg.vpos = "bottom"; cT:SetChecked(false); cB:SetChecked(true); applyBeh() end)
 
-    -- Second panneau (libre) : reçoit les modules par drag-and-drop
-    MakeCheck(page, "Second panneau (déposez-y des modules par glisser-déposer)", 250, -50,
+    -- ===== Second panneau (section dédiée, bien visible) =====
+    local p2h = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    p2h:SetPoint("TOPLEFT", page, "TOPLEFT", 250, -32)
+    p2h:SetText("|cFF4AA3FFSecond panneau ②|r")
+    MakeCheck(page, "Activer le second panneau", 254, -52,
         function() return pcfg.panel2 and pcfg.panel2.enabled end,
         function(v)
             pcfg.panel2 = pcfg.panel2 or { x = 20, y = -200, width = 280 }
             pcfg.panel2.enabled = v
             if SP.ApplyPanel2 then SP:ApplyPanel2() end
         end)
+    local p2n = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    p2n:SetPoint("TOPLEFT", page, "TOPLEFT", 254, -78)
+    p2n:SetJustifyH("LEFT")
+    p2n:SetText("|cFF999999Position : automatique, côté OPPOSÉ au panneau\nprincipal (suit Droite/Gauche et Haut/Bas ci-dessous).\nDéplaçable par sa barre de titre. Glissez un module\n(drag du bandeau) et déposez-le dessus pour l'y mettre.|r")
 
     local fh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     fh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -176); fh:SetText("Estompage (mode libre)")

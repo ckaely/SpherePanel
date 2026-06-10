@@ -416,7 +416,9 @@ function SP:RebuildLayout()
     panel.content:SetHeight(y1)
     panel:SetHeight(y1 + UIc.TITLE_H)
     if p2 then
-        if y2 < 1 then y2 = 1 end
+        local empty = y2 < 1
+        if p2.emptyHint then p2.emptyHint:SetShown(empty) end
+        if empty then y2 = 80 end   -- zone de dépôt visible quand vide
         p2.content:SetHeight(y2)
         p2:SetHeight(y2 + UIc.TITLE_H)
     end
