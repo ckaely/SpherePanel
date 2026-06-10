@@ -51,6 +51,24 @@ function SP:CreatePanel()
     tinfo:SetPoint("RIGHT", title, "RIGHT", -8, 0)
     p.titleInfo = tinfo
 
+    -- icône courrier non lu (visible seulement si du courrier attend)
+    local mail = title:CreateTexture(nil, "OVERLAY")
+    mail:SetSize(14, 14)
+    mail:SetPoint("RIGHT", tinfo, "LEFT", -6, 0)
+    if not (pcall(mail.SetAtlas, mail, "auctionhouse-icon-mail", true) and mail:GetAtlas()) then
+        mail:SetTexture("Interface\\Icons\\INV_Letter_15")
+        mail:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    end
+    mail:Hide()
+    p.mailIcon = mail
+    local mev = CreateFrame("Frame")
+    mev:RegisterEvent("UPDATE_PENDING_MAIL")
+    mev:RegisterEvent("MAIL_INBOX_UPDATE")
+    mev:RegisterEvent("PLAYER_ENTERING_WORLD")
+    mev:SetScript("OnEvent", function()
+        mail:SetShown(HasNewMail and HasNewMail() or false)
+    end)
+
     -- Ligne d'accent + shimmer animé qui balaie
     local accent = title:CreateTexture(nil, "ARTWORK")
     accent:SetPoint("BOTTOMLEFT", title, "BOTTOMLEFT", 0, 0)

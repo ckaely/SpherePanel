@@ -82,17 +82,23 @@ end
 
 -- Masque + VERROUILLE (hook Show) une frame parasite : si l'addon la re-montre, on la re-cache.
 function M:Suppress(f)
-    if not f or self._hiddenDecor[f] then return end
+    if not f then return end
+    if self._hiddenDecor[f] then
+        -- déjà suivi mais re-visible (SetShown contourne le hook Show) → re-cache
+        if f.IsShown and f:IsShown() and not f._spH then pcall(f.Hide, f) end
+        return
+    end
     self._hiddenDecor[f] = true
     pcall(f.Hide, f)
     if not f._spMapHook and f.HookScript then
         f._spMapHook = true
         local mod = self
-        -- hooksecurefunc de méthode : re-cache dès que quelqu'un la montre (tant que module actif)
-        pcall(hooksecurefunc, f, "Show", function(s)
+        local function rehide(s)
             -- ne pas re-cacher un bouton capturé par l'onglet Addons de Menus (s._spH)
             if mod._enabled and mod._hiddenDecor and mod._hiddenDecor[s] and not s._spH then pcall(s.Hide, s) end
-        end)
+        end
+        pcall(hooksecurefunc, f, "Show", rehide)
+        pcall(hooksecurefunc, f, "SetShown", function(s, shown) if shown then rehide(s) end end)
     end
 end
 

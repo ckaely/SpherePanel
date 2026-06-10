@@ -39,8 +39,9 @@ SP.defaults = {
     modules = {
         -- Ordre initial. Le drag-to-reorder réécrit cette liste dans SPDB.
         order = {
-            "GameMenu", "RaidTools", "QuestTracker", "Chat", "DamageMeter", "Raid",
-            "Auras", "Bags", "Knowledge", "SilverDragon", "Agenda", "SquareMap",
+            "GameMenu", "RaidTools", "GroupBuffs", "MythicPlus", "QuestTracker", "Chat",
+            "DamageMeter", "Raid", "Auras", "Bags", "RecentLoot", "Currencies",
+            "Reputations", "Knowledge", "Social", "SilverDragon", "Agenda", "SquareMap",
         },
         -- Config par module : enabled / collapsed / height.
         QuestTracker   = { enabled = true,  collapsed = false, height = 300,
@@ -82,6 +83,13 @@ SP.defaults = {
         Agenda         = { enabled = true,  collapsed = false, height = 120 },
         RaidTools      = { enabled = true,  collapsed = false, height = 96, pullSec = 10,
             conditions = { enabled = true, group = true } },  -- visible uniquement en groupe
+        MythicPlus     = { enabled = true,  collapsed = true,  height = 90  },
+        Social         = { enabled = true,  collapsed = true,  height = 140 },
+        RecentLoot     = { enabled = true,  collapsed = true,  height = 120 },
+        GroupBuffs     = { enabled = true,  collapsed = false, height = 40,
+            conditions = { enabled = true, group = true } },  -- pertinent en groupe
+        Reputations    = { enabled = true,  collapsed = true,  height = 150 },
+        Currencies     = { enabled = true,  collapsed = true,  height = 100 },
         SilverDragon   = { enabled = true,  collapsed = false, height = 80  },
         GameMenu       = { enabled = true,  collapsed = false, height = 64,
             activeTab = "menus",     -- "menus" ou "addons"
