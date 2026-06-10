@@ -148,12 +148,21 @@ function M:Enable()
         self._built = true
         if self._placeholder then self._placeholder:Hide() end
     end
+    self._enabled = true
     self:CollectAddons()
+    -- certains addons créent leur bouton après le login → re-collecte différée
+    C_Timer.After(3, function()
+        if self._enabled and not InCombatLockdown() then self:CollectAddons(); self:Layout() end
+    end)
+    C_Timer.After(8, function()
+        if self._enabled and not InCombatLockdown() then self:CollectAddons(); self:Layout() end
+    end)
     self:SetTab(SP:GetModuleConfig(self.name).activeTab or "menus")
     self:UpdateHeaderInfo()
 end
 
 function M:Disable()
+    self._enabled = false
     for _, b in ipairs(self.buttons) do b:Hide() end
     self:RestoreAddons()
     self:RestoreMicroMenu()
@@ -478,6 +487,38 @@ function M:CollectAddons()
         local n = c:GetName()
         if n and n:match("^LibDBIcon") and not Blacklisted(n, bl) and not self.stolen[c] then
             self:StealOne(c)
+        end
+    end
+    -- 3) boutons d'addons cliquables enfants directs de la minimap (non LibDBIcon)
+    for _, c in ipairs(children) do
+        local n = c:GetName()
+        local w = c:GetWidth() or 0
+        if not self.stolen[c] and c:GetObjectType() == "Button" and w > 8 and w < 56
+            and not (n and (n:match("^Minimap") or n:match("^MiniMap") or n:match("^SpherePanel")))
+            and not Blacklisted(n, bl) and HasClick(c) then
+            self:StealOne(c)
+        end
+    end
+    -- 4) boutons parentés AILLEURS (UIParent…) mais ANCRÉS sur la minimap (Narcissus, etc.)
+    local function anchoredToMinimap(f)
+        local okN, np = pcall(f.GetNumPoints, f)
+        if not okN or not np then return false end
+        for i = 1, np do
+            local ok, _, rel = pcall(f.GetPoint, f, i)
+            if ok and rel and (rel == Minimap or rel == _G.MinimapCluster or rel == _G.MinimapBackdrop) then
+                return true
+            end
+        end
+        return false
+    end
+    for _, c in ipairs({ UIParent:GetChildren() }) do
+        if not self.stolen[c] and c.GetObjectType and c:GetObjectType() == "Button" then
+            local w = c:GetWidth() or 0
+            local n = c:GetName()
+            if w > 8 and w < 56 and not Blacklisted(n, bl)
+                and not (n and n:match("^SpherePanel")) and anchoredToMinimap(c) then
+                self:StealOne(c)
+            end
         end
     end
     table.sort(self.order, function(a, b) return (a.button:GetName() or "") < (b.button:GetName() or "") end)

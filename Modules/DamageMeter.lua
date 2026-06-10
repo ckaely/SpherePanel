@@ -115,23 +115,47 @@ function M:RestoreDetails()
     self._detEmbedded = false
 end
 
+function M:_UseDetails()
+    if self.body then self.body:SetScript("OnUpdate", nil) end
+    for _, b in ipairs(self.bars) do b:Hide() end
+    if self.info then self.info:Hide() end
+    SP:SetModuleHeaderText(self, "|cFF888888Details|r")
+end
+
 function M:Enable()
     self._enabled = true
     if self._placeholder then self._placeholder:Hide() end
+    if not self.info then
+        self.info = self.body:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+        self.info:SetPoint("TOP", self.body, "TOP", 0, -8)
+        self.info:Hide()
+    end
 
     -- Si Details est présent : on force sa fenêtre dans le module, et on n'utilise pas le moteur interne.
     if not InCombatLockdown() and self:EmbedDetails() then
-        if self.body then self.body:SetScript("OnUpdate", nil) end
-        for _, b in ipairs(self.bars) do b:Hide() end
-        SP:SetModuleHeaderText(self, "|cFF888888Details|r")
+        self:_UseDetails()
         return
     end
+    -- Details crée ses fenêtres après le login → re-tente en différé.
+    C_Timer.After(2, function()
+        if self._enabled and not self._detEmbedded and not InCombatLockdown() and self:EmbedDetails() then
+            self:_UseDetails()
+        end
+    end)
 
-    -- Moteur interne (fallback).
+    -- Moteur interne (fallback). ⚠ Midnight 12.x : COMBAT_LOG_EVENT_UNFILTERED est PROTÉGÉ
+    -- pour les addons → RegisterEvent lève ADDON_ACTION_FORBIDDEN. On tente sous pcall ;
+    -- si refusé, le module requiert Details.
+    local okCLEU = pcall(self.ev.RegisterEvent, self.ev, "COMBAT_LOG_EVENT_UNFILTERED")
+    if not okCLEU then
+        self.info:SetText("|cFFFF7777Requiert : Details!|r\n|cFF888888(combat log restreint en Midnight — moteur interne indisponible)|r")
+        self.info:Show()
+        SP:SetModuleHeaderText(self, "|cFFFF7777Details requis|r")
+        return
+    end
     self:Prewarm(12)
-    self.ev:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-    self.ev:RegisterEvent("PLAYER_REGEN_DISABLED")
-    self.ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+    pcall(self.ev.RegisterEvent, self.ev, "PLAYER_REGEN_DISABLED")
+    pcall(self.ev.RegisterEvent, self.ev, "PLAYER_REGEN_ENABLED")
     self.body:SetScript("OnUpdate", function(_, elapsed)
         self._accum = self._accum + elapsed
         if self._accum >= REFRESH then self._accum = 0; self:Refresh() end

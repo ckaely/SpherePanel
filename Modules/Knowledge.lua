@@ -43,7 +43,7 @@ function M:Init(body)
     self.ev:SetScript("OnEvent", function() self:RefreshProfessions() end)
 end
 
--- Icônes des métiers connus (GetProfessions), tooltip nom + compétence.
+-- Icônes des métiers connus (GetProfessions), tooltip compétence, clic = SON interface de métier.
 function M:RefreshProfessions()
     local ids = { GetProfessions() }
     local x, shown = 0, 0
@@ -62,14 +62,19 @@ function M:RefreshProfessions()
                 bd:SetColorTexture(0.30, 0.30, 0.38, 1)
                 b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
                 b:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                b:SetScript("OnClick", function()
+                b:SetScript("OnClick", function(s)
+                    -- ouvre l'interface DU métier cliqué (fenêtre TradeSkill dédiée)
+                    if s._skillLine and C_TradeSkillUI and C_TradeSkillUI.OpenTradeSkill then
+                        if pcall(C_TradeSkillUI.OpenTradeSkill, s._skillLine) then return end
+                    end
                     if ToggleProfessionsBook then pcall(ToggleProfessionsBook)
                     elseif ToggleSpellBook then pcall(ToggleSpellBook, "professions") end
                 end)
                 self.profBtns[shown] = b
             end
-            local name, icon, skill, maxSkill = GetProfessionInfo(idx)
+            local name, icon, skill, maxSkill, _, _, skillLine = GetProfessionInfo(idx)
             b.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            b._skillLine = skillLine
             b._tip = ("%s  |cFFFFFFFF%d / %d|r"):format(name or "?", skill or 0, maxSkill or 0)
             b:SetScript("OnEnter", function(s)
                 GameTooltip:SetOwner(s, "ANCHOR_RIGHT"); GameTooltip:SetText(s._tip); GameTooltip:Show()
@@ -81,6 +86,33 @@ function M:RefreshProfessions()
         end
     end
     for i = shown + 1, #self.profBtns do self.profBtns[i]:Hide() end
+
+    -- Feu de camp (sort 818) : bouton SÉCURISÉ qui lance le sort au clic.
+    if not self.fireBtn and not InCombatLockdown() then
+        local fb = CreateFrame("Button", "SpherePanelCampfire", self.profRow, "SecureActionButtonTemplate")
+        fb:SetSize(PROF_H - 2, PROF_H - 2)
+        fb:RegisterForClicks("AnyUp")
+        fb:SetAttribute("type", "spell")
+        fb:SetAttribute("spell", 818)
+        fb.icon = fb:CreateTexture(nil, "ARTWORK"); fb.icon:SetAllPoints(fb)
+        fb.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        local tex = (C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(818)) or 135805
+        fb.icon:SetTexture(tex)
+        local bd = fb:CreateTexture(nil, "BACKGROUND")
+        bd:SetPoint("TOPLEFT", fb, "TOPLEFT", -1, 1); bd:SetPoint("BOTTOMRIGHT", fb, "BOTTOMRIGHT", 1, -1)
+        bd:SetColorTexture(0.45, 0.30, 0.15, 1)
+        fb:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        fb:SetScript("OnEnter", function(s)
+            GameTooltip:SetOwner(s, "ANCHOR_RIGHT"); GameTooltip:SetText("Feu de camp"); GameTooltip:Show()
+        end)
+        fb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        self.fireBtn = fb
+    end
+    if self.fireBtn and not InCombatLockdown() then
+        self.fireBtn:ClearAllPoints()
+        self.fireBtn:SetPoint("LEFT", self.profRow, "LEFT", x, 0)
+        self.fireBtn:Show()
+    end
 end
 
 -- Ajuste MKPT à la largeur du module (échelle) et le maintient ancré dedans.

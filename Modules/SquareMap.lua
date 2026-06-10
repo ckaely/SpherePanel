@@ -90,7 +90,8 @@ function M:Suppress(f)
         local mod = self
         -- hooksecurefunc de méthode : re-cache dès que quelqu'un la montre (tant que module actif)
         pcall(hooksecurefunc, f, "Show", function(s)
-            if mod._enabled and mod._hiddenDecor and mod._hiddenDecor[s] then pcall(s.Hide, s) end
+            -- ne pas re-cacher un bouton capturé par l'onglet Addons de Menus (s._spH)
+            if mod._enabled and mod._hiddenDecor and mod._hiddenDecor[s] and not s._spH then pcall(s.Hide, s) end
         end)
     end
 end
@@ -135,6 +136,26 @@ function M:CleanMinimap()
     scan(Minimap, 1)
     scan(_G.MinimapCluster, 1)
     scan(_G.MinimapBackdrop, 1)
+    -- boutons parentés ailleurs (UIParent…) mais ANCRÉS sur la minimap (Narcissus, etc.)
+    for _, c in ipairs({ UIParent:GetChildren() }) do
+        if not self._hiddenDecor[c] and c.GetObjectType
+            and (c:GetObjectType() == "Button" or c:GetObjectType() == "Frame") and c:IsShown() then
+            local w = c:GetWidth() or 0
+            local n = c:GetName()
+            if w > 8 and w < 56 and not (n and (n:match("^SpherePanel") or n:match("^Minimap") or n:match("^MiniMap"))) then
+                local okN, np = pcall(c.GetNumPoints, c)
+                if okN and np then
+                    for i = 1, np do
+                        local ok, _, rel = pcall(c.GetPoint, c, i)
+                        if ok and rel and (rel == Minimap or rel == _G.MinimapCluster or rel == _G.MinimapBackdrop) then
+                            self:Suppress(c)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 function M:RestoreMinimapDecor()

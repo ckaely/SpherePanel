@@ -311,7 +311,7 @@ function M:Refresh()
     self:RefreshTimers()
     SP:SetModuleHeaderText(self, #self.alerts > 0 and ("%d"):format(#self.alerts) or "")
 
-    local needed = math.max(ROW_H, 4 + #self.alerts * (ROW_H + GAP))
+    local needed = math.max(ROW_H, y + 2)   -- inclut les expansions (modèle 3D + butin)
     local cfg = SP:GetModuleConfig(self.name)
     SP:SetAutoHeight(self, needed)
 end

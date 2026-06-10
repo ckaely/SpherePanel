@@ -128,6 +128,17 @@ function SP:HandleSlash(msg)
     elseif cmd == "mbscan" then
         local mb = SP.modulesByName and SP.modulesByName["GameMenu"]
         if mb and mb.Scan then mb:Scan() else SP:Print("Module Menus indisponible.") end
+    elseif cmd == "raretest" then
+        -- alerte factice pour valider le module Rares (32491 = Proto-drake perdu dans le temps)
+        local rm = SP.modulesByName and SP.modulesByName["SilverDragon"]
+        if rm and rm.OnSeen then
+            rm._enabled = true
+            local mapID = (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")) or 0
+            rm:OnSeen(32491, mapID, 0.5, 0.5, false)
+            SP:Print("Alerte de test envoyée au module Rares (clic droit = butin + modèle 3D).")
+        else
+            SP:Print("Module Rares indisponible.")
+        end
     elseif cmd == "enable" and rest ~= "" then
         SP:EnableModule(rest)
     elseif cmd == "modules" then
