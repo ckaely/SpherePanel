@@ -55,7 +55,7 @@ local function Classify(qid)
     local isDaily    = info and QF and info.frequency == QF.Daily
     local isWeekly   = info and QF and info.frequency == QF.Weekly
     local isCampaign = info and info.campaignID and info.campaignID ~= 0
-    local isWQ       = safeBool(C_QuestLog.IsWorldQuest, qid)
+    local isWQ       = safeBool(C_QuestLog.IsWorldQuest, qid) or (info and (info.isTask or info.isBounty)) or false
 
     local tagID
     do local ok, t = pcall(C_QuestLog.GetQuestTagInfo, qid); if ok and t then tagID = t.tagID end end
@@ -156,15 +156,41 @@ local function RenderRow(self, row, qid, cat, isPvp, isAccount)
     pcall(function()
         watched = (C_QuestLog.GetQuestWatchType and C_QuestLog.GetQuestWatchType(qid) ~= nil) or false
     end)
-    if row.watch.hasIcon then
+    if cat == "worldquest" then
+        -- expédition : icône dédiée à la place de l'étoile
+        local okA = pcall(row.watch.icon.SetAtlas, row.watch.icon, "worldquest-tracker-questmarker", true)
+        if okA and row.watch.icon:GetAtlas() then
+            row.watch.icon:Show(); row.watch.icon:SetDesaturated(false); row.watch.icon:SetAlpha(1)
+            row.watch.text:SetText("")
+        else
+            row.watch.text:SetText("|cFF33CCFF!|r")
+        end
+    elseif row.watch.hasIcon then
+        pcall(row.watch.icon.SetAtlas, row.watch.icon, "PetJournal-FavoritesIcon", true)
+        row.watch.icon:Show()
         row.watch.icon:SetDesaturated(not watched)
         row.watch.icon:SetAlpha(watched and 1 or 0.4)
         row.watch.text:SetText("")
     else
+        row.watch.icon:Hide()
         row.watch.text:SetText(watched and "|cFFFFD200*|r" or "|cFF777777*|r")
     end
 
-    if row.hl then row.hl:SetShown(self._pinnedHL == qid) end
+    if row.hl then
+        -- expédition active (joueur dans la zone de réalisation) = highlight cyan persistant
+        local inArea = false
+        if cat == "worldquest" and C_TaskQuest and C_TaskQuest.IsActive then
+            local okT, act = pcall(C_TaskQuest.IsActive, qid)
+            inArea = okT and act or false
+        end
+        if inArea then
+            row.hl:SetColorTexture(0.2, 0.8, 1, 0.14)
+            row.hl:Show()
+        else
+            row.hl:SetColorTexture(1, 1, 1, 0.10)
+            row.hl:SetShown(self._pinnedHL == qid)
+        end
+    end
 
     local y = 15
     local objectives
@@ -391,6 +417,14 @@ function M:GetTrackedQuestIDs()
         pcall(function() nww = C_QuestLog.GetNumWorldQuestWatches() or 0 end)
         for i = 1, nww do
             local ok, qid = pcall(C_QuestLog.GetQuestIDForWorldQuestWatchIndex, i); if ok then add(qid) end
+        end
+    end
+    -- expéditions / tâches de la zone courante (entrées isTask du journal, souvent cachées)
+    local n = C_QuestLog.GetNumQuestLogEntries() or 0
+    for i = 1, n do
+        local info = C_QuestLog.GetInfo(i)
+        if info and not info.isHeader and (info.isTask or info.isBounty) and info.questID then
+            add(info.questID)
         end
     end
     return ids

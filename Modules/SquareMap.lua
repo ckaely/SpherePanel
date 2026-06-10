@@ -110,13 +110,8 @@ function M:CleanMinimap()
         if _G[nm] then self:Suppress(_G[nm]) end
     end
     if _G.MinimapZoneText then self:Suppress(_G.MinimapZoneText) end
-    local mc = _G.MinimapCluster
-    if mc then
-        for _, key in ipairs({ "ZoneTextButton", "BorderTop", "InstanceDifficulty", "Tracking",
-                               "TrackingFrame", "IndicatorFrame", "MailFrame" }) do
-            if mc[key] then self:Suppress(mc[key]) end
-        end
-    end
+    -- le cluster ENTIER (zone, heure, calendrier, pistage, mail) : la minimap vit dans le module
+    if _G.MinimapCluster then self:Suppress(_G.MinimapCluster) end
     -- scan récursif (2 niveaux) : attrape les boutons d'addons même imbriqués
     local function scan(parent, depth)
         if not parent or not parent.GetChildren then return end
@@ -169,6 +164,37 @@ function M:Enable()
     self._enabled = true
     for _, e in ipairs({ "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD" }) do
         pcall(self.ev.RegisterEvent, self.ev, e)
+    end
+    -- bouton Pistage sur le bandeau du module Carte (le pistage minimap natif est masqué)
+    if not self.trackBtn and self.header then
+        local tb = CreateFrame("Button", nil, self.header)
+        tb:SetSize(16, 16)
+        tb:SetPoint("RIGHT", self.lock or self.header, self.lock and "LEFT" or "RIGHT", -4, 0)
+        tb:SetFrameLevel(self.header:GetFrameLevel() + 3)
+        tb.icon = tb:CreateTexture(nil, "ARTWORK"); tb.icon:SetAllPoints(tb)
+        if not (pcall(tb.icon.SetAtlas, tb.icon, "Minimap-Tracking-Button", true) and tb.icon:GetAtlas()) then
+            tb.icon:SetTexture("Interface\\Minimap\\Tracking\\None")
+        end
+        tb:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        tb:SetScript("OnEnter", function(s)
+            GameTooltip:SetOwner(s, "ANCHOR_LEFT"); GameTooltip:SetText("Pistage"); GameTooltip:Show()
+        end)
+        tb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        tb:SetScript("OnClick", function()
+            local t = (_G.MinimapCluster and _G.MinimapCluster.Tracking and _G.MinimapCluster.Tracking.Button)
+                or _G.MiniMapTrackingButton or _G.MiniMapTracking
+            if t then
+                if t.OpenMenu then pcall(t.OpenMenu, t)
+                elseif t.GetScript and t:GetScript("OnMouseDown") then pcall(t:GetScript("OnMouseDown"), t, "LeftButton")
+                elseif t.Click then pcall(t.Click, t) end
+            end
+        end)
+        self.trackBtn = tb
+        -- décale le texte de zone à gauche du bouton pistage
+        if self.suffixFS then
+            self.suffixFS:ClearAllPoints()
+            self.suffixFS:SetPoint("RIGHT", tb, "LEFT", -6, 0)
+        end
     end
     self:UpdateZone()
     if InCombatLockdown() then return end

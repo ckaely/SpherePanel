@@ -210,6 +210,15 @@ function SP:CreateModuleFrame(m)
 
     m.frame = frame
     m.body  = body
+
+    -- module "headerless" : fusionné visuellement avec le bandeau SpherePanel (pas de bandeau propre)
+    if m.headerless then
+        header:Hide()
+        body:ClearAllPoints()
+        body:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, 0)
+        body:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    end
+
     SP:UpdateCollapseVisual(m)
     SP:UpdatePinVisual(m)
 end
@@ -220,6 +229,7 @@ end
 function SP:UpdateCollapseVisual(m)
     local cfg = SP:GetModuleConfig(m.name)
     if not cfg then return end
+    if m.headerless then if m.body then m.body:Show() end return end
     if m.arrow then m.arrow:SetNormalTexture(cfg.collapsed and TEX_PLUS or TEX_MINUS) end
     if m.body then
         if cfg.collapsed then m.body:Hide() else m.body:Show() end
@@ -370,11 +380,17 @@ function SP:RebuildLayout()
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
         if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) then
-            local h = UIc.HEADER_H
-            if not cfg.collapsed then
-                local bodyH = cfg.height or m.defaultHeight or 100
-                if m.body then m.body:SetHeight(bodyH) end
-                h = h + bodyH
+            local h
+            if m.headerless then
+                h = cfg.height or m.defaultHeight or 100
+                if m.body then m.body:SetHeight(h) end
+            else
+                h = UIc.HEADER_H
+                if not cfg.collapsed then
+                    local bodyH = cfg.height or m.defaultHeight or 100
+                    if m.body then m.body:SetHeight(bodyH) end
+                    h = h + bodyH
+                end
             end
             m.frame:ClearAllPoints()
             m.frame:SetPoint("TOPLEFT",  content, "TOPLEFT",  0, -y)

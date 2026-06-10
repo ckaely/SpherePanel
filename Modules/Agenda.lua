@@ -34,25 +34,19 @@ function M:Init(body)
         elseif GameTimeFrame and GameTimeFrame.Click then pcall(GameTimeFrame.Click, GameTimeFrame) end
     end)
 
-    self.trackBtn = CreateFrame("Button", nil, self.bar, "UIPanelButtonTemplate")
-    self.trackBtn:SetSize(80, 18)
-    self.trackBtn:SetPoint("LEFT", self.calBtn, "RIGHT", 6, 0)
-    self.trackBtn:SetText("Pistage")
-    self.trackBtn:SetScript("OnClick", function(s)
-        -- réutilise le dropdown du bouton de pistage natif (même masqué)
-        local t = (_G.MinimapCluster and _G.MinimapCluster.Tracking and _G.MinimapCluster.Tracking.Button)
-            or _G.MiniMapTrackingButton or _G.MiniMapTracking
-        if t then
-            if t.OpenMenu then pcall(t.OpenMenu, t)
-            elseif t.GetScript and t:GetScript("OnMouseDown") then pcall(t:GetScript("OnMouseDown"), t, "LeftButton")
-            elseif t.Click then pcall(t.Click, t) end
-        end
-    end)
-
     self.list = CreateFrame("Frame", nil, body)
     self.list:SetPoint("TOPLEFT", self.bar, "BOTTOMLEFT", 0, -4)
     self.list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -4, 2)
     self.list:SetClipsChildren(true)
+    -- défilement molette
+    self.scroll = 0
+    self.list:EnableMouseWheel(true)
+    self.list:SetScript("OnMouseWheel", function(_, delta)
+        local visible = self.list:GetHeight() or 1
+        local maxS = math.max(0, (self._contentH or 0) - visible)
+        self.scroll = math.min(maxS, math.max(0, self.scroll - delta * 32))
+        self:Refresh()
+    end)
 
     self.empty = self.list:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     self.empty:SetPoint("TOP", self.list, "TOP", 0, -6)
@@ -141,8 +135,8 @@ function M:Refresh()
                 ri = ri + 1
                 local r = GetRow(self, ri)
                 r:ClearAllPoints()
-                r:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
-                r:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
+                r:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -(y - self.scroll))
+                r:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -(y - self.scroll))
                 local wd = ((now.weekday or 1) - 1 + offset) % 7 + 1
                 local dayTxt = (offset == 0) and "|cFF40FF40Auj.|r"
                     or ("|cFFAAAAAA%s %d|r"):format(DAYS[wd], (now.monthDay or 1) + offset)
@@ -160,6 +154,9 @@ function M:Refresh()
 
     for i = ri + 1, #self.rows do self.rows[i]:Hide() end
     self.empty:SetShown(ri == 0)
+    self._contentH = y
+    local visible = self.list:GetHeight() or 1
+    if self.scroll > math.max(0, y - visible) then self.scroll = math.max(0, y - visible) end
 
     local needed = 26 + math.max(ROW_H, y)
     local cfg = SP:GetModuleConfig(self.name)

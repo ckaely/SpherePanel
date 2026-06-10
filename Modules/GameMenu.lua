@@ -9,6 +9,7 @@ local M = {
     name          = "GameMenu",
     label         = "Menus",
     defaultHeight = 64,
+    headerless    = true,   -- fusionné avec le bandeau SpherePanel (pas de bandeau "Menus")
 }
 
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -310,7 +311,10 @@ function M:UpdateHeaderInfo()
     if cfg.showFPS then
         parts[#parts + 1] = ("%d fps"):format(math.floor(GetFramerate() + 0.5))
     end
-    SP:SetModuleHeaderText(self, table.concat(parts, "  "))
+    -- fusion : l'info va dans le bandeau SpherePanel, pas dans un bandeau de module
+    if SP.panel and SP.panel.titleInfo then
+        SP.panel.titleInfo:SetText(table.concat(parts, "  "))
+    end
 end
 
 -- ------------------------------------------------------------
@@ -409,9 +413,72 @@ function M:AcquireHolder(i)
         h.icon:SetPoint("TOPLEFT", h, "TOPLEFT", 2, -2); h.icon:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -2, 2)
         h.hl = h:CreateTexture(nil, "OVERLAY")
         h.hl:SetAllPoints(h); h.hl:SetColorTexture(0.30, 0.55, 0.95, 0.35); h.hl:Hide()
+        -- croix d'exclusion (visible au survol) : clic = blacklist + restitution du bouton
+        local ex = CreateFrame("Button", nil, h)
+        ex:SetSize(11, 11)
+        ex:SetPoint("TOPRIGHT", h, "TOPRIGHT", 1, 1)
+        ex:SetFrameLevel(h:GetFrameLevel() + 20)
+        ex.bg = ex:CreateTexture(nil, "BACKGROUND"); ex.bg:SetAllPoints(ex); ex.bg:SetColorTexture(0.7, 0.15, 0.15, 0.95)
+        ex.fs = ex:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); ex.fs:SetPoint("CENTER", 0, 0); ex.fs:SetText("x")
+        ex:Hide()
+        ex:SetScript("OnClick", function() if h.button then M:ExcludeButton(h.button) end end)
+        ex:SetScript("OnEnter", function(s)
+            s:Show()
+            GameTooltip:SetOwner(s, "ANCHOR_RIGHT"); GameTooltip:SetText("Exclure cette icône"); GameTooltip:Show()
+        end)
+        ex:SetScript("OnLeave", function(s) s:Hide(); GameTooltip:Hide() end)
+        h.ex = ex
         self.holders[i] = h
     end
     return h
+end
+
+-- Exclut définitivement un bouton capturé : blacklist (nom sans suffixe numérique) + restitution.
+function M:ExcludeButton(button)
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.addonBlacklist = cfg.addonBlacklist or {}
+    local n = button:GetName()
+    if n and n ~= "" then
+        local pat = n:gsub("%d+$", "")           -- "TodoSphere12" → "TodoSphere" (exclut toute la famille)
+        table.insert(cfg.addonBlacklist, pat)
+        SP:Print("Icône exclue : " .. pat .. "* (modifiable dans SPDB.modules.GameMenu.addonBlacklist)")
+    end
+    -- restitue ce bouton et tous ses frères blacklistés
+    local toRestore = {}
+    for b in pairs(self.stolen) do
+        local bn = b:GetName()
+        if b == button or (n and bn and bn:gsub("%d+$", "") == n:gsub("%d+$", "")) then
+            toRestore[#toRestore + 1] = b
+        end
+    end
+    for _, b in ipairs(toRestore) do self:RestoreOne(b) end
+    self:Layout()
+end
+
+function M:RestoreOne(button)
+    local o = self.stolen[button]
+    if not o then return end
+    pcall(function()
+        if o.hidden then for _, r in ipairs(o.hidden) do r:Show() end end
+        if o.holder then o.holder.button = nil; o.holder:Hide() end
+        button._spH = nil
+        button:SetParent(o.parent or Minimap)
+        button:SetScale(o.scale or 1)
+        button:SetMovable(o.movable and true or false)
+        button:SetScript("OnUpdate", o.onUpdate)
+        button:SetScript("OnDragStart", o.onDragStart)
+        button:SetScript("OnDragStop", o.onDragStop)
+        button:ClearAllPoints()
+        if o.points and #o.points > 0 then for _, p in ipairs(o.points) do button:SetPoint(unpack(p)) end
+        else button:SetPoint("CENTER", Minimap, "CENTER", 0, 0) end
+        button:Hide()   -- exclu = ni dans le module, ni sur la carte
+    end)
+    self.stolen[button] = nil
+    for i, h in ipairs(self.order) do
+        if h.button == button or h.button == nil then
+            if h.button == button then table.remove(self.order, i) break end
+        end
+    end
 end
 
 -- Capture un bouton d'addon dans une case carrée uniforme (icône copiée, textures natives masquées).
@@ -460,8 +527,17 @@ function M:StealOne(button)
     button:SetScale(1)
     if not button._spHooked then
         button._spHooked = true
-        button:HookScript("OnEnter", function() if button._spH then button._spH.hl:Show() end end)
-        button:HookScript("OnLeave", function() if button._spH then button._spH.hl:Hide() end end)
+        button:HookScript("OnEnter", function()
+            if button._spH then button._spH.hl:Show(); if button._spH.ex then button._spH.ex:Show() end end
+        end)
+        button:HookScript("OnLeave", function()
+            if button._spH then
+                button._spH.hl:Hide()
+                C_Timer.After(0.4, function()
+                    if button._spH and button._spH.ex and not button._spH.ex:IsMouseOver() then button._spH.ex:Hide() end
+                end)
+            end
+        end)
     end
     button._spH = h
     h.button = button

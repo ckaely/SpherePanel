@@ -49,6 +49,12 @@ local function CreateRow(self)
     row.icon:SetSize(ROW_H - 6, ROW_H - 6)
     row.icon:SetPoint("LEFT", row, "LEFT", 3, 0)
     row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    -- modèle 3D (focus tête) à la place de l'icône dragon
+    row.model = CreateFrame("PlayerModel", nil, row)
+    row.model:SetSize(ROW_H - 2, ROW_H - 2)
+    row.model:SetPoint("LEFT", row, "LEFT", 2, 0)
+    row.model:EnableMouse(false)
+    row.model:Hide()
 
     row.pin = CreateFrame("Button", nil, row)
     row.pin:SetSize(14, 14)
@@ -115,6 +121,17 @@ function M:Enable()
         _G.SilverDragon.RegisterCallback(self, "Seen", function(_, id, zone, x, y, is_dead, source, unit, GUID)
             self:OnSeen(id, zone, x, y, is_dead)
         end)
+        -- trésors / coffres (vignettes loot)
+        _G.SilverDragon.RegisterCallback(self, "SeenLoot", function(_, name, id, zone, x, y)
+            self:OnSeenLoot(name, id, zone, x, y)
+        end)
+    end
+    -- masque le popup natif de SilverDragon (module ClickTarget) — le son d'alerte reste
+    local sd = _G.SilverDragon
+    local ct = sd and sd.GetModule and sd:GetModule("ClickTarget", true)
+    if ct then
+        if self._ctWasEnabled == nil then self._ctWasEnabled = ct:IsEnabled() and true or false end
+        if ct.Disable then pcall(ct.Disable, ct) end
     end
     if not self._ticker then
         self._ticker = C_Timer.NewTicker(1, function() self:Tick() end)
@@ -125,9 +142,34 @@ end
 function M:Disable()
     self._enabled = false
     self:SetNativeFlash(true)  -- restaure le flash natif
+    -- restaure le popup natif (ClickTarget) si on l'avait coupé
+    local sd = _G.SilverDragon
+    local ct = sd and sd.GetModule and sd:GetModule("ClickTarget", true)
+    if ct and self._ctWasEnabled and ct.Enable then pcall(ct.Enable, ct) end
+    self._ctWasEnabled = nil
     if self._ticker then self._ticker:Cancel(); self._ticker = nil end
     for _, r in ipairs(self.rows) do r:Hide() end
+    for _, r in ipairs(self.lootRows) do r:Hide() end
+    for _, m2 in ipairs(self.models) do m2:Hide() end
     SP:SetModuleHeaderText(self, "")
+end
+
+-- Trésor / coffre détecté (callback "SeenLoot")
+function M:OnSeenLoot(name, id, zone, x, y)
+    if not self._enabled then return end
+    for i, a in ipairs(self.alerts) do
+        if a.treasure and a.id == id then table.remove(self.alerts, i); break end
+    end
+    table.insert(self.alerts, 1, {
+        id = id, name = tostring(name or "Trésor"), treasure = true,
+        zone = zone, x = x, y = y, dead = false,
+        t = GetTime(), pinned = false, showLoot = false,
+    })
+    while #self.alerts > 10 do table.remove(self.alerts) end
+    local cfg = SP:GetModuleConfig(self.name)
+    if cfg and cfg.collapsed then cfg.collapsed = false; SP:UpdateCollapseVisual(self) end
+    self._forceReveal = true
+    self:Refresh()
 end
 
 function M:OnResize(w, h) self:Refresh() end
@@ -226,8 +268,24 @@ function M:Refresh()
         end
         a.row = row
         row.alert = a
-        row.icon:SetTexture(RARE_ICON)
-        local status = a.dead and "|cFFFF5555(mort)|r" or "|cFF55FF55(vivant)|r"
+        -- modèle 3D tête de la créature ; trésors = icône coffre
+        if a.treasure then
+            row.model:Hide()
+            row.icon:Show()
+            row.icon:SetTexture("Interface\\Icons\\INV_Misc_Treasurechest03c")
+        else
+            local okM = pcall(row.model.SetCreature, row.model, a.id)
+            if okM then
+                pcall(row.model.SetPortraitZoom, row.model, 0.9)   -- focus sur la tête
+                row.model:Show()
+                row.icon:Hide()
+            else
+                row.model:Hide()
+                row.icon:Show()
+                row.icon:SetTexture(RARE_ICON)
+            end
+        end
+        local status = a.treasure and "|cFF55CCFF(trésor)|r" or (a.dead and "|cFFFF5555(mort)|r" or "|cFF55FF55(vivant)|r")
         row.name:SetText(("|cFFFFD200%s|r %s"):format(tostring(a.name), status))
         local coords = (a.x and a.y and (a.x > 0 or a.y > 0)) and (("  %.1f, %.1f"):format(a.x * 100, a.y * 100)) or ""
         row._zoneText = ZoneName(a.zone) .. coords
@@ -241,15 +299,19 @@ function M:Refresh()
         -- expansion inline : modèle 3D + butin
         if a.showLoot then
             self._anyLootShown = true
-            mi = mi + 1
-            local mdl = self:_AcquireModel(mi)
-            mdl:ClearAllPoints()
-            mdl:SetPoint("TOPLEFT", self.list, "TOPLEFT", 2, -y)
-            pcall(mdl.SetCreature, mdl, a.id)
-            pcall(mdl.SetCamDistanceScale, mdl, 1.6)
-            mdl:Show()
+            local lootX = 4
+            if not a.treasure then
+                mi = mi + 1
+                local mdl = self:_AcquireModel(mi)
+                mdl:ClearAllPoints()
+                mdl:SetPoint("TOPLEFT", self.list, "TOPLEFT", 2, -y)
+                pcall(mdl.SetCreature, mdl, a.id)
+                pcall(mdl.SetCamDistanceScale, mdl, 1.6)
+                mdl:Show()
+                lootX = 80
+            end
 
-            local loot = nsSD and nsSD.Loot and nsSD.Loot.GetLootTable and nsSD.Loot.GetLootTable(a.id)
+            local loot = nsSD and nsSD.Loot and nsSD.Loot.GetLootTable and nsSD.Loot.GetLootTable(a.id, a.treasure)
             local ly = y
             local shownLoot = 0
             if loot then
@@ -278,7 +340,7 @@ function M:Refresh()
                             lr.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
                         end
                         lr:ClearAllPoints()
-                        lr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 80, -ly)
+                        lr:SetPoint("TOPLEFT", self.list, "TOPLEFT", lootX, -ly)
                         lr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -ly)
                         lr:Show()
                         ly = ly + 17
@@ -293,7 +355,7 @@ function M:Refresh()
                 lr.icon:SetTexture(nil)
                 lr.fs:SetText("|cFF888888Aucun butin connu.|r")
                 lr:ClearAllPoints()
-                lr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 80, -ly)
+                lr:SetPoint("TOPLEFT", self.list, "TOPLEFT", lootX, -ly)
                 lr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -ly)
                 lr:Show()
                 ly = ly + 17

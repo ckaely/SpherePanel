@@ -46,6 +46,11 @@ function SP:CreatePanel()
     tlabel:SetPoint("LEFT", orb, "RIGHT", 4, 0)
     tlabel:SetText("|cFF4AA3FFSphere|rPanel")
 
+    -- zone d'info à droite du bandeau (horloge / FPS, alimentée par le module Menus)
+    local tinfo = title:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    tinfo:SetPoint("RIGHT", title, "RIGHT", -8, 0)
+    p.titleInfo = tinfo
+
     -- Ligne d'accent + shimmer animé qui balaie
     local accent = title:CreateTexture(nil, "ARTWORK")
     accent:SetPoint("BOTTOMLEFT", title, "BOTTOMLEFT", 0, 0)
