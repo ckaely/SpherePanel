@@ -428,6 +428,15 @@ local function BuildComportement(page)
     cT:SetScript("OnClick", function() pcfg.vpos = "top"; cB:SetChecked(false); cT:SetChecked(true); applyBeh() end)
     cB:SetScript("OnClick", function() pcfg.vpos = "bottom"; cT:SetChecked(false); cB:SetChecked(true); applyBeh() end)
 
+    -- Second panneau (libre) : reçoit les modules par drag-and-drop
+    MakeCheck(page, "Second panneau (déposez-y des modules par glisser-déposer)", 250, -50,
+        function() return pcfg.panel2 and pcfg.panel2.enabled end,
+        function(v)
+            pcfg.panel2 = pcfg.panel2 or { x = 20, y = -200, width = 280 }
+            pcfg.panel2.enabled = v
+            if SP.ApplyPanel2 then SP:ApplyPanel2() end
+        end)
+
     local fh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     fh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -176); fh:SetText("Estompage (mode libre)")
     MakeCheck(page, "Estomper après inactivité", 16, -196, function() return af.enabled end, function(v) af.enabled = v end)

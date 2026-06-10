@@ -64,11 +64,27 @@ function SP:CreatePanel()
 
     title:SetScript("OnDragStart", function()
         if SP.db.panel.locked or InCombatLockdown() then return end
+        -- en mode magnétisé (1/2), le panneau reste du côté défini : pas de déplacement manuel
+        if (SP.db.panel.behavior or 3) ~= 3 then return end
+        p._dragging = true
         p:StartMoving()
     end)
     title:SetScript("OnDragStop", function()
         p:StopMovingOrSizing()
         SP:SavePanelPosition()
+        C_Timer.After(0.05, function() p._dragging = false end)
+    end)
+    -- clic gauche = afficher/masquer le module Menus (fusionné) ; clic droit = menu contextuel
+    title:SetScript("OnMouseUp", function(_, button)
+        if p._dragging then return end
+        local m = SP.modulesByName and SP.modulesByName["GameMenu"]
+        if not m then return end
+        if button == "RightButton" then
+            SP:ShowModuleMenu(m)
+        elseif button == "LeftButton" then
+            local cfg = SP:GetModuleConfig("GameMenu")
+            if cfg and cfg.enabled then SP:DisableModuleUI(m) else SP:EnableModule("GameMenu") end
+        end
     end)
 
     -- --- Région de contenu (les modules s'y ancrent, sous le titre) ---
@@ -148,7 +164,7 @@ function SP:_TickFree(p, elapsed)
     p.bg:SetAlpha(lerp(p.bg:GetAlpha(), pg, elapsed, dur))
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() then
+        if f and f:IsShown() and not m._onPanel2 then
             local cfg = SP:GetModuleConfig(m.name)
             local goal
             if m._forceReveal or (cfg and cfg.pinned) or (apply and apply[m.name] == false) then goal = 1
@@ -181,7 +197,7 @@ function SP:_TickSlide(p, elapsed)
     local anyRevealed = false
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and m._layoutTop then
+        if f and f:IsShown() and m._layoutTop and not m._onPanel2 then
             local cfg = SP:GetModuleConfig(m.name)
             local reveal
             if m._forceReveal or (cfg and cfg.pinned) then reveal = true
@@ -253,7 +269,7 @@ end
 
 function SP:_ResetSlides(p)
     for _, m in ipairs(SP.modules) do
-        if m.frame and m._layoutTop then
+        if m.frame and m._layoutTop and not m._onPanel2 then
             m._curSlide = 0
             m.frame:ClearAllPoints()
             m.frame:SetPoint("TOPLEFT", p.content, "TOPLEFT", 0, -m._layoutTop)
@@ -366,9 +382,71 @@ end
 
 -- Applique l'apparence (couleur + transparence du fond). Appelé au login + à chaque changement.
 function SP:ApplyAppearance()
-    if not SP.panel then return end
     local c = SP.db.panel.bgColor or { r = 0.05, g = 0.05, b = 0.07, a = 0.85 }
-    SP.panel.bg:SetColorTexture(c.r, c.g, c.b, c.a)
+    if SP.panel then SP.panel.bg:SetColorTexture(c.r, c.g, c.b, c.a) end
+    if SP.panel2 then SP.panel2.bg:SetColorTexture(c.r, c.g, c.b, c.a) end
+end
+
+-- ------------------------------------------------------------
+-- Second panneau (option) : libre, déplaçable, reçoit les modules par drag-and-drop.
+-- ------------------------------------------------------------
+function SP:CreatePanel2()
+    if SP.panel2 then return SP.panel2 end
+    local db = SP.db.panel.panel2
+    local p = CreateFrame("Frame", "SpherePanelSecond", UIParent)
+    p:SetSize(db.width or 280, 200)
+    p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", db.x or 20, db.y or -200)
+    p:SetClampedToScreen(true)
+    p:SetMovable(true)
+    p:SetFrameStrata("MEDIUM")
+
+    local bg = p:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(p)
+    local c = SP.db.panel.bgColor or { r = 0.05, g = 0.05, b = 0.07, a = 0.85 }
+    bg:SetColorTexture(c.r, c.g, c.b, c.a)
+    p.bg = bg
+
+    local title = CreateFrame("Frame", nil, p)
+    title:SetPoint("TOPLEFT"); title:SetPoint("TOPRIGHT"); title:SetHeight(SP.UI.TITLE_H)
+    title:EnableMouse(true); title:RegisterForDrag("LeftButton")
+    local tbg = title:CreateTexture(nil, "ARTWORK"); tbg:SetAllPoints(title); tbg:SetColorTexture(0.10, 0.10, 0.15, 0.95)
+    local tl = title:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    tl:SetPoint("LEFT", title, "LEFT", 8, 0); tl:SetText("|cFF4AA3FFSphere|rPanel |cFF888888②|r")
+    title:SetScript("OnDragStart", function() if not InCombatLockdown() then p:StartMoving() end end)
+    title:SetScript("OnDragStop", function()
+        p:StopMovingOrSizing()
+        local l, t = p:GetLeft(), p:GetTop()
+        local ut = UIParent:GetTop()
+        if l and t and ut then db.x, db.y = l, t - ut end
+        p:ClearAllPoints()
+        p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", db.x, db.y)
+    end)
+    p.title = title
+
+    local content = CreateFrame("Frame", nil, p)
+    content:SetPoint("TOPLEFT", p, "TOPLEFT", 0, -SP.UI.TITLE_H)
+    content:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, -SP.UI.TITLE_H)
+    content:SetHeight(1)
+    p.content = content
+
+    SP.panel2 = p
+    return p
+end
+
+-- Active/désactive le second panneau (option Comportement).
+function SP:ApplyPanel2()
+    local en = SP.db.panel.panel2 and SP.db.panel.panel2.enabled
+    if en then
+        SP:CreatePanel2():Show()
+    elseif SP.panel2 then
+        -- rapatrie les modules du panneau 2 vers le 1
+        for _, m in ipairs(SP.modules) do
+            local cfg = SP:GetModuleConfig(m.name)
+            if cfg and cfg.panel == 2 then cfg.panel = 1 end
+        end
+        SP.panel2:Hide()
+    end
+    SP:RebuildLayout()
 end
 
 -- Largeur changée : propager aux modules (les ancres LEFT/RIGHT gèrent déjà la largeur,

@@ -93,6 +93,21 @@ function M:Init(body)
         x = x + 60
     end
 
+    -- bouton "Gérer" (onglet Addons) : active le mode exclusion d'icônes
+    local mg = CreateFrame("Button", nil, self.tabs)
+    mg:SetSize(50, TAB_H)
+    mg:SetPoint("RIGHT", self.tabs, "RIGHT", 0, 0)
+    mg.fs = mg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    mg.fs:SetAllPoints(mg); mg.fs:SetText("Gérer"); mg.fs:SetTextColor(0.7, 0.7, 0.7)
+    mg:SetScript("OnClick", function() self:SetManage(not self._manage) end)
+    mg:SetScript("OnEnter", function(s)
+        GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
+        GameTooltip:SetText("Mode gestion : clic sur une icône = exclure définitivement")
+        GameTooltip:Show()
+    end)
+    mg:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    self.manageBtn = mg
+
     -- Pages
     self.menusPage = CreateFrame("Frame", nil, body)
     self.menusPage:SetPoint("TOPLEFT", self.tabs, "BOTTOMLEFT", 0, -2)
@@ -364,6 +379,7 @@ function M:LayoutAddons(w)
         h:SetSize(ICON, ICON)
         h:SetPoint("TOPLEFT", self.addonsPage, "TOPLEFT", leftPad + col * (ICON + IGAP), -(IGAP + rowN * (ICON + IGAP)))
         h:Show()
+        if h.manage then h.manage:SetShown(self._manage and h.button ~= nil) end
     end
     local rows = math.ceil(count / perRow)
     return IGAP + rows * (ICON + IGAP)
@@ -413,24 +429,36 @@ function M:AcquireHolder(i)
         h.icon:SetPoint("TOPLEFT", h, "TOPLEFT", 2, -2); h.icon:SetPoint("BOTTOMRIGHT", h, "BOTTOMRIGHT", -2, 2)
         h.hl = h:CreateTexture(nil, "OVERLAY")
         h.hl:SetAllPoints(h); h.hl:SetColorTexture(0.30, 0.55, 0.95, 0.35); h.hl:Hide()
-        -- croix d'exclusion (visible au survol) : clic = blacklist + restitution du bouton
-        local ex = CreateFrame("Button", nil, h)
-        ex:SetSize(11, 11)
-        ex:SetPoint("TOPRIGHT", h, "TOPRIGHT", 1, 1)
-        ex:SetFrameLevel(h:GetFrameLevel() + 20)
-        ex.bg = ex:CreateTexture(nil, "BACKGROUND"); ex.bg:SetAllPoints(ex); ex.bg:SetColorTexture(0.7, 0.15, 0.15, 0.95)
-        ex.fs = ex:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); ex.fs:SetPoint("CENTER", 0, 0); ex.fs:SetText("x")
-        ex:Hide()
-        ex:SetScript("OnClick", function() if h.button then M:ExcludeButton(h.button) end end)
-        ex:SetScript("OnEnter", function(s)
-            s:Show()
-            GameTooltip:SetOwner(s, "ANCHOR_RIGHT"); GameTooltip:SetText("Exclure cette icône"); GameTooltip:Show()
+        -- overlay "Gérer" : strata maximale (passe au-dessus des boutons volés, même DIALOG),
+        -- visible uniquement en mode gestion ; clic = exclusion définitive.
+        local ov = CreateFrame("Button", nil, h)
+        ov:SetAllPoints(h)
+        ov:SetFrameStrata("FULLSCREEN_DIALOG")
+        ov.bg = ov:CreateTexture(nil, "BACKGROUND"); ov.bg:SetAllPoints(ov); ov.bg:SetColorTexture(0.75, 0.15, 0.15, 0.45)
+        ov.fs = ov:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge"); ov.fs:SetPoint("CENTER"); ov.fs:SetText("x")
+        ov:Hide()
+        ov:SetScript("OnClick", function() if h.button then M:ExcludeButton(h.button); M:SetManage(true) end end)
+        ov:SetScript("OnEnter", function(s)
+            GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Exclure : " .. tostring(h.button and h.button:GetName() or "?"))
+            GameTooltip:Show()
         end)
-        ex:SetScript("OnLeave", function(s) s:Hide(); GameTooltip:Hide() end)
-        h.ex = ex
+        ov:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        h.manage = ov
         self.holders[i] = h
     end
     return h
+end
+
+-- Mode gestion : overlays rouges cliquables sur chaque icône (exclusion en 1 clic).
+function M:SetManage(on)
+    self._manage = on and true or false
+    for _, h in ipairs(self.holders) do
+        if h.manage then h.manage:SetShown(self._manage and h:IsShown() and h.button ~= nil) end
+    end
+    if self.manageBtn then
+        self.manageBtn.fs:SetTextColor(self._manage and 1 or 0.7, self._manage and 0.3 or 0.7, 0.3)
+    end
 end
 
 -- Exclut définitivement un bouton capturé : blacklist (nom sans suffixe numérique) + restitution.

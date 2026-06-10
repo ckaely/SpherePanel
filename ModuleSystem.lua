@@ -73,7 +73,7 @@ function SP:GetVisibleOrderedModules()
     local t = {}
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
-        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) then t[#t + 1] = m end
+        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) and not m._onPanel2 then t[#t + 1] = m end
     end
     return t
 end
@@ -373,13 +373,18 @@ end
 function SP:RebuildLayout()
     local panel = SP.panel
     if not panel then return end
-    local content = panel.content
     local UIc = SP.UI
-    local y = 0
+    local p2 = SP.panel2 and SP.panel2:IsShown() and SP.panel2 or nil
+    local y1, y2 = 0, 0
 
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
         if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) then
+            -- panneau cible (2 si demandé ET second panneau actif, sinon 1)
+            local onP2 = (cfg.panel == 2) and p2 ~= nil
+            local content = onP2 and p2.content or panel.content
+            if m.frame:GetParent() ~= content then m.frame:SetParent(content) end
+
             local h
             if m.headerless then
                 h = cfg.height or m.defaultHeight or 100
@@ -392,22 +397,29 @@ function SP:RebuildLayout()
                     h = h + bodyH
                 end
             end
+            local y = onP2 and y2 or y1
             m.frame:ClearAllPoints()
             m.frame:SetPoint("TOPLEFT",  content, "TOPLEFT",  0, -y)
             m.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
             m.frame:SetHeight(h)
             m.frame:Show()
             m._layoutTop, m._layoutHeight = y, h
-            y = y + h + UIc.GAP
+            m._onPanel2 = onP2
+            if onP2 then y2 = y + h + UIc.GAP else y1 = y + h + UIc.GAP end
         elseif m.frame then
             m.frame:Hide()
             m._layoutTop, m._layoutHeight = nil, nil
         end
     end
 
-    if y < 1 then y = 1 end
-    content:SetHeight(y)
-    panel:SetHeight(y + UIc.TITLE_H)
+    if y1 < 1 then y1 = 1 end
+    panel.content:SetHeight(y1)
+    panel:SetHeight(y1 + UIc.TITLE_H)
+    if p2 then
+        if y2 < 1 then y2 = 1 end
+        p2.content:SetHeight(y2)
+        p2:SetHeight(y2 + UIc.TITLE_H)
+    end
 end
 
 -- ============================================================
@@ -500,6 +512,17 @@ function SP:EndReorder(m)
     local g = SP._ghost
     if g then g:SetScript("OnUpdate", nil); g:Hide() end
     if SP._dropLine then SP._dropLine:Hide() end
+
+    -- déposé sur le second panneau → le module y déménage
+    local cfg = SP:GetModuleConfig(m.name)
+    if SP.panel2 and SP.panel2:IsShown() and SP.panel2:IsMouseOver() then
+        if cfg then cfg.panel = 2 end
+        SP._dragModule = nil
+        SP:RebuildLayout()
+        return
+    elseif cfg and cfg.panel == 2 and SP.panel and SP.panel:IsMouseOver() then
+        cfg.panel = 1   -- retour au panneau principal (puis réordonné ci-dessous)
+    end
 
     local dropIdx = SP:ComputeDropIndex()
     SP._dragModule = nil

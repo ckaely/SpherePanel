@@ -21,6 +21,7 @@ Modules\Auras.lua
 Modules\Bags.lua
 Modules\Knowledge.lua
 Modules\Agenda.lua
+Modules\RaidTools.lua
 Modules\SilverDragon.lua
 Modules\GameMenu.lua
 Modules\SquareMap.lua

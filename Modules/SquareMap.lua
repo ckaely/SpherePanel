@@ -112,6 +112,10 @@ function M:CleanMinimap()
     if _G.MinimapZoneText then self:Suppress(_G.MinimapZoneText) end
     -- le cluster ENTIER (zone, heure, calendrier, pistage, mail) : la minimap vit dans le module
     if _G.MinimapCluster then self:Suppress(_G.MinimapCluster) end
+    -- boutons +/- de zoom et hitareas (enfants keyed de Minimap en retail moderne)
+    for _, key in ipairs({ "ZoomIn", "ZoomOut", "ZoomHitArea" }) do
+        if Minimap[key] then self:Suppress(Minimap[key]) end
+    end
     -- scan récursif (2 niveaux) : attrape les boutons d'addons même imbriqués
     local function scan(parent, depth)
         if not parent or not parent.GetChildren then return end
@@ -119,9 +123,9 @@ function M:CleanMinimap()
             local n = c:GetName()
             local w = c:GetWidth() or 0
             local keep = n and (n:match("^Minimap") or n:match("^MiniMap") or n:match("^SpherePanel"))
-            if c:IsShown() and not keep
+            if c:IsShown() and not keep and not c._spH
                 and (c:GetObjectType() == "Button" or c:GetObjectType() == "Frame")
-                and w > 0 and w < 56 then
+                and w >= 0 and w < 80 then
                 self:Suppress(c)
             elseif depth > 0 and not keep then
                 scan(c, depth - 1)

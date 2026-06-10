@@ -64,6 +64,7 @@ function SP:OnLogin()
     SP:CreatePanel()      -- PanelFrame.lua : frame déplaçable + resize
     SP:BuildModules()     -- ModuleSystem.lua : header + content par module (appelle RebuildLayout)
     SP:ApplyPanelBehavior()  -- comportement 1/2/3 (magnétisation + bord déclencheur)
+    SP:ApplyPanel2()         -- second panneau (option)
     SP:ApplyAppearance()     -- couleur/transparence du fond
     if SP.db.panel.fx and UIFrameFadeIn and SP.panel then
         UIFrameFadeIn(SP.panel, 0.6, 0, 1)   -- apparition stylée
