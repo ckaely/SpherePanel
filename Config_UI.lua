@@ -281,6 +281,7 @@ local REQUIRES = {
     SilverDragon = { "SilverDragon" },
     DamageMeter  = { "Details (optionnel, sinon moteur interne)" },
     Bags         = { "Pawn (optionnel, flèche upgrade)" },
+    AlterEgo     = { "AlterEgo" },
 }
 
 -- ===== Page d'un module =====================================================
@@ -379,94 +380,178 @@ local function BuildApparence(page)
     note:SetText("|cFF777777La couleur et la transparence s'appliquent immédiatement.|r")
 end
 
--- ===== Comportement =========================================================
+-- Page scrollable : retourne un conteneur interne déplacé à la molette.
+local function MakeScrollPage(page, innerH)
+    page:SetClipsChildren(true)
+    local inner = CreateFrame("Frame", nil, page)
+    inner:SetPoint("TOPLEFT", page, "TOPLEFT", 0, 0)
+    inner:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0)
+    inner:SetHeight(innerH or 700)
+    page._scroll = 0
+    page:EnableMouseWheel(true)
+    page:SetScript("OnMouseWheel", function(_, delta)
+        local maxS = math.max(0, inner:GetHeight() - (page:GetHeight() or 1))
+        page._scroll = math.min(maxS, math.max(0, page._scroll - delta * 40))
+        inner:ClearAllPoints()
+        inner:SetPoint("TOPLEFT", page, "TOPLEFT", 0, page._scroll)
+        inner:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, page._scroll)
+    end)
+    return inner
+end
+
+-- ===== Comportement (scrollable, sections nettes) ===========================
+local function MakeRadioRow(parent, x, y, defs, getf, setf)
+    -- defs = { {val,label,disabled?}, ... } ; une seule coche active ; molette non requise
+    local btns = {}
+    local cx = x
+    for _, d in ipairs(defs) do
+        local c = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+        c:SetSize(22, 22)
+        c:SetPoint("TOPLEFT", parent, "TOPLEFT", cx, y)
+        c.text = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        c.text:SetPoint("LEFT", c, "RIGHT", 2, 0); c.text:SetText(d[2])
+        c.val = d[1]
+        if d[3] then
+            c:Disable()
+            c.text:SetTextColor(0.45, 0.45, 0.45)
+        else
+            c:SetScript("OnClick", function(s)
+                setf(s.val)
+                for _, o in ipairs(btns) do o:SetChecked(o.val == getf()) end
+            end)
+        end
+        btns[#btns + 1] = c
+        cx = cx + 24 + (c.text:GetStringWidth() or 40) + 14
+    end
+    local function refresh() for _, o in ipairs(btns) do o:SetChecked(o.val == getf()) end end
+    refresh()
+    return btns, refresh
+end
+
+local function SectionHeader(parent, y, text)
+    local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    h:SetPoint("TOPLEFT", parent, "TOPLEFT", 6, y)
+    h:SetText("|cFF4AA3FF" .. text .. "|r")
+    local line = parent:CreateTexture(nil, "ARTWORK")
+    line:SetHeight(1)
+    line:SetPoint("TOPLEFT", parent, "TOPLEFT", 6, y - 16)
+    line:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -10, y - 16)
+    line:SetColorTexture(0.29, 0.64, 1, 0.20)
+    return y - 26
+end
+
 local function BuildComportement(page)
     local pcfg = SP.db.panel
     local af = pcfg.autofade
     local function applyBeh() if SP.ApplyPanelBehavior then SP:ApplyPanelBehavior() end end
+    local pg = MakeScrollPage(page, 800)
 
-    local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText("Comportement du panneau")
+    local hdr = pg:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdr:SetPoint("TOPLEFT", pg, "TOPLEFT", 4, -4); hdr:SetText("Comportement")
 
-    local modeL = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    modeL:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -32); modeL:SetText("Mode :")
+    -- ===== Panneau principal ① =====
+    local y = SectionHeader(pg, -30, "Panneau principal ①")
     local BEH = {
-        { 1, "1 — Panneau glissant magnétisé (revient au bord)" },
-        { 2, "2 — Modules individuels + glow coloré au bord" },
+        { 1, "1 — Glissant magnétisé (revient au bord)" },
+        { 2, "2 — Modules individuels + glow au bord" },
         { 3, "3 — Libre, toujours visible" },
     }
-    page.behChecks = {}
+    local behBtns = {}
     for i, d in ipairs(BEH) do
-        local c = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
-        c:SetPoint("TOPLEFT", page, "TOPLEFT", 16, -50 - (i - 1) * 22)
-        c.text = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); c.text:SetPoint("LEFT", c, "RIGHT", 2, 0); c.text:SetText(d[2])
+        local c = CreateFrame("CheckButton", nil, pg, "UICheckButtonTemplate")
+        c:SetPoint("TOPLEFT", pg, "TOPLEFT", 14, y - (i - 1) * 22)
+        c.text = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        c.text:SetPoint("LEFT", c, "RIGHT", 2, 0); c.text:SetText(d[2])
         c.val = d[1]; c:SetChecked(pcfg.behavior == d[1])
         c:SetScript("OnClick", function(s)
             pcfg.behavior = s.val
-            for _, o in ipairs(page.behChecks) do o:SetChecked(o.val == s.val) end
+            for _, o in ipairs(behBtns) do o:SetChecked(o.val == s.val) end
             applyBeh()
         end)
-        page.behChecks[i] = c
+        behBtns[i] = c
     end
+    y = y - 3 * 22 - 6
 
-    local sideL = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    sideL:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -124); sideL:SetText("Côté d'aimantation :")
-    local cR = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate"); cR:SetPoint("TOPLEFT", page, "TOPLEFT", 16, -144)
-    cR.text = cR:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); cR.text:SetPoint("LEFT", cR, "RIGHT", 2, 0); cR.text:SetText("Droite")
-    local cL = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate"); cL:SetPoint("TOPLEFT", page, "TOPLEFT", 130, -144)
-    cL.text = cL:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); cL.text:SetPoint("LEFT", cL, "RIGHT", 2, 0); cL.text:SetText("Gauche")
-    cR:SetChecked(pcfg.side ~= "left"); cL:SetChecked(pcfg.side == "left")
-    cR:SetScript("OnClick", function() pcfg.side = "right"; cL:SetChecked(false); cR:SetChecked(true); applyBeh() end)
-    cL:SetScript("OnClick", function() pcfg.side = "left"; cR:SetChecked(false); cL:SetChecked(true); applyBeh() end)
+    local sideL = pg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sideL:SetPoint("TOPLEFT", pg, "TOPLEFT", 14, y - 6); sideL:SetText("|cFFAAAAAACôté :|r")
+    MakeRadioRow(pg, 60, y, { { "right", "Droite" }, { "left", "Gauche" } },
+        function() return pcfg.side or "right" end,
+        function(v) pcfg.side = v; applyBeh() end)
+    local vposL = pg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    vposL:SetPoint("TOPLEFT", pg, "TOPLEFT", 250, y - 6); vposL:SetText("|cFFAAAAAAAncrage :|r")
+    MakeRadioRow(pg, 310, y, { { "top", "Haut" }, { "bottom", "Bas" } },
+        function() return pcfg.vpos or "top" end,
+        function(v) pcfg.vpos = v; applyBeh() end)
+    y = y - 30
 
-    -- Ancrage vertical (mode magnétisé) : Haut / Bas
-    local cT = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate"); cT:SetPoint("TOPLEFT", page, "TOPLEFT", 250, -144)
-    cT.text = cT:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); cT.text:SetPoint("LEFT", cT, "RIGHT", 2, 0); cT.text:SetText("Haut")
-    local cB = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate"); cB:SetPoint("TOPLEFT", page, "TOPLEFT", 330, -144)
-    cB.text = cB:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); cB.text:SetPoint("LEFT", cB, "RIGHT", 2, 0); cB.text:SetText("Bas")
-    cT:SetChecked(pcfg.vpos ~= "bottom"); cB:SetChecked(pcfg.vpos == "bottom")
-    cT:SetScript("OnClick", function() pcfg.vpos = "top"; cB:SetChecked(false); cT:SetChecked(true); applyBeh() end)
-    cB:SetScript("OnClick", function() pcfg.vpos = "bottom"; cT:SetChecked(false); cB:SetChecked(true); applyBeh() end)
-
-    -- ===== Second panneau (section dédiée, bien visible) =====
-    local p2h = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    p2h:SetPoint("TOPLEFT", page, "TOPLEFT", 250, -32)
-    p2h:SetText("|cFF4AA3FFSecond panneau ②|r")
-    MakeCheck(page, "Activer le second panneau", 254, -52,
+    -- ===== Second panneau ② =====
+    y = SectionHeader(pg, y - 6, "Second panneau ②")
+    MakeCheck(pg, "Activer", 14, y,
         function() return pcfg.panel2 and pcfg.panel2.enabled end,
         function(v)
-            pcfg.panel2 = pcfg.panel2 or { x = 20, y = -200, width = 280 }
+            pcfg.panel2 = pcfg.panel2 or { x = 20, y = -200, width = 280, side = "auto", vpos = "top" }
             pcfg.panel2.enabled = v
             if SP.ApplyPanel2 then SP:ApplyPanel2() end
         end)
-    local p2n = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    p2n:SetPoint("TOPLEFT", page, "TOPLEFT", 254, -78)
-    p2n:SetJustifyH("LEFT")
-    p2n:SetText("|cFF999999Position : automatique, côté OPPOSÉ au panneau\nprincipal (suit Droite/Gauche et Haut/Bas ci-dessous).\nDéplaçable par sa barre de titre. Glissez un module\n(drag du bandeau) et déposez-le dessus pour l'y mettre.|r")
+    y = y - 26
+    local p2 = pcfg.panel2
+    local s2L = pg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    s2L:SetPoint("TOPLEFT", pg, "TOPLEFT", 14, y - 6); s2L:SetText("|cFFAAAAAACôté :|r")
+    MakeRadioRow(pg, 60, y, { { "auto", "Auto (opposé)" }, { "right", "Droite" }, { "left", "Gauche" } },
+        function() return (p2 and p2.side) or "auto" end,
+        function(v) p2.side = v; if SP.ApplyPanel2 then SP:ApplyPanel2() end end)
+    y = y - 26
+    local v2L = pg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    v2L:SetPoint("TOPLEFT", pg, "TOPLEFT", 14, y - 6); v2L:SetText("|cFFAAAAAAAncrage :|r")
+    MakeRadioRow(pg, 75, y, { { "top", "Haut" }, { "bottom", "Bas" } },
+        function() return (p2 and p2.vpos) or "top" end,
+        function(v) p2.vpos = v; if SP.ApplyPanel2 then SP:ApplyPanel2() end end)
+    y = y - 26
+    local m2L = pg:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    m2L:SetPoint("TOPLEFT", pg, "TOPLEFT", 14, y - 6); m2L:SetText("|cFFAAAAAAMode :|r")
+    MakeRadioRow(pg, 60, y, {
+        { 3, "Libre" },
+        { 1, "Glissant (à venir)", true },     -- grisé : non disponible pour le ②
+        { 2, "Individuel (à venir)", true },   -- grisé : non disponible pour le ②
+    }, function() return 3 end, function() end)
+    y = y - 26
+    local p2n = pg:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    p2n:SetPoint("TOPLEFT", pg, "TOPLEFT", 14, y - 2); p2n:SetJustifyH("LEFT")
+    p2n:SetText("|cFF888888Glissez le bandeau d'un module et déposez-le sur le ② pour l'y déplacer.|r")
+    y = y - 22
 
-    local fh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    fh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -176); fh:SetText("Estompage (mode libre)")
-    MakeCheck(page, "Estomper après inactivité", 16, -196, function() return af.enabled end, function(v) af.enabled = v end)
-    MakeSlider(page, "Délai", 24, -226, 1, 30, 1, function() return af.delay end, function(v) af.delay = v end, function(v) return v .. " s" end)
-    MakeSlider(page, "Opacité (0% = transparent)", 24, -270, 0, 1, 0.05,
-        function() return af.alpha end, function(v) af.alpha = v end, function(v) return string.format("%d%%", math.floor(v * 100)) end)
-    MakeSlider(page, "Transition", 24, -314, 0.1, 1, 0.05,
-        function() return af.fadeDuration end, function(v) af.fadeDuration = v end, function(v) return string.format("%.2f s", v) end)
+    -- ===== Estompage (mode libre) =====
+    y = SectionHeader(pg, y - 6, "Estompage (mode libre)")
+    MakeCheck(pg, "Estomper après inactivité", 14, y,
+        function() return af.enabled end, function(v) af.enabled = v end)
+    y = y - 38
+    MakeSlider(pg, "Délai", 24, y, 1, 30, 1,
+        function() return af.delay end, function(v) af.delay = v end, function(v) return v .. " s" end)
+    y = y - 48
+    MakeSlider(pg, "Opacité (0% = transparent)", 24, y, 0, 1, 0.05,
+        function() return af.alpha end, function(v) af.alpha = v end,
+        function(v) return string.format("%d%%", math.floor(v * 100)) end)
+    y = y - 48
+    MakeSlider(pg, "Transition", 24, y, 0.1, 1, 0.05,
+        function() return af.fadeDuration end, function(v) af.fadeDuration = v end,
+        function(v) return string.format("%.2f s", v) end)
+    y = y - 44
 
-    local clHdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    clHdr:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -352); clHdr:SetText("Appliquer estompage/réduction à :")
+    -- ===== Appliquer à =====
+    y = SectionHeader(pg, y - 6, "Appliquer estompage/réduction à")
+    local listTop = y
     page.fadeRows = {}
     page.RefreshFade = function()
         af.apply = af.apply or {}
         for i, m in ipairs(SP:GetOrderedModules()) do
             local c = page.fadeRows[i]
             if not c then
-                c = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate"); c:SetSize(20, 20)
+                c = CreateFrame("CheckButton", nil, pg, "UICheckButtonTemplate"); c:SetSize(20, 20)
                 c.text = c:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); c.text:SetPoint("LEFT", c, "RIGHT", 2, 0)
                 page.fadeRows[i] = c
             end
             local col, rowN = (i - 1) % 2, math.floor((i - 1) / 2)
-            c:ClearAllPoints(); c:SetPoint("TOPLEFT", page, "TOPLEFT", 16 + col * 180, -374 - rowN * 22)
+            c:ClearAllPoints(); c:SetPoint("TOPLEFT", pg, "TOPLEFT", 14 + col * 190, listTop - rowN * 22)
             c.text:SetText(m.label)
             local mcfg = SP:GetModuleConfig(m.name); local en = mcfg and mcfg.enabled
             c:SetEnabled(en and true or false)

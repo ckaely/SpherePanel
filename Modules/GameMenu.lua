@@ -158,12 +158,15 @@ function M:BuildCustomMenus()
 end
 
 function M:Enable()
-    if not self._built then
-        if InCombatLockdown() then return end
-        if not self:EmbedMicroMenu() then self:BuildCustomMenus() end  -- vrai micro-menu Blizzard en priorité
-        self._built = true
-        if self._placeholder then self._placeholder:Hide() end
+    if InCombatLockdown() then return end
+    -- ré-embarque le micro-menu à CHAQUE Enable (un Disable l'a restitué à Blizzard)
+    if not self._microEmbedded then
+        if not self:EmbedMicroMenu() and #self.buttons == 0 then
+            self:BuildCustomMenus()   -- fallback icônes maison
+        end
     end
+    self._built = true
+    if self._placeholder then self._placeholder:Hide() end
     self._enabled = true
     self:CollectAddons()
     -- certains addons créent leur bouton après le login → re-collecte différée

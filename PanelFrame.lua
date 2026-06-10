@@ -346,11 +346,11 @@ function SP:ApplyPanelBehavior()
         local vpos = SP.db.panel.vpos or "top"
         p:ClearAllPoints()
         if vpos == "bottom" then
-            if side == "left" then p:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 40)
-            else p:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 40) end
+            if side == "left" then p:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 4)
+            else p:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 4) end
         else
-            if side == "left" then p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, -40)
-            else p:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, -40) end
+            if side == "left" then p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, -4)
+            else p:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, -4) end
         end
     end
     if p.edge then
@@ -466,18 +466,20 @@ function SP:ApplyPanel2()
     local en = SP.db.panel.panel2 and SP.db.panel.panel2.enabled
     if en then
         local p2 = SP:CreatePanel2()
+        local p2cfg = SP.db.panel.panel2
         local mainSide = SP.db.panel.side or "right"
-        local vpos = SP.db.panel.vpos or "top"
-        local x = 20
+        -- côté du ② : "auto" = opposé au principal, sinon choix explicite
+        local side2 = p2cfg.side or "auto"
+        if side2 == "auto" then side2 = (mainSide == "right") and "left" or "right" end
+        local vpos = p2cfg.vpos or "top"
+        local x = 4
         p2:ClearAllPoints()
-        if mainSide == "right" then
-            -- principal à droite → ② à gauche
-            if vpos == "bottom" then p2:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 40)
-            else p2:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, -40) end
+        if side2 == "left" then
+            if vpos == "bottom" then p2:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 4)
+            else p2:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, -4) end
         else
-            -- principal à gauche → ② à droite
-            if vpos == "bottom" then p2:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 40)
-            else p2:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, -40) end
+            if vpos == "bottom" then p2:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 4)
+            else p2:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, -4) end
         end
         p2:Show()
     elseif SP.panel2 then
