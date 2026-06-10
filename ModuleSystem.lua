@@ -259,6 +259,16 @@ function SP:SetModuleHeaderText(m, text)
     if m and m.suffixFS then m.suffixFS:SetText(text or "") end
 end
 
+-- Hauteur auto d'un module : respecte une hauteur fixée manuellement (cfg.fixedHeight).
+function SP:SetAutoHeight(m, needed)
+    local cfg = SP:GetModuleConfig(m.name)
+    if not cfg or cfg.fixedHeight then return end
+    if cfg.height ~= needed then
+        cfg.height = needed
+        SP:RebuildLayout()
+    end
+end
+
 -- ------------------------------------------------------------
 -- Menu contextuel (clic droit sur le bandeau)
 -- ------------------------------------------------------------

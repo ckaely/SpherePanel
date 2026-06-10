@@ -107,11 +107,15 @@ local function MenusOptions(page, y)
     MakeCheck(page, "Afficher les FPS", 16, y - 48, function() return cfg.showFPS end, function(v) cfg.showFPS = v end)
 end
 
-local function QuestOptions(page, y)
-    local cfg = SP:GetModuleConfig("QuestTracker")
-    MakeSlider(page, "Hauteur du module", 16, y - 4, 100, 600, 10,
-        function() return cfg.height or 300 end,
-        function(v) cfg.height = v; SP:RebuildLayout() end, function(v) return v .. " px" end)
+local function AurasOptions(page, y)
+    local cfg = SP:GetModuleConfig("Auras")
+    MakeCheck(page, "Masquer les auras Blizzard même si le module est désactivé", 16, y,
+        function() return cfg.hideBlizzardAlways end,
+        function(v)
+            cfg.hideBlizzardAlways = v
+            local m = SP.modulesByName and SP.modulesByName["Auras"]
+            if m and m.ApplyBlizzardVisibility then m:ApplyBlizzardVisibility() end
+        end)
 end
 
 local function SquareMapOptions(page, y)
@@ -268,7 +272,15 @@ local function BagsOptions(page, y)
 end
 
 local SPECIFIC = {
-    GameMenu = MenusOptions, QuestTracker = QuestOptions, SquareMap = SquareMapOptions, Chat = ChatOptions, Bags = BagsOptions,
+    GameMenu = MenusOptions, SquareMap = SquareMapOptions, Chat = ChatOptions, Bags = BagsOptions, Auras = AurasOptions,
+}
+
+-- Dépendances tierces par module (affichées dans la page du module + statut chargé/absent).
+local REQUIRES = {
+    Knowledge    = { "MyusKnowledgePointsTracker" },
+    SilverDragon = { "SilverDragon" },
+    DamageMeter  = { "Details (optionnel, sinon moteur interne)" },
+    Bags         = { "Pawn (optionnel, flèche upgrade)" },
 }
 
 -- ===== Page d'un module =====================================================
@@ -279,7 +291,40 @@ local function BuildModulePage(page, m)
     MakeCheck(page, "Activé", 8, -32,
         function() return cfg and cfg.enabled end,
         function(v) if v then SP:EnableModule(m.name) else SP:DisableModuleUI(m) end end)
-    local afterCond = BuildConditions(page, m, -64)
+
+    -- Dépendance addon tiers (statut chargé/absent)
+    if REQUIRES[m.name] then
+        local req = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        req:SetPoint("TOPLEFT", page, "TOPLEFT", 200, -38)
+        local parts = {}
+        for _, dep in ipairs(REQUIRES[m.name]) do
+            local addonName = dep:match("^(%S+)")
+            local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded(addonName)
+            parts[#parts + 1] = (loaded and "|cFF40FF40" or "|cFFFF7777") .. dep .. "|r"
+        end
+        req:SetText("Requiert : " .. table.concat(parts, ", "))
+    end
+
+    -- Hauteur du module (tous sauf Menus) : slider = hauteur fixe ; "Auto" = recalcul automatique
+    local afterH = -64
+    if m.name ~= "GameMenu" then
+        MakeSlider(page, "Hauteur", 16, -68, 40, 600, 5,
+            function() return (cfg and cfg.height) or m.defaultHeight or 150 end,
+            function(v) if cfg then cfg.height = v; cfg.fixedHeight = true; SP:RebuildLayout() end end,
+            function(v) return v .. " px" end)
+        local auto = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+        auto:SetSize(50, 20); auto:SetPoint("TOPLEFT", page, "TOPLEFT", 250, -74)
+        auto:SetText("Auto")
+        auto:SetScript("OnClick", function()
+            if cfg then cfg.fixedHeight = false end
+            local mod = SP.modulesByName[m.name]
+            if mod then pcall(mod.OnResize, mod, 0, 0); if mod.RequestRefresh then mod:RequestRefresh() end end
+            SP:RebuildLayout()
+        end)
+        afterH = -112
+    end
+
+    local afterCond = BuildConditions(page, m, afterH)
     if SPECIFIC[m.name] then SPECIFIC[m.name](page, afterCond) end
 end
 

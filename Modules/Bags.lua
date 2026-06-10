@@ -240,6 +240,8 @@ function M:ToggleBags()
     if not cfg.enabled then SP:EnableModule(self.name) end
     if SP.panel then SP.panel:Show() end
     cfg.collapsed = not cfg.collapsed
+    -- tant que le sac est ouvert : ignore estompage ET réduction magnétisée (forceReveal)
+    self._forceReveal = not cfg.collapsed
     SP:UpdateCollapseVisual(self)
     self:CollapseOthers(not cfg.collapsed)
     if not cfg.collapsed and not InCombatLockdown() then self:SnapshotOnOpen() end
@@ -397,7 +399,7 @@ function M:Refresh()
 
     SP:SetModuleHeaderText(self, ("%d / %d"):format(free, total))
     local needed = math.max(HDR_H, y)
-    if cfg.height ~= needed then cfg.height = needed; SP:RebuildLayout() end
+    SP:SetAutoHeight(self, needed)
 end
 
 SP:RegisterModule(M)

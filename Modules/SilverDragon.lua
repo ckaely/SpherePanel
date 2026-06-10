@@ -73,8 +73,10 @@ end
 
 function M:Init(body)
     self.body = body
-    self.alerts = {}   -- liste {id,name,zone,x,y,dead,t,pinned,row}
+    self.alerts = {}    -- liste {id,name,zone,x,y,dead,t,pinned,showLoot,row}
     self.rows = {}
+    self.lootRows = {}  -- pool lignes de butin (inline)
+    self.models = {}    -- pool PlayerModel (modèle 3D du rare)
 
     self.info = body:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     self.info:SetPoint("TOP", body, "TOP", 0, -8)
@@ -83,6 +85,19 @@ function M:Init(body)
     self.list:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
     self.list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -2, 2)
     self.list:SetClipsChildren(true)
+
+    -- items non encore en cache → refresh quand les infos arrivent
+    self.iev = CreateFrame("Frame")
+    self.iev:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    self.iev:SetScript("OnEvent", function()
+        if self._enabled and self._anyLootShown then self:RequestRefresh() end
+    end)
+end
+
+function M:RequestRefresh()
+    if self._pending then return end
+    self._pending = true
+    C_Timer.After(0.2, function() self._pending = false; self:Refresh() end)
 end
 
 function M:Enable()
@@ -130,12 +145,16 @@ function M:OnSeen(id, zone, x, y, is_dead)
     table.insert(self.alerts, 1, {
         id = id, name = name or ("PNJ " .. tostring(id)),
         zone = zone, x = x, y = y, dead = is_dead and true or false,
-        t = GetTime(), pinned = false,
+        t = GetTime(), pinned = false, showLoot = false,
     })
     while #self.alerts > 10 do table.remove(self.alerts) end
     if not self.alerts[1].dead then
         PlaySound(SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959, "Master")
     end
+    -- une alerte DOIT se voir : déplie le module et sort de l'estompage/réduction
+    local cfg = SP:GetModuleConfig(self.name)
+    if cfg and cfg.collapsed then cfg.collapsed = false; SP:UpdateCollapseVisual(self) end
+    self._forceReveal = true
     self:Refresh()
 end
 
@@ -148,6 +167,7 @@ function M:Tick()
             table.remove(self.alerts, i); changed = true
         end
     end
+    self._forceReveal = #self.alerts > 0   -- plus d'alerte = retour au comportement normal
     if changed then self:Refresh() else self:RefreshTimers() end
 end
 
@@ -159,9 +179,45 @@ local function ZoneName(uiMapID)
     return tostring(uiMapID or "?")
 end
 
+-- ligne de butin inline (icône + nom coloré + iLvl, tooltip au survol)
+function M:_AcquireLootRow(i)
+    local r = self.lootRows[i]
+    if not r then
+        r = CreateFrame("Button", nil, self.list)
+        r:SetHeight(17)
+        r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(15, 15); r.icon:SetPoint("LEFT", r, "LEFT", 0, 0)
+        r.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        r.fs = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        r.fs:SetPoint("LEFT", r.icon, "RIGHT", 4, 0); r.fs:SetPoint("RIGHT", r, "RIGHT", -2, 0)
+        r.fs:SetJustifyH("LEFT"); r.fs:SetWordWrap(false)
+        local hl = r:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(r); hl:SetColorTexture(1, 1, 1, 0.08)
+        r:SetScript("OnEnter", function(s)
+            if s.itemID then GameTooltip:SetOwner(s, "ANCHOR_LEFT"); pcall(GameTooltip.SetItemByID, GameTooltip, s.itemID); GameTooltip:Show() end
+        end)
+        r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        self.lootRows[i] = r
+    end
+    return r
+end
+
+function M:_AcquireModel(i)
+    local m = self.models[i]
+    if not m then
+        m = CreateFrame("PlayerModel", nil, self.list)
+        m:SetSize(72, 92)
+        self.models[i] = m
+    end
+    return m
+end
+
 function M:Refresh()
     if not self.body then return end
     local y = 2
+    local li, mi = 0, 0
+    self._anyLootShown = false
+    local sd = _G.SilverDragon
+    local nsSD = sd and sd.NAMESPACE
+
     for i, a in ipairs(self.alerts) do
         local row = self.rows[i]
         if not row then
@@ -181,8 +237,73 @@ function M:Refresh()
         row:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -y)
         row:Show()
         y = y + ROW_H + GAP
+
+        -- expansion inline : modèle 3D + butin
+        if a.showLoot then
+            self._anyLootShown = true
+            mi = mi + 1
+            local mdl = self:_AcquireModel(mi)
+            mdl:ClearAllPoints()
+            mdl:SetPoint("TOPLEFT", self.list, "TOPLEFT", 2, -y)
+            pcall(mdl.SetCreature, mdl, a.id)
+            pcall(mdl.SetCamDistanceScale, mdl, 1.6)
+            mdl:Show()
+
+            local loot = nsSD and nsSD.Loot and nsSD.Loot.GetLootTable and nsSD.Loot.GetLootTable(a.id)
+            local ly = y
+            local shownLoot = 0
+            if loot then
+                for _, item in ipairs(loot) do
+                    local iid = ItemID(item)
+                    if iid then
+                        shownLoot = shownLoot + 1
+                        li = li + 1
+                        local lr = self:_AcquireLootRow(li)
+                        lr.itemID = iid
+                        local name, _, quality, _, _, _, _, _, _, icon = GetItemInfo(iid)
+                        if not name then
+                            pcall(C_Item.RequestLoadItemDataByID, iid)
+                            lr.fs:SetText("|cFF888888Chargement…|r")
+                            lr.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                        else
+                            local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[quality or 1]
+                            local hex = qc and qc.hex or "|cFFFFFFFF"
+                            local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(iid)
+                            local ilvlTxt = ""
+                            if classID == 2 or classID == 4 then
+                                local ilvl = GetDetailedItemLevelInfo(iid)
+                                if ilvl and ilvl > 1 then ilvlTxt = ("  |cFFFFD200%d|r"):format(ilvl) end
+                            end
+                            lr.fs:SetText(hex .. name .. "|r" .. ilvlTxt)
+                            lr.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+                        end
+                        lr:ClearAllPoints()
+                        lr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 80, -ly)
+                        lr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -ly)
+                        lr:Show()
+                        ly = ly + 17
+                        if shownLoot >= 10 then break end
+                    end
+                end
+            end
+            if shownLoot == 0 then
+                li = li + 1
+                local lr = self:_AcquireLootRow(li)
+                lr.itemID = nil
+                lr.icon:SetTexture(nil)
+                lr.fs:SetText("|cFF888888Aucun butin connu.|r")
+                lr:ClearAllPoints()
+                lr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 80, -ly)
+                lr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -ly)
+                lr:Show()
+                ly = ly + 17
+            end
+            y = math.max(y + 94, ly) + GAP   -- hauteur = max(modèle, butin)
+        end
     end
     for i = #self.alerts + 1, #self.rows do self.rows[i]:Hide() end
+    for i = li + 1, #self.lootRows do self.lootRows[i]:Hide() end
+    for i = mi + 1, #self.models do self.models[i]:Hide() end
 
     self.info:SetShown(#self.alerts == 0 and HasSD())
     if #self.alerts == 0 and HasSD() then self.info:SetText("|cFF888888En attente d'un rare…|r") end
@@ -192,7 +313,7 @@ function M:Refresh()
 
     local needed = math.max(ROW_H, 4 + #self.alerts * (ROW_H + GAP))
     local cfg = SP:GetModuleConfig(self.name)
-    if cfg and cfg.height ~= needed then cfg.height = needed; SP:RebuildLayout() end
+    SP:SetAutoHeight(self, needed)
 end
 
 -- Met à jour le compte à rebours dans le sous-texte (sans tout reconstruire).
@@ -221,36 +342,15 @@ function M:OnRowClick(row, button)
     local a = row.alert
     if not a then return end
     if button == "RightButton" then
-        self:ShowLoot(a, row)
+        -- développe/replie la liste de butin + modèle 3D sous l'alerte
+        a.showLoot = not a.showLoot
+        self:Refresh()
     else
         for i, x in ipairs(self.alerts) do if x == a then table.remove(self.alerts, i); break end end
         GameTooltip:Hide()
+        self._forceReveal = #self.alerts > 0
         self:Refresh()
     end
-end
-
-function M:ShowLoot(a, row)
-    GameTooltip:SetOwner(row, "ANCHOR_LEFT")
-    GameTooltip:SetText("Butin — " .. tostring(a.name), 1, 0.82, 0)
-    local sd = _G.SilverDragon
-    local ns = sd and sd.NAMESPACE
-    local loot = ns and ns.Loot and ns.Loot.GetLootTable and ns.Loot.GetLootTable(a.id)
-    if loot and #loot > 0 then
-        local n = 0
-        for _, item in ipairs(loot) do
-            local iid = ItemID(item)
-            if iid then
-                n = n + 1
-                local link = select(2, GetItemInfo(iid))
-                GameTooltip:AddLine(link or ("objet " .. tostring(iid)), 1, 1, 1)
-                if n >= 15 then break end
-            end
-        end
-        if n == 0 then GameTooltip:AddLine("Butin non résolu", 0.6, 0.6, 0.6) end
-    else
-        GameTooltip:AddLine("Aucun butin connu pour ce rare.", 0.6, 0.6, 0.6)
-    end
-    GameTooltip:Show()
 end
 
 SP:RegisterModule(M)

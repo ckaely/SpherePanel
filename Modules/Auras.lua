@@ -99,11 +99,41 @@ function M:Init(body)
     end)
 end
 
+-- Masque/restaure les cadres d'auras Blizzard (BuffFrame/DebuffFrame), avec hook anti re-Show.
+function M:SetBlizzardAuras(hidden)
+    for _, f in ipairs({ _G.BuffFrame, _G.DebuffFrame }) do
+        if f then
+            if hidden then
+                self._hiddenBlizz = self._hiddenBlizz or {}
+                self._hiddenBlizz[f] = true
+                pcall(f.Hide, f)
+                if not f._spAuraHook then
+                    f._spAuraHook = true
+                    local mod = self
+                    pcall(hooksecurefunc, f, "Show", function(s)
+                        if mod._hiddenBlizz and mod._hiddenBlizz[s] then pcall(s.Hide, s) end
+                    end)
+                end
+            else
+                if self._hiddenBlizz then self._hiddenBlizz[f] = nil end
+                pcall(f.Show, f)
+            end
+        end
+    end
+end
+
+function M:ApplyBlizzardVisibility()
+    local cfg = SP:GetModuleConfig(self.name)
+    -- masqué si module actif OU option "toujours masquer"
+    self:SetBlizzardAuras(self._enabled or (cfg and cfg.hideBlizzardAlways))
+end
+
 function M:Enable()
     self._enabled = true
     self:Prewarm(32)
     self.ev:RegisterUnitEvent("UNIT_AURA", "player")
     if self._placeholder then self._placeholder:Hide() end
+    self:ApplyBlizzardVisibility()
     self:SetTab(SP:GetModuleConfig(self.name).tab or "all")
 end
 
@@ -111,6 +141,7 @@ function M:Disable()
     self._enabled = false
     if self.ev then self.ev:UnregisterAllEvents() end
     for _, ic in ipairs(self.icons) do ic:Hide() end
+    self:ApplyBlizzardVisibility()
 end
 
 function M:OnResize(w, h) self:RequestRefresh() end
@@ -196,7 +227,7 @@ function M:Refresh()
     -- hauteur dynamique
     local rows = math.max(1, math.ceil(shown / perRow))
     local needed = 4 + GAP + rows * (size + GAP)
-    if cfg.height ~= needed then cfg.height = needed; SP:RebuildLayout() end
+    SP:SetAutoHeight(self, needed)
 end
 
 SP:RegisterModule(M)

@@ -146,7 +146,7 @@ function SP:_TickFree(p, elapsed)
         if f and f:IsShown() then
             local cfg = SP:GetModuleConfig(m.name)
             local goal
-            if (cfg and cfg.pinned) or (apply and apply[m.name] == false) then goal = 1
+            if m._forceReveal or (cfg and cfg.pinned) or (apply and apply[m.name] == false) then goal = 1
             else
                 if f:IsMouseOver() then p._mActive[m.name] = now end
                 goal = ((now - (p._mActive[m.name] or 0)) > delay) and target or 1
@@ -179,7 +179,7 @@ function SP:_TickSlide(p, elapsed)
         if f and f:IsShown() and m._layoutTop then
             local cfg = SP:GetModuleConfig(m.name)
             local reveal
-            if cfg and cfg.pinned then reveal = true
+            if m._forceReveal or (cfg and cfg.pinned) then reveal = true
             elseif b == 1 then reveal = revealAll
             else
                 if f:IsMouseOver() or m._glowHover then p._mActive[m.name] = now end

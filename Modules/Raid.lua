@@ -147,11 +147,7 @@ function M:Rebuild()
     -- ajuste la hauteur du module
     local rows = twoCol and math.ceil(#units / 2) or #units
     local needed = math.max(BAR_H, 4 + rows * (BAR_H + GAP))
-    local cfg = SP:GetModuleConfig(self.name)
-    if cfg and cfg.height ~= needed then
-        cfg.height = needed
-        SP:RebuildLayout()
-    end
+    SP:SetAutoHeight(self, needed)
 end
 
 function M:OnResize(w, h)

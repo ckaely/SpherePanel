@@ -50,7 +50,7 @@ local function Apply(self)
 
     local cfg = SP:GetModuleConfig(self.name)
     local needed = side + 8
-    if cfg and math.abs((cfg.height or 0) - needed) > 1 then
+    if cfg and not cfg.fixedHeight and math.abs((cfg.height or 0) - needed) > 1 then
         cfg.height = needed
         SP:RebuildLayout()
     end

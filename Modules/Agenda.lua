@@ -163,7 +163,7 @@ function M:Refresh()
 
     local needed = 26 + math.max(ROW_H, y)
     local cfg = SP:GetModuleConfig(self.name)
-    if cfg and cfg.height ~= needed then cfg.height = needed; SP:RebuildLayout() end
+    SP:SetAutoHeight(self, needed)
 end
 
 SP:RegisterModule(M)
