@@ -302,13 +302,16 @@ function SP:ApplyPanelBehavior()
     local b = SP.db.panel.behavior or 3
     local side = SP.db.panel.side or "right"
     if b == 1 or b == 2 then
-        -- aimante le panneau au bord choisi
-        local y = SP.db.panel.y or -200
+        -- aimante le panneau au bord choisi, ancré en haut ou en bas (vpos)
+        local x = math.abs(SP.db.panel.x or 20)
+        local vpos = SP.db.panel.vpos or "top"
         p:ClearAllPoints()
-        if side == "left" then
-            p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", math.abs(SP.db.panel.x or 20), y)
+        if vpos == "bottom" then
+            if side == "left" then p:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 40)
+            else p:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 40) end
         else
-            p:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -math.abs(SP.db.panel.x or 20), y)
+            if side == "left" then p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, -40)
+            else p:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, -40) end
         end
     end
     if p.edge then

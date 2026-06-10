@@ -80,7 +80,23 @@ function M:UpdateZone()
     SP:SetModuleHeaderText(self, z .. coords)
 end
 
--- Masque les décorations Blizzard (anneau, boussole, zoom) et les icônes parasites restées sur la minimap.
+-- Masque + VERROUILLE (hook Show) une frame parasite : si l'addon la re-montre, on la re-cache.
+function M:Suppress(f)
+    if not f or self._hiddenDecor[f] then return end
+    self._hiddenDecor[f] = true
+    pcall(f.Hide, f)
+    if not f._spMapHook and f.HookScript then
+        f._spMapHook = true
+        local mod = self
+        -- hooksecurefunc de méthode : re-cache dès que quelqu'un la montre (tant que module actif)
+        pcall(hooksecurefunc, f, "Show", function(s)
+            if mod._enabled and mod._hiddenDecor and mod._hiddenDecor[s] then pcall(s.Hide, s) end
+        end)
+    end
+end
+
+-- Masque les décorations Blizzard (anneau, boussole, zoom, texte de zone, calendrier, pistage)
+-- et les icônes d'addons restées sur la minimap (BtWQuests, Narcissus, SNP, Details, KeystoneLoots...).
 function M:CleanMinimap()
     if InCombatLockdown() then return end
     self._hiddenDecor = self._hiddenDecor or {}
@@ -88,35 +104,37 @@ function M:CleanMinimap()
         "MinimapBorder", "MinimapBorderTop", "MinimapCompassTexture", "MinimapNorthTag",
         "MinimapZoomIn", "MinimapZoomOut", "Minimap_ZoomIn", "Minimap_ZoomOut",
         "MiniMapWorldMapButton", "MinimapZoneTextButton", "MiniMapTracking", "MinimapBackdrop",
+        "GameTimeFrame", "TimeManagerClockButton", "MiniMapMailFrame",
     }) do
-        local f = _G[nm]
-        if f and f.IsShown and f:IsShown() then pcall(f.Hide, f); self._hiddenDecor[f] = true end
+        if _G[nm] then self:Suppress(_G[nm]) end
     end
-    -- texte de zone + décorations du MinimapCluster (retail moderne)
-    if _G.MinimapZoneText then local zt = _G.MinimapZoneText; if zt:IsShown() then pcall(zt.Hide, zt); self._hiddenDecor[zt] = true end end
+    if _G.MinimapZoneText then self:Suppress(_G.MinimapZoneText) end
     local mc = _G.MinimapCluster
     if mc then
-        for _, key in ipairs({ "ZoneTextButton", "BorderTop", "InstanceDifficulty", "Tracking", "TrackingFrame" }) do
-            local f = mc[key]
-            if f and f.IsShown and f:IsShown() then pcall(f.Hide, f); self._hiddenDecor[f] = true end
+        for _, key in ipairs({ "ZoneTextButton", "BorderTop", "InstanceDifficulty", "Tracking",
+                               "TrackingFrame", "IndicatorFrame", "MailFrame" }) do
+            if mc[key] then self:Suppress(mc[key]) end
         end
     end
-    -- icônes d'addons restées sur la minimap / le cluster (déjà collectées dans Menus sinon)
-    local function scan(parent)
+    -- scan récursif (2 niveaux) : attrape les boutons d'addons même imbriqués
+    local function scan(parent, depth)
         if not parent or not parent.GetChildren then return end
         for _, c in ipairs({ parent:GetChildren() }) do
             local n = c:GetName()
             local w = c:GetWidth() or 0
-            if c:IsShown() and (c:GetObjectType() == "Button" or c:GetObjectType() == "Frame")
-                and w > 0 and w < 48
-                and not (n and (n:match("^Minimap") or n:match("^MiniMap") or n:match("^SpherePanel"))) then
-                pcall(c.Hide, c); self._hiddenDecor[c] = true
+            local keep = n and (n:match("^Minimap") or n:match("^MiniMap") or n:match("^SpherePanel"))
+            if c:IsShown() and not keep
+                and (c:GetObjectType() == "Button" or c:GetObjectType() == "Frame")
+                and w > 0 and w < 56 then
+                self:Suppress(c)
+            elseif depth > 0 and not keep then
+                scan(c, depth - 1)
             end
         end
     end
-    scan(Minimap)
-    scan(_G.MinimapCluster)
-    scan(_G.MinimapBackdrop)
+    scan(Minimap, 1)
+    scan(_G.MinimapCluster, 1)
+    scan(_G.MinimapBackdrop, 1)
 end
 
 function M:RestoreMinimapDecor()

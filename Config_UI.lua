@@ -374,6 +374,15 @@ local function BuildComportement(page)
     cR:SetScript("OnClick", function() pcfg.side = "right"; cL:SetChecked(false); cR:SetChecked(true); applyBeh() end)
     cL:SetScript("OnClick", function() pcfg.side = "left"; cR:SetChecked(false); cL:SetChecked(true); applyBeh() end)
 
+    -- Ancrage vertical (mode magnétisé) : Haut / Bas
+    local cT = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate"); cT:SetPoint("TOPLEFT", page, "TOPLEFT", 250, -144)
+    cT.text = cT:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); cT.text:SetPoint("LEFT", cT, "RIGHT", 2, 0); cT.text:SetText("Haut")
+    local cB = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate"); cB:SetPoint("TOPLEFT", page, "TOPLEFT", 330, -144)
+    cB.text = cB:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); cB.text:SetPoint("LEFT", cB, "RIGHT", 2, 0); cB.text:SetText("Bas")
+    cT:SetChecked(pcfg.vpos ~= "bottom"); cB:SetChecked(pcfg.vpos == "bottom")
+    cT:SetScript("OnClick", function() pcfg.vpos = "top"; cB:SetChecked(false); cT:SetChecked(true); applyBeh() end)
+    cB:SetScript("OnClick", function() pcfg.vpos = "bottom"; cT:SetChecked(false); cB:SetChecked(true); applyBeh() end)
+
     local fh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     fh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -176); fh:SetText("Estompage (mode libre)")
     MakeCheck(page, "Estomper après inactivité", 16, -196, function() return af.enabled end, function(v) af.enabled = v end)
