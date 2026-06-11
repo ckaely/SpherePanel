@@ -176,12 +176,28 @@ function M:Enable()
     C_Timer.After(8, function()
         if self._enabled and not InCombatLockdown() then self:CollectAddons(); self:Layout() end
     end)
+    -- enforcement : GW2_UI & co reparentent les micro-boutons → on les reprend périodiquement
+    if not self._microTicker then
+        self._microTicker = C_Timer.NewTicker(2, function()
+            if not self._enabled or InCombatLockdown() then return end
+            if (SP:GetModuleConfig(self.name).activeTab or "menus") ~= "menus" then return end
+            if not self._microEmbedded then
+                self:EmbedMicroMenu()
+            else
+                -- un bouton volé par un autre addon ? on ré-asserte parent + layout
+                for _, b in ipairs(self.microButtons or {}) do
+                    if b:GetParent() ~= self.menusPage then self:LayoutMicroMenu(); break end
+                end
+            end
+        end)
+    end
     self:SetTab(SP:GetModuleConfig(self.name).activeTab or "menus")
     self:UpdateHeaderInfo()
 end
 
 function M:Disable()
     self._enabled = false
+    if self._microTicker then self._microTicker:Cancel(); self._microTicker = nil end
     for _, b in ipairs(self.buttons) do b:Hide() end
     self:RestoreAddons()
     self:RestoreMicroMenu()

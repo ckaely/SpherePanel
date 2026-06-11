@@ -141,6 +141,25 @@ function M:CleanMinimap()
     scan(Minimap, 1)
     scan(_G.MinimapCluster, 1)
     scan(_G.MinimapBackdrop, 1)
+    -- catch-all POSITIONNEL : toute petite frame dont le centre est DANS le rectangle
+    -- de la minimap est un bouton d'addon (peu importe parent/ancrage) → supprimée.
+    local mL, mR, mT, mB = Minimap:GetLeft(), Minimap:GetRight(), Minimap:GetTop(), Minimap:GetBottom()
+    if mL and mR and mT and mB then
+        for _, c in ipairs({ UIParent:GetChildren() }) do
+            if not self._hiddenDecor[c] and not c._spH and c.GetObjectType
+                and (c:GetObjectType() == "Button" or c:GetObjectType() == "Frame") and c:IsShown() then
+                local w = c:GetWidth() or 0
+                local n = c:GetName()
+                if w > 4 and w < 60
+                    and not (n and (n:match("^SpherePanel") or n:match("^Minimap") or n:match("^MiniMap") or n:match("^GameTooltip"))) then
+                    local cx, cy = c:GetCenter()
+                    if cx and cy and cx >= mL - 20 and cx <= mR + 20 and cy >= mB - 20 and cy <= mT + 20 then
+                        self:Suppress(c)
+                    end
+                end
+            end
+        end
+    end
     -- boutons parentés ailleurs (UIParent…) mais ANCRÉS sur la minimap (Narcissus, etc.)
     for _, c in ipairs({ UIParent:GetChildren() }) do
         if not self._hiddenDecor[c] and c.GetObjectType

@@ -511,9 +511,10 @@ local function BuildComportement(page)
     m2L:SetPoint("TOPLEFT", pg, "TOPLEFT", 14, y - 6); m2L:SetText("|cFFAAAAAAMode :|r")
     MakeRadioRow(pg, 60, y, {
         { 3, "Libre" },
-        { 1, "Glissant (à venir)", true },     -- grisé : non disponible pour le ②
-        { 2, "Individuel (à venir)", true },   -- grisé : non disponible pour le ②
-    }, function() return 3 end, function() end)
+        { 1, "Glissant" },
+        { 2, "Individuel" },
+    }, function() return (p2 and p2.behavior) or 3 end,
+       function(v) p2.behavior = v; if SP.ApplyPanel2 then SP:ApplyPanel2() end end)
     y = y - 26
     local p2n = pg:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     p2n:SetPoint("TOPLEFT", pg, "TOPLEFT", 14, y - 2); p2n:SetJustifyH("LEFT")

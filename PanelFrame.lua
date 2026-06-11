@@ -196,10 +196,10 @@ function SP:_TickFree(p, elapsed)
     end
 end
 
--- ===== Comportements 1/2 : glissement sur le côté =====
-function SP:_TickSlide(p, elapsed)
-    local b = SP.db.panel.behavior
-    local side = SP.db.panel.side or "right"
+-- ===== Comportements 1/2 : glissement sur le côté (générique, panneau ① ou ②) =====
+function SP:_TickSlide(p, elapsed, b, side, isP2)
+    b = b or SP.db.panel.behavior
+    side = side or SP.db.panel.side or "right"
     local dir = (side == "left") and -1 or 1
     local hidden = ((p:GetWidth() or 280) + 40) * dir
     local af = SP.db.panel.autofade or {}
@@ -213,9 +213,11 @@ function SP:_TickSlide(p, elapsed)
     end
 
     local anyRevealed = false
+    p._mActive = p._mActive or {}
+    local wantP2 = isP2 and true or false
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and m._layoutTop and not m._onPanel2 then
+        if f and f:IsShown() and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             local cfg = SP:GetModuleConfig(m.name)
             local reveal
             if m._forceReveal or (cfg and cfg.pinned) then reveal = true
@@ -240,21 +242,23 @@ function SP:_TickSlide(p, elapsed)
     p.bg:SetAlpha(lerp(p.bg:GetAlpha(), bgGoal, elapsed, dur))
     p.title:SetAlpha(lerp(p.title:GetAlpha(), tGoal, elapsed, dur))
 
-    if b == 2 then SP:_UpdateEdgeGlows(p) else SP:_HideEdgeGlows(p) end
+    if b == 2 then SP:_UpdateEdgeGlows(p, side, isP2) else SP:_HideEdgeGlows(p) end
 end
 
 function SP:_HideEdgeGlows(p)
     if p.edge and p.edge.glows then for _, g in ipairs(p.edge.glows) do g:Hide() end end
 end
 
-function SP:_UpdateEdgeGlows(p)
+function SP:_UpdateEdgeGlows(p, side, isP2)
     local edge = p.edge
+    if not edge then return end
     local uh = UIParent:GetTop()
-    local leftSide = (SP.db.panel.side or "right") == "left"
+    local leftSide = (side or SP.db.panel.side or "right") == "left"
+    local wantP2 = isP2 and true or false
     local i = 0
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and m._layoutTop then
+        if f and f:IsShown() and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             local cfg = SP:GetModuleConfig(m.name)
             local slidOff = (math.abs(m._curSlide or 0) > 4) and not (cfg and cfg.pinned)
             i = i + 1
@@ -285,9 +289,10 @@ function SP:_UpdateEdgeGlows(p)
     for j = i + 1, #edge.glows do edge.glows[j]:Hide() end
 end
 
-function SP:_ResetSlides(p)
+function SP:_ResetSlides(p, isP2)
+    local wantP2 = isP2 and true or false
     for _, m in ipairs(SP.modules) do
-        if m.frame and m._layoutTop and not m._onPanel2 then
+        if m.frame and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             m._curSlide = 0
             m.frame:ClearAllPoints()
             m.frame:SetPoint("TOPLEFT", p.content, "TOPLEFT", 0, -m._layoutTop)
@@ -321,7 +326,22 @@ end
 function SP:_PanelTick(p, elapsed)
     SP:_TickCosmetics(p, elapsed)
     local b = (SP.db and SP.db.panel and SP.db.panel.behavior) or 3
-    if b == 1 or b == 2 then SP:_TickSlide(p, elapsed) else SP:_TickFree(p, elapsed) end
+    if b == 1 or b == 2 then SP:_TickSlide(p, elapsed, b, SP.db.panel.side, false)
+    else SP:_TickFree(p, elapsed) end
+
+    -- panneau ② : son propre mode (libre / glissant / individuel)
+    local p2 = SP.panel2
+    local p2cfg = SP.db.panel.panel2
+    if p2 and p2:IsShown() and p2cfg and p2cfg.enabled then
+        local b2 = p2cfg.behavior or 3
+        if b2 == 1 or b2 == 2 then
+            p2._resetDone = false
+            SP:_TickSlide(p2, elapsed, b2, SP._p2side or "left", true)
+        elseif not p2._resetDone then
+            SP:_ResetSlides(p2, true)
+            p2._resetDone = true
+        end
+    end
 end
 
 function SP:_InitPanelController(p)
@@ -455,6 +475,13 @@ function SP:CreatePanel2()
     hint:SetText("|cFF777777Déposez des modules ici\n(glissez leur bandeau)|r")
     p.emptyHint = hint
 
+    -- bord déclencheur (modes 1/2 du panneau ②)
+    local edge = CreateFrame("Frame", "SpherePanelEdge2", UIParent)
+    edge:SetWidth(10); edge:EnableMouse(true); edge:SetFrameStrata("HIGH"); edge:Hide()
+    edge.glows = {}
+    p.edge = edge
+    p._mActive = {}
+
     SP.panel2 = p
     return p
 end
@@ -473,6 +500,7 @@ function SP:ApplyPanel2()
         if side2 == "auto" then side2 = (mainSide == "right") and "left" or "right" end
         local vpos = p2cfg.vpos or "top"
         local x = 4
+        SP._p2side = side2
         p2:ClearAllPoints()
         if side2 == "left" then
             if vpos == "bottom" then p2:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 4)
@@ -481,6 +509,21 @@ function SP:ApplyPanel2()
             if vpos == "bottom" then p2:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 4)
             else p2:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, -4) end
         end
+        -- bord déclencheur du ② : positionné sur SON côté, actif en modes 1/2
+        local b2 = p2cfg.behavior or 3
+        if p2.edge then
+            p2.edge:ClearAllPoints()
+            if side2 == "left" then
+                p2.edge:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
+                p2.edge:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
+            else
+                p2.edge:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", 0, 0)
+                p2.edge:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", 0, 0)
+            end
+            p2.edge:SetShown(b2 == 1 or b2 == 2)
+        end
+        p2._panelActive = 0
+        p2._resetDone = false
         p2:Show()
     elseif SP.panel2 then
         -- rapatrie les modules du panneau 2 vers le 1

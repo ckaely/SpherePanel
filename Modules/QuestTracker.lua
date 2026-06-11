@@ -419,12 +419,18 @@ function M:GetTrackedQuestIDs()
             local ok, qid = pcall(C_QuestLog.GetQuestIDForWorldQuestWatchIndex, i); if ok then add(qid) end
         end
     end
-    -- expéditions / tâches de la zone courante (entrées isTask du journal, souvent cachées)
+    -- expéditions / tâches : UNIQUEMENT celles de la zone où se trouve le personnage
+    -- (comportement du traqueur Blizzard : C_TaskQuest.IsActive = on est dans la zone de réalisation)
     local n = C_QuestLog.GetNumQuestLogEntries() or 0
     for i = 1, n do
         local info = C_QuestLog.GetInfo(i)
         if info and not info.isHeader and (info.isTask or info.isBounty) and info.questID then
-            add(info.questID)
+            local inArea = true
+            if C_TaskQuest and C_TaskQuest.IsActive then
+                local ok, act = pcall(C_TaskQuest.IsActive, info.questID)
+                inArea = ok and act or false
+            end
+            if inArea then add(info.questID) end
         end
     end
     return ids

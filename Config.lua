@@ -28,7 +28,7 @@ SP.defaults = {
         vpos     = "top",     -- "top" ou "bottom" : ancrage vertical en mode magnétisé
         fx       = true,      -- effets visuels (orbe pulsant + shimmer + intro)
         panel2   = { enabled = false, x = 20, y = -200, width = 280,
-                     side = "auto", vpos = "top" },  -- second panneau (libre) ; side: auto=opposé au principal
+                     side = "auto", vpos = "top", behavior = 3 },  -- second panneau ; side: auto=opposé au principal
         bgColor  = { r = 0.05, g = 0.05, b = 0.07, a = 0.85 },  -- fond du panneau (Apparence)
         autofade = {          -- estompage automatique (comportement 3)
             enabled      = false,
