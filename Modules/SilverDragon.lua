@@ -3,7 +3,7 @@
 -- ============================================================
 -- Écoute le callback "Seen" de SilverDragon, affiche des alertes lisibles.
 --   clic GAUCHE = supprime l'alerte ; clic DROIT = affiche le butin ; 📌 = épingle (pas d'expiration).
--- Auto-expiration 60 s (sauf épinglé). Masque l'alerte visuelle native de SilverDragon (flash) seulement.
+-- Auto-expiration 60 s (sauf épinglé). Masque les alertes visuelles natives de SilverDragon.
 local ADDON_NAME, SP = ...
 
 local M = {
@@ -17,6 +17,12 @@ local EXPIRE = 60
 local RARE_ICON = "Interface\\Icons\\INV_Misc_Head_Dragon_01"
 
 local function HasSD() return _G.SilverDragon and true or false end
+
+local function WipeList(t)
+    if not t then return end
+    if wipe then wipe(t); return end
+    for i = #t, 1, -1 do t[i] = nil end
+end
 
 local function ItemID(item)
     if type(item) == "number" then return item end
@@ -37,6 +43,75 @@ function M:SetNativeFlash(enabled)
     end
 end
 
+function M:HideNativePopups()
+    local sd = _G.SilverDragon
+    local ct = sd and sd.GetModule and sd:GetModule("ClickTarget", true)
+    if not ct then return end
+
+    WipeList(ct.queue)
+    WipeList(ct.overflow)
+
+    if ct.stack then
+        for i = #ct.stack, 1, -1 do
+            local popup = ct.stack[i]
+            if popup then pcall(popup.Hide, popup) end
+            ct.stack[i] = nil
+        end
+    end
+
+    if ct.EnumerateActive then
+        pcall(function()
+            for popup in ct:EnumerateActive() do
+                if popup then pcall(popup.Hide, popup) end
+            end
+        end)
+    end
+
+    local i = 1
+    while true do
+        local f = _G["SilverDragonPopupButton" .. (i == 1 and "" or tostring(i))]
+        if not f then break end
+        pcall(f.Hide, f)
+        i = i + 1
+    end
+
+    if UIParent and UIParent.GetChildren then
+        local children = { UIParent:GetChildren() }
+        for _, child in ipairs(children) do
+            local name = child and child.GetName and child:GetName()
+            if name and name:match("^SilverDragonPopupButton") then
+                pcall(child.Hide, child)
+            end
+        end
+    end
+end
+
+function M:SetNativePopup(enabled)
+    local sd = _G.SilverDragon
+    local ct = sd and sd.GetModule and sd:GetModule("ClickTarget", true)
+    if not (ct and ct.db and ct.db.profile) then return end
+    local p = ct.db.profile
+
+    if enabled == false then
+        if self._savedClickTarget == nil then
+            self._savedClickTarget = { show = p.show, loot = p.loot }
+        end
+        p.show = false
+        p.loot = false
+        self:HideNativePopups()
+        if not self._popupHooked and hooksecurefunc and ct.ShowFrame then
+            self._popupHooked = true
+            pcall(hooksecurefunc, ct, "ShowFrame", function()
+                if self._enabled then self:HideNativePopups() end
+            end)
+        end
+    elseif self._savedClickTarget then
+        p.show = self._savedClickTarget.show
+        p.loot = self._savedClickTarget.loot
+        self._savedClickTarget = nil
+    end
+end
+
 -- ============================================================
 local function CreateRow(self)
     local row = CreateFrame("Button", nil, self.list)
@@ -49,7 +124,7 @@ local function CreateRow(self)
     row.icon:SetSize(ROW_H - 6, ROW_H - 6)
     row.icon:SetPoint("LEFT", row, "LEFT", 3, 0)
     row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    -- modèle 3D (focus tête) à la place de l'icône dragon
+    -- Ancien rendu 3D gardé caché ; l'affichage actif utilise une icône compacte.
     row.model = CreateFrame("PlayerModel", nil, row)
     row.model:SetSize(ROW_H - 2, ROW_H - 2)
     row.model:SetPoint("LEFT", row, "LEFT", 2, 0)
@@ -82,7 +157,7 @@ function M:Init(body)
     self.alerts = {}    -- liste {id,name,zone,x,y,dead,t,pinned,showLoot,row}
     self.rows = {}
     self.lootRows = {}  -- pool lignes de butin (inline)
-    self.models = {}    -- pool PlayerModel (modèle 3D du rare)
+    self.models = {}    -- legacy : anciens PlayerModel gardés cachés
 
     self.info = body:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     self.info:SetPoint("TOP", body, "TOP", 0, -8)
@@ -116,6 +191,7 @@ function M:Enable()
     end
     self.info:Hide()
     self:SetNativeFlash(false)  -- masque le flash natif (rien d'autre)
+    self:SetNativePopup(false)
     if not self._hooked then
         self._hooked = true
         _G.SilverDragon.RegisterCallback(self, "Seen", function(_, id, zone, x, y, is_dead, source, unit, GUID)
@@ -126,13 +202,6 @@ function M:Enable()
             self:OnSeenLoot(name, id, zone, x, y)
         end)
     end
-    -- masque le popup natif de SilverDragon (module ClickTarget) — le son d'alerte reste
-    local sd = _G.SilverDragon
-    local ct = sd and sd.GetModule and sd:GetModule("ClickTarget", true)
-    if ct then
-        if self._ctWasEnabled == nil then self._ctWasEnabled = ct:IsEnabled() and true or false end
-        if ct.Disable then pcall(ct.Disable, ct) end
-    end
     if not self._ticker then
         self._ticker = C_Timer.NewTicker(1, function() self:Tick() end)
     end
@@ -142,11 +211,7 @@ end
 function M:Disable()
     self._enabled = false
     self:SetNativeFlash(true)  -- restaure le flash natif
-    -- restaure le popup natif (ClickTarget) si on l'avait coupé
-    local sd = _G.SilverDragon
-    local ct = sd and sd.GetModule and sd:GetModule("ClickTarget", true)
-    if ct and self._ctWasEnabled and ct.Enable then pcall(ct.Enable, ct) end
-    self._ctWasEnabled = nil
+    self:SetNativePopup(true)
     if self._ticker then self._ticker:Cancel(); self._ticker = nil end
     for _, r in ipairs(self.rows) do r:Hide() end
     for _, r in ipairs(self.lootRows) do r:Hide() end
@@ -268,22 +333,15 @@ function M:Refresh()
         end
         a.row = row
         row.alert = a
-        -- modèle 3D tête de la créature ; trésors = icône coffre
+        -- Icône compacte : pas de modèle 3D dans le module.
         if a.treasure then
             row.model:Hide()
             row.icon:Show()
             row.icon:SetTexture("Interface\\Icons\\INV_Misc_Treasurechest03c")
         else
-            local okM = pcall(row.model.SetCreature, row.model, a.id)
-            if okM then
-                pcall(row.model.SetPortraitZoom, row.model, 0.9)   -- focus sur la tête
-                row.model:Show()
-                row.icon:Hide()
-            else
-                row.model:Hide()
-                row.icon:Show()
-                row.icon:SetTexture(RARE_ICON)
-            end
+            row.model:Hide()
+            row.icon:Show()
+            row.icon:SetTexture(RARE_ICON)
         end
         local status = a.treasure and "|cFF55CCFF(trésor)|r" or (a.dead and "|cFFFF5555(mort)|r" or "|cFF55FF55(vivant)|r")
         row.name:SetText(("|cFFFFD200%s|r %s"):format(tostring(a.name), status))
@@ -296,20 +354,10 @@ function M:Refresh()
         row:Show()
         y = y + ROW_H + GAP
 
-        -- expansion inline : modèle 3D + butin
+        -- expansion inline : butin uniquement
         if a.showLoot then
             self._anyLootShown = true
             local lootX = 4
-            if not a.treasure then
-                mi = mi + 1
-                local mdl = self:_AcquireModel(mi)
-                mdl:ClearAllPoints()
-                mdl:SetPoint("TOPLEFT", self.list, "TOPLEFT", 2, -y)
-                pcall(mdl.SetCreature, mdl, a.id)
-                pcall(mdl.SetCamDistanceScale, mdl, 1.6)
-                mdl:Show()
-                lootX = 80
-            end
 
             local loot = nsSD and nsSD.Loot and nsSD.Loot.GetLootTable and nsSD.Loot.GetLootTable(a.id, a.treasure)
             local ly = y
@@ -360,7 +408,7 @@ function M:Refresh()
                 lr:Show()
                 ly = ly + 17
             end
-            y = math.max(y + 94, ly) + GAP   -- hauteur = max(modèle, butin)
+            y = ly + GAP
         end
     end
     for i = #self.alerts + 1, #self.rows do self.rows[i]:Hide() end
@@ -373,7 +421,7 @@ function M:Refresh()
     self:RefreshTimers()
     SP:SetModuleHeaderText(self, #self.alerts > 0 and ("%d"):format(#self.alerts) or "")
 
-    local needed = math.max(ROW_H, y + 2)   -- inclut les expansions (modèle 3D + butin)
+    local needed = math.max(ROW_H, y + 2)
     local cfg = SP:GetModuleConfig(self.name)
     SP:SetAutoHeight(self, needed)
 end
@@ -404,7 +452,7 @@ function M:OnRowClick(row, button)
     local a = row.alert
     if not a then return end
     if button == "RightButton" then
-        -- développe/replie la liste de butin + modèle 3D sous l'alerte
+        -- développe/replie la liste de butin sous l'alerte
         a.showLoot = not a.showLoot
         self:Refresh()
     else

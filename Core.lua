@@ -104,7 +104,8 @@ end
 function SP:SetupSlash()
     if SP._slashReady then return end
     SP._slashReady = true
-    SLASH_SPHEREPANEL1 = "/sp"
+    -- /sp est déjà pris par WoW (et d'autres addons) → commande principale = /span
+    SLASH_SPHEREPANEL1 = "/span"
     SLASH_SPHEREPANEL2 = "/spanel"
     SlashCmdList["SPHEREPANEL"] = function(msg) SP:HandleSlash(msg or "") end
 end
@@ -136,7 +137,7 @@ function SP:HandleSlash(msg)
             rm._enabled = true
             local mapID = (C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")) or 0
             rm:OnSeen(32491, mapID, 0.5, 0.5, false)
-            SP:Print("Alerte de test envoyée au module Rares (clic droit = butin + modèle 3D).")
+            SP:Print("Alerte de test envoyée au module Rares (clic droit = butin).")
         else
             SP:Print("Module Rares indisponible.")
         end
@@ -150,6 +151,6 @@ function SP:HandleSlash(msg)
             SP:Print(("  %s (%s) — %s"):format(m.name, m.label, state))
         end
     else
-        SP:Print("Commandes : |cFFFFFFFF/sp|r config | mbscan | lock | reset | show | hide | modules | enable <Nom>")
+        SP:Print("Commandes : |cFFFFFFFF/span|r config | mbscan | lock | reset | show | hide | modules | enable <Nom>")
     end
 end

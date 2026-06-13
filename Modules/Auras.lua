@@ -13,6 +13,60 @@ local TAB_H, GAP = 16, 3
 
 local TABS = { { "all", "Tout" }, { "buff", "Buff" }, { "debuff", "Débuff" } }
 
+-- Helpers anti-taint : les champs d'aura peuvent etre des secret values.
+local SAFE_DISPEL_TYPES = {
+    Magic = true,
+    Curse = true,
+    Disease = true,
+    Poison = true,
+    Bleed = true,
+}
+
+local function SafeDispelName(value)
+    if value == nil then return nil end
+    for name in pairs(SAFE_DISPEL_TYPES) do
+        local ok, same = pcall(function() return value == name end)
+        if ok and same then return name end
+    end
+    return nil
+end
+
+local function CountText(value)
+    if value == nil then return "" end
+    local ok, text = pcall(function()
+        if value > 1 then return tostring(value) end
+        return ""
+    end)
+    return ok and text or ""
+end
+
+local function ApplyCooldown(cd, duration, expirationTime)
+    if duration == nil then
+        cd:Clear()
+        return
+    end
+
+    local applied = false
+    if expirationTime ~= nil then
+        local ok, didApply = pcall(function()
+            if duration > 0 then
+                cd:SetCooldown(expirationTime - duration, duration)
+                return true
+            end
+            return false
+        end)
+        applied = ok and didApply
+    end
+
+    if not applied then
+        -- SetCooldown is C-side and accepts secret numbers even when Lua math does not.
+        local ok = pcall(function() cd:SetCooldown(GetTime(), duration) end)
+        applied = ok
+    end
+
+    if not applied then cd:Clear() end
+end
+
 -- Récupère les auras d'un filtre dans `out` (packed aura tables).
 local function Gather(filter, out)
     if AuraUtil and AuraUtil.ForEachAura then
@@ -205,21 +259,18 @@ function M:Refresh()
         -- bordure : rouge (débuff) selon type, sinon discrète
         local isDebuff = idx >= debuffStart and (tab ~= "buff")
         if isDebuff then
-            local c = aura.dispelName and DebuffTypeColor and DebuffTypeColor[aura.dispelName] or { r = 0.8, g = 0.1, b = 0.1 }
+            local dispelName = SafeDispelName(aura.dispelName)
+            local c = dispelName and DebuffTypeColor and DebuffTypeColor[dispelName] or { r = 0.8, g = 0.1, b = 0.1 }
             ic.border:SetColorTexture(c.r, c.g, c.b, 1)
         else
             ic.border:SetColorTexture(0, 0, 0, 0.8)
         end
 
         -- cooldown
-        if aura.duration and aura.duration > 0 and aura.expirationTime then
-            pcall(function() ic.cd:SetCooldown(aura.expirationTime - aura.duration, aura.duration) end)
-        else
-            ic.cd:Clear()
-        end
+        ApplyCooldown(ic.cd, aura.duration, aura.expirationTime)
 
         local n = aura.applications or aura.charges
-        ic.count:SetText((n and n > 1) and tostring(n) or "")
+        ic.count:SetText(CountText(n))
         ic:Show()
     end
     for i = shown + 1, #self.icons do self.icons[i]:Hide() end

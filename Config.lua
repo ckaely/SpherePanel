@@ -30,6 +30,10 @@ SP.defaults = {
         panel2   = { enabled = false, x = 20, y = -200, width = 280,
                      side = "auto", vpos = "top", behavior = 3 },  -- second panneau ; side: auto=opposé au principal
         bgColor  = { r = 0.05, g = 0.05, b = 0.07, a = 0.85 },  -- fond du panneau (Apparence)
+        moduleAppearance = {
+            bgColor   = { r = 0.12, g = 0.15, b = 0.20, a = 0.46 },
+            textColor = { r = 0.92, g = 0.96, b = 1.00 },
+        },
         autofade = {          -- estompage automatique (comportement 3)
             enabled      = false,
             delay        = 5,     -- secondes d'inactivité avant fade
@@ -42,7 +46,7 @@ SP.defaults = {
         order = {
             "GameMenu", "RaidTools", "GroupBuffs", "MythicPlus", "QuestTracker", "Chat",
             "DamageMeter", "Raid", "Auras", "Bags", "RecentLoot", "Currencies",
-            "Reputations", "Knowledge", "AlterEgo", "Social", "SilverDragon", "Agenda", "SquareMap",
+            "Character", "Reputations", "Knowledge", "AlterEgo", "Social", "SilverDragon", "Agenda", "SquareMap",
         },
         -- Config par module : enabled / collapsed / height.
         QuestTracker   = { enabled = true,  collapsed = false, height = 300,
@@ -69,6 +73,7 @@ SP.defaults = {
             showIlvl = true, showUpgrade = true,   -- iLvl + flèche upgrade (Pawn) sur l'équipement
             known = {},   -- snapshot itemID connus (pour la section Récent)
             -- color = couleur du titre ; group/groupPrefix = sous-catégories par sous-type ; search = filtre nom
+            displayMode = "categorized",           -- categorized / onebag / split
             categories = {
                 { key = "recent",     label = "Récent",     enabled = true,  collapsed = false, color = { 0.40, 0.90, 0.40 } },
                 { key = "junk",       label = "Camelote",   enabled = true,  collapsed = false, color = { 0.62, 0.62, 0.62 } },
@@ -92,6 +97,7 @@ SP.defaults = {
         Reputations    = { enabled = true,  collapsed = true,  height = 150 },
         Currencies     = { enabled = true,  collapsed = true,  height = 100 },
         AlterEgo       = { enabled = true,  collapsed = true,  height = 120 },
+        Character      = { enabled = true,  collapsed = true,  height = 300, replaceCharSheet = true },
         SilverDragon   = { enabled = true,  collapsed = false, height = 80  },
         GameMenu       = { enabled = true,  collapsed = false, height = 64,
             activeTab = "menus",     -- "menus" ou "addons"

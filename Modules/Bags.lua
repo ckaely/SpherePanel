@@ -10,6 +10,7 @@ local M = {
     name          = "Bags",
     label         = "Sac",
     defaultHeight = 240,
+    secureChildren = true,
 }
 
 local BAGS = { 0, 1, 2, 3, 4, 5 }
@@ -267,25 +268,34 @@ function M:Refresh()
     self._dirty = false
 
     local cfg = SP:GetModuleConfig(self.name)
+    local mode = cfg.displayMode or "categorized"
+    if mode ~= "onebag" and mode ~= "split" then mode = "categorized" end
     local cats = cfg.categories or {}
     local enabledSet = {}
     for _, c in ipairs(cats) do if c.enabled then enabledSet[c.key] = true end end
 
-    local buckets, total, free = {}, 0, 0
+    local buckets, allSlots, byBag, bagStats, total, free = {}, {}, {}, {}, 0, 0
     for _, c in ipairs(cats) do buckets[c.key] = {} end
     for _, bag in ipairs(BAGS) do
+        local bagItems, bagFree = {}, 0
+        byBag[bag] = bagItems
         local n = Ct().GetContainerNumSlots(bag) or 0
         total = total + n
         for slot = 1, n do
             local info = Ct().GetContainerItemInfo(bag, slot)
+            local entry = { bag = bag, slot = slot, info = info }
+            bagItems[#bagItems + 1] = entry
+            allSlots[#allSlots + 1] = entry
             if info and info.itemID then
                 local key = self:CategoryForItem(info, cats, enabledSet)
                 if not buckets[key] then key = "misc"; buckets[key] = buckets[key] or {} end
-                buckets[key][#buckets[key] + 1] = { bag = bag, slot = slot, info = info }
+                buckets[key][#buckets[key] + 1] = entry
             else
                 free = free + 1
+                bagFree = bagFree + 1
             end
         end
+        bagStats[bag] = { total = n, free = bagFree }
     end
 
     local size = BagCfg("bag_icon_size", 30)
@@ -300,6 +310,17 @@ function M:Refresh()
         b:SetSize(size, size); b:ClearAllPoints()
         b:SetPoint("TOPLEFT", self.list, "TOPLEFT", col * (size + GAP), -(baseY + rowN * (size + GAP)))
         b.bag, b.slot = it.bag, it.slot
+        if not (it.info and it.info.itemID) then
+            b.icon:SetTexture(nil)
+            b.icon:SetDesaturated(false)
+            b.border:SetColorTexture(0.18, 0.18, 0.18, 0.65)
+            b.count:SetText(it.emptyCount and tostring(it.emptyCount) or "")
+            b.ilvl:SetText("")
+            b.upg:Hide()
+            pcall(function() b:SetAttribute("type2", nil); b:SetAttribute("bag", nil); b:SetAttribute("slot", nil) end)
+            b:Show()
+            return
+        end
         b.icon:SetTexture(it.info.iconFileID)
         local q = it.info.quality or 1
         b.icon:SetDesaturated((q == 0) and greyJunk or false)
@@ -333,6 +354,29 @@ function M:Refresh()
         return math.ceil(#items / perRow) * (size + GAP)
     end
 
+    if mode == "onebag" then
+        y = y + grid(allSlots, y) + 2
+    elseif mode == "split" then
+        for _, bag in ipairs(BAGS) do
+            local items = byBag[bag] or {}
+            if #items > 0 then
+                hi = hi + 1
+                local hdr = self:_AcquireHeader(hi)
+                local stats = bagStats[bag] or { total = #items, free = 0 }
+                local label = (bag == 0) and "Sac a dos" or ("Sac " .. bag)
+                hdr.arrow:SetText("")
+                hdr.fs:SetText(("%s  |cFF888888%d / %d|r"):format(label, stats.free or 0, stats.total or #items))
+                hdr.fs:SetTextColor(1, 0.82, 0)
+                hdr:ClearAllPoints()
+                hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
+                hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
+                hdr:SetScript("OnClick", nil)
+                hdr:Show()
+                y = y + HDR_H + 1
+                y = y + grid(items, y) + 2
+            end
+        end
+    else
     for _, c in ipairs(cats) do
         if c.enabled then
             local items = buckets[c.key] or {}
@@ -362,7 +406,7 @@ function M:Refresh()
                         b:SetSize(size, size); b:ClearAllPoints(); b:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
                         b.icon:SetTexture(nil); b.icon:SetDesaturated(false); b.border:SetColorTexture(0.2, 0.2, 0.2, 1)
                         b.count:SetText(tostring(free)); b.ilvl:SetText(""); b.upg:Hide()
-                        pcall(function() b:SetAttribute("type2", nil) end)
+                        pcall(function() b:SetAttribute("type2", nil); b:SetAttribute("bag", nil); b:SetAttribute("slot", nil) end)
                         b:Show()
                         y = y + size + GAP
                     elseif c.group then
@@ -391,6 +435,7 @@ function M:Refresh()
                 end
             end
         end
+    end
     end
 
     for i = si + 1, #self.slots do self.slots[i]:Hide() end

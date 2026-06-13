@@ -16,6 +16,66 @@ local TEX_UNLOCK = "Interface\\Buttons\\LockButton-Unlocked-Up"
 local REQUIRED    = { "name", "label" }
 local REQUIRED_FN = { "Init", "Enable", "Disable", "OnResize" }
 
+local function clamp(v, lo, hi)
+    v = tonumber(v) or lo
+    if v < lo then return lo end
+    if v > hi then return hi end
+    return v
+end
+
+local function copyColor(dst, src, fallback)
+    src, fallback = src or {}, fallback or {}
+    dst.r = clamp(src.r ~= nil and src.r or fallback.r or 1, 0, 1)
+    dst.g = clamp(src.g ~= nil and src.g or fallback.g or 1, 0, 1)
+    dst.b = clamp(src.b ~= nil and src.b or fallback.b or 1, 0, 1)
+    if src.a ~= nil or fallback.a ~= nil then dst.a = clamp(src.a ~= nil and src.a or fallback.a or 1, 0, 1) end
+    return dst
+end
+
+function SP:GetModuleAppearanceConfig(name)
+    local cfg = SP:GetModuleConfig(name)
+    if not cfg then return nil end
+    local def = SP.db and SP.db.panel and SP.db.panel.moduleAppearance or {}
+    cfg.appearance = cfg.appearance or {}
+    cfg.appearance.bgColor = copyColor(cfg.appearance.bgColor or {}, cfg.appearance.bgColor, def.bgColor or { r = 0.12, g = 0.15, b = 0.20, a = 0.46 })
+    if cfg.appearance.bgColor.a == nil then cfg.appearance.bgColor.a = (def.bgColor and def.bgColor.a) or 0.46 end
+    cfg.appearance.textColor = copyColor(cfg.appearance.textColor or {}, cfg.appearance.textColor, def.textColor or { r = 0.92, g = 0.96, b = 1 })
+    return cfg.appearance
+end
+
+function SP:ResetModuleAppearance(name)
+    local cfg = SP:GetModuleConfig(name)
+    if not cfg then return end
+    local def = SP.db and SP.db.panel and SP.db.panel.moduleAppearance or {}
+    cfg.appearance = cfg.appearance or {}
+    cfg.appearance.bgColor = copyColor(cfg.appearance.bgColor or {}, nil, def.bgColor or { r = 0.12, g = 0.15, b = 0.20, a = 0.46 })
+    cfg.appearance.textColor = copyColor(cfg.appearance.textColor or {}, nil, def.textColor or { r = 0.92, g = 0.96, b = 1 })
+    local m = SP.modulesByName and SP.modulesByName[name]
+    if m then SP:ApplyModuleAppearance(m) end
+end
+
+function SP:ApplyModuleAppearance(m)
+    if not m then return end
+    local app = SP:GetModuleAppearanceConfig(m.name)
+    if not app then return end
+    local bg = app.bgColor or {}
+    local tx = app.textColor or {}
+    local a = clamp(bg.a, 0, 1)
+    local hr, hg, hb = clamp(bg.r, 0, 1), clamp(bg.g, 0, 1), clamp(bg.b, 0, 1)
+
+    if m.headerBg then m.headerBg:SetColorTexture(hr, hg, hb, math.min(0.82, a + 0.18)) end
+    if m.headerGlass then m.headerGlass:SetColorTexture(1, 1, 1, math.max(0.04, a * 0.24)) end
+    if m.headerLine then m.headerLine:SetColorTexture(math.min(1, hr + 0.18), math.min(1, hg + 0.18), math.min(1, hb + 0.18), math.max(0.18, a * 0.80)) end
+    if m.bodyBg then m.bodyBg:SetColorTexture(hr * 0.50, hg * 0.50, hb * 0.56, math.max(0.03, a * 0.78)) end
+    if m.labelFS then m.labelFS:SetTextColor(clamp(tx.r, 0, 1), clamp(tx.g, 0, 1), clamp(tx.b, 0, 1), 1) end
+    if m.suffixFS then m.suffixFS:SetTextColor(clamp(tx.r, 0, 1), clamp(tx.g, 0, 1), clamp(tx.b, 0, 1), 0.82) end
+    if m._placeholder then m._placeholder:SetTextColor(clamp(tx.r, 0, 1), clamp(tx.g, 0, 1), clamp(tx.b, 0, 1), 0.30) end
+end
+
+function SP:ApplyAllModuleAppearance()
+    for _, m in ipairs(SP.modules or {}) do SP:ApplyModuleAppearance(m) end
+end
+
 -- ============================================================
 -- A) Enregistrement
 -- ============================================================
@@ -145,9 +205,19 @@ function SP:CreateModuleFrame(m)
     local hbg = header:CreateTexture(nil, "BACKGROUND")
     hbg:SetAllPoints(header)
     hbg:SetColorTexture(0.14, 0.14, 0.18, 0.95)
+    local hglass = header:CreateTexture(nil, "ARTWORK")
+    hglass:SetPoint("TOPLEFT", header, "TOPLEFT", 1, -1)
+    hglass:SetPoint("TOPRIGHT", header, "TOPRIGHT", -1, -1)
+    hglass:SetHeight(math.max(6, UIc.HEADER_H * 0.45))
+    hglass:SetColorTexture(1, 1, 1, 0.10)
+    local hline = header:CreateTexture(nil, "OVERLAY")
+    hline:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 1, 0)
+    hline:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", -1, 0)
+    hline:SetHeight(1)
+    hline:SetColorTexture(0.35, 0.62, 1, 0.35)
     local hl = header:CreateTexture(nil, "HIGHLIGHT")
     hl:SetAllPoints(header)
-    hl:SetColorTexture(1, 1, 1, 0.06)
+    hl:SetColorTexture(1, 1, 1, 0.10)
 
     local baseLvl = header:GetFrameLevel()
 
@@ -163,6 +233,7 @@ function SP:CreateModuleFrame(m)
     local label = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     label:SetPoint("LEFT", arrow, "RIGHT", 4, 0)
     label:SetText(m.label)
+    m.labelFS = label
 
     -- Cadenas : épingle l'affichage (exclu du futur auto-fade)
     local lock = CreateFrame("Button", nil, header)
@@ -210,6 +281,10 @@ function SP:CreateModuleFrame(m)
 
     m.frame = frame
     m.body  = body
+    m.headerBg = hbg
+    m.headerGlass = hglass
+    m.headerLine = hline
+    m.bodyBg = bbg
 
     -- module "headerless" : fusionné visuellement avec le bandeau SpherePanel (pas de bandeau propre)
     if m.headerless then
@@ -219,6 +294,7 @@ function SP:CreateModuleFrame(m)
         body:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     end
 
+    SP:ApplyModuleAppearance(m)
     SP:UpdateCollapseVisual(m)
     SP:UpdatePinVisual(m)
 end

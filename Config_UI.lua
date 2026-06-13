@@ -31,10 +31,10 @@ local function MakeCheck(parent, label, x, y, getf, setf)
 end
 
 local sliderCount = 0
-local function MakeSlider(parent, label, x, y, minV, maxV, step, getf, setf, fmt)
+local function MakeSlider(parent, label, x, y, minV, maxV, step, getf, setf, fmt, width)
     sliderCount = sliderCount + 1
     local s = CreateFrame("Slider", "SpherePanelCfgSlider" .. sliderCount, parent, "OptionsSliderTemplate")
-    s:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y); s:SetWidth(220)
+    s:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y); s:SetWidth(width or 220)
     s:SetMinMaxValues(minV, maxV); s:SetValueStep(step)
     if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
     local nm = s:GetName()
@@ -50,12 +50,42 @@ local function MakeSlider(parent, label, x, y, minV, maxV, step, getf, setf, fmt
     return s
 end
 
+local miniSliderCount = 0
+local function MakeMiniSlider(parent, x, y, width, getf, setf, fmt)
+    miniSliderCount = miniSliderCount + 1
+    local s = CreateFrame("Slider", "SpherePanelCfgMiniSlider" .. miniSliderCount, parent, "OptionsSliderTemplate")
+    s:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+    s:SetWidth(width or 120)
+    s:SetMinMaxValues(0, 1)
+    s:SetValueStep(0.05)
+    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+    local nm = s:GetName()
+    if _G[nm .. "Low"] then _G[nm .. "Low"]:SetText("") end
+    if _G[nm .. "High"] then _G[nm .. "High"]:SetText("") end
+    if _G[nm .. "Text"] then _G[nm .. "Text"]:SetText("") end
+    s.value = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    s.value:SetPoint("LEFT", s, "RIGHT", 8, 1)
+    local function refresh(v)
+        if s.value then s.value:SetText(fmt and fmt(v) or tostring(v)) end
+    end
+    local v = getf()
+    s:SetValue(v)
+    refresh(v)
+    s:SetScript("OnValueChanged", function(_, value)
+        value = math.floor((value or 0) * 20 + 0.5) / 20
+        setf(value)
+        refresh(value)
+    end)
+    return s
+end
+
 -- swatch couleur (avec alpha optionnel)
 local function MakeColorSwatch(parent, x, y, color, hasAlpha, onChange)
     local b = CreateFrame("Button", nil, parent)
     b:SetSize(18, 18); b:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     b.tex = b:CreateTexture(nil, "ARTWORK"); b.tex:SetAllPoints(b)
     local function paint() b.tex:SetColorTexture(color.r, color.g, color.b, 1) end
+    b.Paint = paint
     paint()
     b:SetScript("OnClick", function()
         if not (ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow) then return end
@@ -194,6 +224,35 @@ end
 local function BagsOptions(page, y)
     local cfg = SP:GetModuleConfig("Bags")
     local function apply() local m = SP.modulesByName and SP.modulesByName["Bags"]; if m and m.RequestRefresh then m:RequestRefresh() end end
+    cfg.displayMode = cfg.displayMode or "categorized"
+    local modeLabel = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    modeLabel:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 2)
+    modeLabel:SetText("Affichage")
+    local modes = {
+        { key = "categorized", label = "Categories" },
+        { key = "onebag", label = "One bag" },
+        { key = "split", label = "Split bag" },
+    }
+    local modeButtons = {}
+    local function refreshModes()
+        for _, btn in ipairs(modeButtons) do btn:SetChecked(cfg.displayMode == btn.modeKey) end
+    end
+    for i, opt in ipairs(modes) do
+        local cb = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", page, "TOPLEFT", 16 + (i - 1) * 120, y - 22)
+        cb.text = cb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cb.text:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        cb.text:SetText(opt.label)
+        cb.modeKey = opt.key
+        cb:SetScript("OnClick", function(s)
+            cfg.displayMode = s.modeKey
+            refreshModes()
+            apply()
+        end)
+        modeButtons[#modeButtons + 1] = cb
+    end
+    refreshModes()
+    y = y - 44
     MakeSlider(page, "Taille des icônes", 16, y - 4, 20, 48, 1,
         function() return _G.BAGANATOR_CONFIG and _G.BAGANATOR_CONFIG.bag_icon_size or 30 end,
         function(v) _G.BAGANATOR_CONFIG = _G.BAGANATOR_CONFIG or {}; _G.BAGANATOR_CONFIG.bag_icon_size = v; apply() end,
@@ -267,12 +326,27 @@ local function BagsOptions(page, y)
         table.insert(cfg.categories, 1, { key = "C" .. (n + 1), label = "Filtre " .. (n + 1), enabled = true, collapsed = false, search = "", color = { 0.5, 0.85, 1 } })
         page.RefreshBags(); apply()
     end)
-    page:SetScript("OnShow", function() page.RefreshBags() end)
+    page:SetScript("OnShow", function() refreshModes(); page.RefreshBags() end)
     page.RefreshBags()
 end
 
+local function CharacterOptions(page, y)
+    local cfg = SP:GetModuleConfig("Character")
+    MakeCheck(page, "Remplacer la feuille de personnage (touche C)", 16, y,
+        function() return cfg.replaceCharSheet end,
+        function(v)
+            cfg.replaceCharSheet = v
+            local m = SP.modulesByName and SP.modulesByName["Character"]
+            if m and m.ApplyKeyOverride then m:ApplyKeyOverride() end
+        end)
+    local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    note:SetPoint("TOPLEFT", page, "TOPLEFT", 16, y - 26)
+    note:SetText("|cFF888888Feuille Blizzard accessible via le bouton du module (transmo, titres).\nMolette sur le bandeau = Équipement / Stats.|r")
+end
+
 local SPECIFIC = {
-    GameMenu = MenusOptions, SquareMap = SquareMapOptions, Chat = ChatOptions, Bags = BagsOptions, Auras = AurasOptions,
+    GameMenu = MenusOptions, SquareMap = SquareMapOptions, Chat = ChatOptions, Bags = BagsOptions,
+    Auras = AurasOptions, Character = CharacterOptions,
 }
 
 -- Dépendances tierces par module (affichées dans la page du module + statut chargé/absent).
@@ -362,26 +436,97 @@ function SP:_RefreshModulesPage(page)
 end
 
 -- ===== Apparence ============================================================
+local MakeScrollPage
+
 local function BuildApparence(page)
-    local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText("Apparence")
+    local root = MakeScrollPage(page, 760)
+    local hdr = root:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdr:SetPoint("TOPLEFT", root, "TOPLEFT", 4, -4); hdr:SetText("Apparence")
     local bgc = SP.db.panel.bgColor
-    local lbl = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lbl:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -40); lbl:SetText("Couleur du fond :")
-    MakeColorSwatch(page, 130, -38, bgc, true, function() if SP.ApplyAppearance then SP:ApplyAppearance() end end)
-    MakeSlider(page, "Transparence du fond", 16, -76, 0, 1, 0.05,
+    local lbl = root:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    lbl:SetPoint("TOPLEFT", root, "TOPLEFT", 8, -40); lbl:SetText("Couleur du fond :")
+    MakeColorSwatch(root, 130, -38, bgc, true, function() if SP.ApplyAppearance then SP:ApplyAppearance() end end)
+    MakeSlider(root, "Transparence du fond", 16, -76, 0, 1, 0.05,
         function() return bgc.a end,
         function(v) bgc.a = v; if SP.ApplyAppearance then SP:ApplyAppearance() end end,
         function(v) return string.format("%d%%", math.floor(v * 100)) end)
-    MakeCheck(page, "Effets visuels (orbe pulsant + shimmer + intro)", 16, -120,
+    MakeCheck(root, "Effets visuels (orbe pulsant + shimmer + intro)", 16, -120,
         function() return SP.db.panel.fx end, function(v) SP.db.panel.fx = v end)
-    local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -152)
-    note:SetText("|cFF777777La couleur et la transparence s'appliquent immédiatement.|r")
+    local note = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    note:SetPoint("TOPLEFT", root, "TOPLEFT", 8, -152)
+    note:SetText("|cFF777777La couleur et la transparence s'appliquent immediatement.|r")
+
+    local y = -190
+    local th = root:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    th:SetPoint("TOPLEFT", root, "TOPLEFT", 8, y)
+    th:SetText("|cFF4AA3FFModules|r")
+    y = y - 24
+
+    local headers = {
+        { "Module", 8 },
+        { "Transparence", 138 },
+        { "Fond", 314 },
+        { "Texte", 360 },
+    }
+    for _, h in ipairs(headers) do
+        local fs = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        fs:SetPoint("TOPLEFT", root, "TOPLEFT", h[2], y)
+        fs:SetText(h[1])
+    end
+    y = y - 20
+
+    for _, m in ipairs(SP:GetOrderedModules()) do
+        local app = SP.GetModuleAppearanceConfig and SP:GetModuleAppearanceConfig(m.name)
+        if app then
+            local row = CreateFrame("Frame", nil, root)
+            row:SetPoint("TOPLEFT", root, "TOPLEFT", 4, y)
+            row:SetSize(430, 28)
+            row.bg = row:CreateTexture(nil, "BACKGROUND")
+            row.bg:SetAllPoints(row)
+            row.bg:SetColorTexture(1, 1, 1, 0.035)
+
+            local name = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            name:SetPoint("LEFT", row, "LEFT", 4, 0)
+            name:SetWidth(118)
+            name:SetJustifyH("LEFT")
+            name:SetText(m.label)
+
+            local alphaSlider = MakeMiniSlider(row, 134, -5, 116,
+                function() return app.bgColor.a or 0.46 end,
+                function(v)
+                    app.bgColor.a = v
+                    if SP.ApplyModuleAppearance then SP:ApplyModuleAppearance(m) end
+                end,
+                function(v) return string.format("%d%%", math.floor((v or 0) * 100 + 0.5)) end)
+
+            local bgSwatch = MakeColorSwatch(row, 310, -5, app.bgColor, true, function()
+                if alphaSlider then alphaSlider:SetValue(app.bgColor.a or 0.46) end
+                if SP.ApplyModuleAppearance then SP:ApplyModuleAppearance(m) end
+            end)
+
+            local textSwatch = MakeColorSwatch(row, 358, -5, app.textColor, false, function()
+                if SP.ApplyModuleAppearance then SP:ApplyModuleAppearance(m) end
+            end)
+
+            local reset = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            reset:SetSize(46, 18)
+            reset:SetPoint("LEFT", row, "LEFT", 382, 0)
+            reset:SetText("Reset")
+            reset:SetScript("OnClick", function()
+                if SP.ResetModuleAppearance then SP:ResetModuleAppearance(m.name) end
+                if alphaSlider then alphaSlider:SetValue(app.bgColor.a or 0.46) end
+                if bgSwatch and bgSwatch.Paint then bgSwatch:Paint() end
+                if textSwatch and textSwatch.Paint then textSwatch:Paint() end
+            end)
+            y = y - 30
+        end
+    end
+
+    root:SetHeight(math.max(760, -y + 24))
 end
 
 -- Page scrollable : retourne un conteneur interne déplacé à la molette.
-local function MakeScrollPage(page, innerH)
+function MakeScrollPage(page, innerH)
     page:SetClipsChildren(true)
     local inner = CreateFrame("Frame", nil, page)
     inner:SetPoint("TOPLEFT", page, "TOPLEFT", 0, 0)

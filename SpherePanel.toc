@@ -29,6 +29,7 @@ Modules\GroupBuffs.lua
 Modules\Reputations.lua
 Modules\Currencies.lua
 Modules\AlterEgo.lua
+Modules\Character.lua
 Modules\SilverDragon.lua
 Modules\GameMenu.lua
 Modules\SquareMap.lua

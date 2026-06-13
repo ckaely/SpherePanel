@@ -231,9 +231,11 @@ function SP:_TickSlide(p, elapsed, b, side, isP2)
             local cur = lerp(m._curSlide or 0, goal, elapsed, dur)
             if math.abs(cur - goal) < 0.5 then cur = goal end
             m._curSlide = cur
-            f:ClearAllPoints()
-            f:SetPoint("TOPLEFT", p.content, "TOPLEFT", cur, -m._layoutTop)
-            f:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", cur, -m._layoutTop)
+            if not (InCombatLockdown() and m.secureChildren) then
+                f:ClearAllPoints()
+                f:SetPoint("TOPLEFT", p.content, "TOPLEFT", cur, -m._layoutTop)
+                f:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", cur, -m._layoutTop)
+            end
         end
     end
 
@@ -294,9 +296,11 @@ function SP:_ResetSlides(p, isP2)
     for _, m in ipairs(SP.modules) do
         if m.frame and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             m._curSlide = 0
-            m.frame:ClearAllPoints()
-            m.frame:SetPoint("TOPLEFT", p.content, "TOPLEFT", 0, -m._layoutTop)
-            m.frame:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", 0, -m._layoutTop)
+            if not (InCombatLockdown() and m.secureChildren) then
+                m.frame:ClearAllPoints()
+                m.frame:SetPoint("TOPLEFT", p.content, "TOPLEFT", 0, -m._layoutTop)
+                m.frame:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", 0, -m._layoutTop)
+            end
         end
     end
     p.bg:SetAlpha(1); p.title:SetAlpha(1)
@@ -425,6 +429,7 @@ function SP:ApplyAppearance()
     local c = SP.db.panel.bgColor or { r = 0.05, g = 0.05, b = 0.07, a = 0.85 }
     if SP.panel then SP.panel.bg:SetColorTexture(c.r, c.g, c.b, c.a) end
     if SP.panel2 then SP.panel2.bg:SetColorTexture(c.r, c.g, c.b, c.a) end
+    if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
 end
 
 -- ------------------------------------------------------------
