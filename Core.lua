@@ -108,6 +108,16 @@ function SP:AnchorTooltipOutsidePanel(tooltip, owner, preferredSide)
     return tooltip
 end
 
+-- Son de déplacement d'objet (prise/dépôt). Le moteur en joue déjà un sur Pickup*/Equip* ;
+-- ce helper garantit un retour audible même si ce n'est pas le cas. kind = "pickup" | "drop".
+function SP:PlayItemSound(kind)
+    local k = SOUNDKIT
+    if not (k and PlaySound) then return end
+    local id = (kind == "pickup") and (k.IG_PICK_UP or k.IG_BACKPACK_OPEN)
+        or (k.IG_PUT_DOWN or k.IG_BACKPACK_CLOSE)
+    if id then pcall(PlaySound, id) end
+end
+
 -- Log console simple, throttle-able plus tard. Préfixe coloré.
 function SP:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cFF4AA3FFSpherePanel|r " .. tostring(msg))

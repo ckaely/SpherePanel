@@ -13,19 +13,27 @@ local ADDON_NAME, SP = ...
 
 local M = { name = "Character", label = "Personnage", defaultHeight = 300 }
 
-local ROW = 30   -- ligne d'équipement (2 lignes de texte)
+local CELL = 34   -- taille d'une case d'équipement
+local CELL_H = 38 -- hauteur de rangée colonne
 
--- slot Blizzard, libellé FR, et "peut être enchanté" (gate l'alerte « ✗ enchant »)
-local SLOTS = {
-    { "HEADSLOT", "Tête", true },        { "NECKSLOT", "Cou", false },
-    { "SHOULDERSLOT", "Épaules", true }, { "BACKSLOT", "Dos", false },
-    { "CHESTSLOT", "Torse", true },      { "WRISTSLOT", "Poignets", false },
-    { "HANDSSLOT", "Mains", false },     { "WAISTSLOT", "Taille", false },
-    { "LEGSSLOT", "Jambes", true },      { "FEETSLOT", "Pieds", true },
-    { "FINGER0SLOT", "Anneau 1", true }, { "FINGER1SLOT", "Anneau 2", true },
-    { "TRINKET0SLOT", "Bijou 1", false },{ "TRINKET1SLOT", "Bijou 2", false },
-    { "MAINHANDSLOT", "Arme princ.", true }, { "SECONDARYHANDSLOT", "Arme sec.", true },
+-- libellé FR + "peut être enchanté" (gate l'alerte « ✗ enchant »)
+local LABEL = {
+    HEADSLOT = "Tête", NECKSLOT = "Cou", SHOULDERSLOT = "Épaules", BACKSLOT = "Cape",
+    CHESTSLOT = "Torse", WRISTSLOT = "Poignets", HANDSSLOT = "Mains", WAISTSLOT = "Ceinture",
+    LEGSSLOT = "Jambes", FEETSLOT = "Pieds", FINGER0SLOT = "Anneau 1", FINGER1SLOT = "Anneau 2",
+    TRINKET0SLOT = "Bijou 1", TRINKET1SLOT = "Bijou 2", MAINHANDSLOT = "Arme princ.", SECONDARYHANDSLOT = "Arme sec.",
 }
+local CANENCH = {
+    CHESTSLOT = true, WRISTSLOT = true, LEGSSLOT = true, FEETSLOT = true, BACKSLOT = true,
+    FINGER0SLOT = true, FINGER1SLOT = true, MAINHANDSLOT = true, SECONDARYHANDSLOT = true,
+    HEADSLOT = true, SHOULDERSLOT = true,
+}
+-- disposition paperdoll 2 colonnes + rangée du bas (schéma utilisateur)
+local COL_L  = { "HEADSLOT", "SHOULDERSLOT", "CHESTSLOT", "LEGSSLOT" }       -- pièces de set à gauche
+local COL_R  = { "HANDSSLOT", "WRISTSLOT", "WAISTSLOT", "FEETSLOT" }
+local BOTTOM = { "MAINHANDSLOT", "SECONDARYHANDSLOT", "NECKSLOT", "BACKSLOT", "FINGER0SLOT", "FINGER1SLOT", "TRINKET0SLOT", "TRINKET1SLOT" }
+local ALLSLOTS = {}  -- pour le récap (compte)
+do for _, t in ipairs({ COL_L, COL_R, BOTTOM }) do for _, s in ipairs(t) do ALLSLOTS[#ALLSLOTS + 1] = s end end end
 
 local ENCH_TYPE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemEnchantmentPermanent
 local GEM_TYPE  = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.GemSocket
@@ -60,6 +68,14 @@ local function AuditSlot(slotId)
             if ENCH_TYPE and line.type == ENCH_TYPE then
                 a.enchanted = true
                 a.enchantText = lt
+                -- nom court : retire le préfixe "Enchanté : " et un éventuel atlas
+                local short = lt
+                if ENCHANTED_TOOLTIP_LINE then
+                    local m = lt:match(ENCHANTED_TOOLTIP_LINE:gsub("%%s", "(.+)"))
+                    if m then short = m end
+                end
+                short = short:gsub("|A:.-|a", ""):gsub("^%s+", ""):gsub("%s+$", "")
+                a.enchShort = short
             end
             if GEM_TYPE and line.type == GEM_TYPE then
                 a.sockets = a.sockets + 1
@@ -153,56 +169,80 @@ function M:Init(body)
 end
 
 -- ============================================================
--- Case PaperDoll : icône + drag/équip natif + highlight de compatibilité.
-function M:_GearRow(i)
-    local r = self.rows[i]
-    if not r then
-        r = CreateFrame("Frame", nil, self.gear)
-        r:SetHeight(ROW)
-
-        -- bouton de slot (comportement PaperDoll câblé manuellement)
-        local slot = CreateFrame("Button", nil, r)
-        slot:SetSize(ROW - 6, ROW - 6)
-        slot:SetPoint("LEFT", r, "LEFT", 2, 0)
-        slot:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        slot:RegisterForDrag("LeftButton")
-        slot.icon = slot:CreateTexture(nil, "ARTWORK"); slot.icon:SetAllPoints(slot); slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        slot.border = slot:CreateTexture(nil, "BACKGROUND")
-        slot.border:SetPoint("TOPLEFT", slot.icon, "TOPLEFT", -1, 1); slot.border:SetPoint("BOTTOMRIGHT", slot.icon, "BOTTOMRIGHT", 1, -1)
-        slot.glow = slot:CreateTexture(nil, "OVERLAY")
-        slot.glow:SetPoint("TOPLEFT", slot, "TOPLEFT", -3, 3); slot.glow:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 3, -3)
-        slot.glow:SetColorTexture(1, 0.82, 0.2, 0.55); slot.glow:SetBlendMode("ADD"); slot.glow:Hide()
-        slot:SetScript("OnEnter", function(s)
-            if s.slotId then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", s.slotId); GameTooltip:Show() end
-        end)
-        slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        slot:SetScript("OnDragStart", function(s)
-            if not InCombatLockdown() and s.slotId then PickupInventoryItem(s.slotId) end
-        end)
-        slot:SetScript("OnReceiveDrag", function(s)
-            if not InCombatLockdown() and s.slotId then
-                if CursorHasItem() then EquipCursorItem(s.slotId) else PickupInventoryItem(s.slotId) end
+-- Bouton de slot PaperDoll : icône + iLvl SUR l'icône + drag/équip natif +
+-- highlight de compatibilité + contrôles souris Blizzard.
+local function MakeSlotButton(self, parent)
+    local slot = CreateFrame("Button", nil, parent)
+    slot:SetSize(CELL, CELL)
+    slot:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    slot:RegisterForDrag("LeftButton")
+    slot.icon = slot:CreateTexture(nil, "ARTWORK"); slot.icon:SetAllPoints(slot); slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    slot.border = slot:CreateTexture(nil, "BACKGROUND")
+    slot.border:SetPoint("TOPLEFT", slot, "TOPLEFT", -1, 1); slot.border:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 1, -1)
+    slot.glow = slot:CreateTexture(nil, "OVERLAY")
+    slot.glow:SetPoint("TOPLEFT", slot, "TOPLEFT", -3, 3); slot.glow:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 3, -3)
+    slot.glow:SetColorTexture(1, 0.82, 0.2, 0.55); slot.glow:SetBlendMode("ADD"); slot.glow:Hide()
+    -- iLvl directement sur l'icône (coin bas-droit)
+    slot.ilvlFS = slot:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+    slot.ilvlFS:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 0, 1)
+    slot.ilvlFS:SetDrawLayer("OVERLAY", 7)
+    slot:SetScript("OnEnter", function(s)
+        if s.slotId then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", s.slotId); GameTooltip:Show() end
+    end)
+    slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    slot:SetScript("OnDragStart", function(s)
+        if not InCombatLockdown() and s.slotId then PickupInventoryItem(s.slotId); SP:PlayItemSound("pickup") end
+    end)
+    slot:SetScript("OnReceiveDrag", function(s)
+        if not InCombatLockdown() and s.slotId then
+            if CursorHasItem() then EquipCursorItem(s.slotId); SP:PlayItemSound("drop")
+            else PickupInventoryItem(s.slotId); SP:PlayItemSound("pickup") end
+        end
+    end)
+    -- contrôles souris Blizzard : G=prise/équip ; D=natif ; Ctrl+D=cabine ; Maj+D=gemmes
+    slot:SetScript("OnClick", function(s, button)
+        if not s.slotId then return end
+        local link = GetInventoryItemLink("player", s.slotId)
+        if button == "RightButton" then
+            if IsControlKeyDown() and link then
+                if DressUpItemLink then DressUpItemLink(link) end
+            elseif IsShiftKeyDown() then
+                if SocketInventoryItem and not InCombatLockdown() then pcall(SocketInventoryItem, s.slotId) end
+            elseif link and HandleModifiedItemClick then
+                HandleModifiedItemClick(link)
             end
-        end)
-        slot:SetScript("OnClick", function(s, button)
-            if InCombatLockdown() or not s.slotId then return end
-            if CursorHasItem() then EquipCursorItem(s.slotId)
-            else PickupInventoryItem(s.slotId) end
-        end)
-        r.slot = slot
+        else
+            if InCombatLockdown() then return end
+            if CursorHasItem() then EquipCursorItem(s.slotId); SP:PlayItemSound("drop")
+            else PickupInventoryItem(s.slotId); SP:PlayItemSound("pickup") end
+        end
+    end)
+    self.slotBtns[#self.slotBtns + 1] = slot
+    return slot
+end
 
-        r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        r.name:SetPoint("TOPLEFT", slot, "TOPRIGHT", 5, -1); r.name:SetJustifyH("LEFT"); r.name:SetWordWrap(false)
-        r.ilvl = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        r.ilvl:SetPoint("TOPRIGHT", r, "TOPRIGHT", -2, -1); r.ilvl:SetJustifyH("RIGHT")
-        r.name:SetPoint("RIGHT", r.ilvl, "LEFT", -4, 0)
-        r.detail = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        r.detail:SetPoint("TOPLEFT", slot, "TOPRIGHT", 5, -13)
-        r.detail:SetPoint("RIGHT", r, "RIGHT", -2, 0); r.detail:SetJustifyH("LEFT"); r.detail:SetWordWrap(false)
-        self.rows[i] = r
-        self.slotBtns[#self.slotBtns + 1] = slot
+-- Case = bouton de slot + texte d'enchant à côté (selon le côté de colonne).
+function M:_Cell(key, side)
+    self.cells = self.cells or {}
+    local c = self.cells[key]
+    if not c then
+        c = { side = side }
+        c.frame = CreateFrame("Frame", nil, self.gear); c.frame:SetHeight(CELL_H)
+        c.slot = MakeSlotButton(self, c.frame)
+        c.ench = c.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); c.ench:SetWordWrap(false)
+        if side == "R" then
+            c.slot:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0)
+            c.ench:SetPoint("RIGHT", c.slot, "LEFT", -4, 0); c.ench:SetPoint("LEFT", c.frame, "LEFT", 2, 0); c.ench:SetJustifyH("RIGHT")
+        elseif side == "L" then
+            c.slot:SetPoint("LEFT", c.frame, "LEFT", 2, 0)
+            c.ench:SetPoint("LEFT", c.slot, "RIGHT", 4, 0); c.ench:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0); c.ench:SetJustifyH("LEFT")
+        else
+            c.slot:SetPoint("CENTER", c.frame, "CENTER", 0, 0)
+            c.ench:Hide()
+        end
+        self.cells[key] = c
     end
-    return r
+    return c
 end
 
 -- highlight des slots où l'objet du curseur peut aller (feedback de drop)
@@ -210,7 +250,7 @@ function M:UpdateSlotHighlights()
     local hasCursor = CursorHasItem and CursorHasItem()
     for _, s in ipairs(self.slotBtns) do
         if s.slotId and hasCursor and CursorCanGoInSlot and CursorCanGoInSlot(s.slotId) then
-            s.glow:Show(); s:SetScale(1.07)
+            s.glow:Show(); s:SetScale(1.08)
         else
             s.glow:Hide(); s:SetScale(1)
         end
@@ -311,81 +351,83 @@ local function statusHex(missing)
 end
 
 function M:RefreshGear()
-    local y = 42   -- sous le résumé
-    local totalEnch, okEnch = 0, 0
-    local totalSock, okSock = 0, 0
-    local optimized, totalItems = 0, 0
+    local W = self.gear:GetWidth(); if not W or W < 60 then W = (SP.db.panel.width or 280) - 8 end
+    local half = math.floor(W / 2)
+    local tot = { ench = 0, okEnch = 0, sock = 0, okSock = 0, opt = 0, items = 0 }
 
-    for i, d in ipairs(SLOTS) do
-        local slotName, label, canEnch = d[1], d[2], d[3]
-        local slotId = GetInventorySlotInfo and select(1, GetInventorySlotInfo(slotName))
-        local r = self:_GearRow(i)
-        r.slot.slotId = slotId
-        r:ClearAllPoints()
-        r:SetPoint("TOPLEFT", self.gear, "TOPLEFT", 2, -y)
-        r:SetPoint("RIGHT", self.gear, "RIGHT", -2, 0)
-
+    -- remplit une case + cumule le récap
+    local function fill(key, side, x, y, w)
+        local c = self:_Cell(key, side)
+        c.frame:ClearAllPoints()
+        c.frame:SetPoint("TOPLEFT", self.gear, "TOPLEFT", x, -y)
+        c.frame:SetWidth(w); c.frame:Show()
+        local slotId = select(1, GetInventorySlotInfo(key))
+        c.slot.slotId = slotId
         local a = AuditSlot(slotId)
+        local canEnch = CANENCH[key]
         if a.has then
-            totalItems = totalItems + 1
-            r.slot.icon:SetTexture(a.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-            r.slot.icon:SetAlpha((slotId and IsInventoryItemLocked(slotId)) and 0.35 or 1)  -- "en déplacement"
+            tot.items = tot.items + 1
+            c.slot.icon:SetTexture(a.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            c.slot.icon:SetAlpha((slotId and IsInventoryItemLocked(slotId)) and 0.35 or 1)
             local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[a.quality]
-            r.slot.border:SetColorTexture(qc and qc.r or 0.3, qc and qc.g or 0.3, qc and qc.b or 0.3, 1)
-            r.name:SetText(qhex(a.quality) .. (a.name or "?") .. "|r")
-            r.ilvl:SetText(qhex(a.quality) .. tostring(a.ilvl) .. "|r")
-
-            -- détail : upgrade · enchant · gemmes
-            local parts = {}
-            if a.upTrack then
-                local maxed = a.upLevel and a.upMax and a.upLevel >= a.upMax
-                parts[#parts + 1] = (maxed and "|cFF40FF40" or "|cFF999999") .. ("%s %s/%s"):format(a.upTrack, a.upLevel or 0, a.upMax or 0) .. "|r"
-            end
-            -- enchant
+            c.slot.border:SetColorTexture(qc and qc.r or 0.3, qc and qc.g or 0.3, qc and qc.b or 0.3, 1)
+            c.slot.ilvlFS:SetText(tostring(a.ilvl))
+            c.slot.ilvlFS:SetTextColor(qc and qc.r or 1, qc and qc.g or 0.82, qc and qc.b or 0)
             local slotOK = true
-            if a.enchanted then
-                parts[#parts + 1] = "|cFF40FF40✦ ench.|r"
-            elseif canEnch then
-                parts[#parts + 1] = "|cFFFF4040✗ enchant|r"; slotOK = false
+            if canEnch then
+                tot.ench = tot.ench + 1
+                if a.enchanted then tot.okEnch = tot.okEnch + 1 else slotOK = false end
             end
-            if canEnch then totalEnch = totalEnch + 1; if a.enchanted then okEnch = okEnch + 1 end end
-            -- gemmes (vraies icônes)
             if a.sockets > 0 then
-                totalSock = totalSock + a.sockets
-                okSock = okSock + a.gemsFilled
-                local gtxt = ""
-                for _, g in ipairs(a.gemIcons) do
-                    if g then gtxt = gtxt .. ("|T%d:12:12:0:0|t"):format(g)
-                    else gtxt = gtxt .. "|cFFFF4040◆|r"; slotOK = false end
-                end
-                parts[#parts + 1] = gtxt
+                tot.sock = tot.sock + a.sockets; tot.okSock = tot.okSock + a.gemsFilled
+                if a.gemsFilled < a.sockets then slotOK = false end
             end
-            r.detail:SetText(table.concat(parts, "  "))
-            if slotOK then optimized = optimized + 1 end
+            -- texte d'enchant à côté (colonnes uniquement)
+            if side ~= "B" and c.ench then
+                c.ench:Show()
+                if a.enchanted then
+                    c.ench:SetText("|cFF40FF40" .. (a.enchShort or "Enchanté") .. "|r")
+                elseif canEnch then
+                    c.ench:SetText("|cFFFF4040✗ enchant|r")
+                else
+                    c.ench:SetText("")
+                end
+            elseif c.ench then c.ench:SetText("") end
+            if slotOK then tot.opt = tot.opt + 1 end
         else
-            r.slot.icon:SetTexture("Interface\\PaperDoll\\UI-Backpack-EmptySlot")
-            r.slot.icon:SetAlpha(1)
-            r.slot.border:SetColorTexture(0.5, 0.1, 0.1, 1)
-            r.name:SetText("|cFF888888" .. label .. "|r")
-            r.ilvl:SetText("|cFFFF4040—|r")
-            r.detail:SetText("|cFFFF4040emplacement vide|r")
+            c.slot.icon:SetTexture("Interface\\PaperDoll\\UI-Backpack-EmptySlot")
+            c.slot.icon:SetAlpha(1)
+            c.slot.border:SetColorTexture(0.45, 0.12, 0.12, 1)
+            c.slot.ilvlFS:SetText("")
+            if c.ench and side ~= "B" then c.ench:Show(); c.ench:SetText("|cFF888888" .. (LABEL[key] or "") .. "|r")
+            elseif c.ench then c.ench:SetText("") end
         end
-        r:Show()
-        y = y + ROW
     end
-    for i = #SLOTS + 1, #self.rows do self.rows[i]:Hide() end
+
+    -- colonnes (4 rangées), à partir de y=44 (sous le résumé)
+    local topY = 44
+    for i, key in ipairs(COL_L) do fill(key, "L", 2, topY + (i - 1) * CELL_H, half - 4) end
+    for i, key in ipairs(COL_R) do fill(key, "R", half + 2, topY + (i - 1) * CELL_H, half - 4) end
+    local y = topY + #COL_L * CELL_H + 4
+
+    -- rangée du bas : armes / bijoux / anneaux / cou / cape (grille d'icônes)
+    local perRow = math.max(1, math.floor(W / (CELL + 4)))
+    for i, key in ipairs(BOTTOM) do
+        local col = (i - 1) % perRow
+        local rowN = math.floor((i - 1) / perRow)
+        fill(key, "B", 2 + col * (CELL + 4), y + rowN * (CELL + 4), CELL)
+    end
+    y = y + (math.ceil(#BOTTOM / perRow)) * (CELL + 4) + 4
+
     self:UpdateSlotHighlights()
 
     -- résumé global premium
     local overall, equipped = GetAverageItemLevel()
-    local missEnch = totalEnch - okEnch
-    local missSock = totalSock - okSock
-    local missOpt  = totalItems - optimized
     self.sumTop:SetText(("|cFFFFFFFFiLvl|r |cFFFFD200%.0f|r  |cFF888888(équipé %.0f)|r"):format(overall or 0, equipped or overall or 0))
     self.sumBot:SetText(("|c%sEnch %d/%d|r   |c%sGemmes %d/%d|r   |c%sSlots %d/%d|r"):format(
-        statusHex(missEnch), okEnch, totalEnch,
-        statusHex(missSock), okSock, totalSock,
-        statusHex(missOpt), optimized, totalItems))
+        statusHex(tot.ench - tot.okEnch), tot.okEnch, tot.ench,
+        statusHex(tot.sock - tot.okSock), tot.okSock, tot.sock,
+        statusHex(tot.items - tot.opt), tot.opt, tot.items))
     SP:SetModuleHeaderText(self, "")
 
     self.gear:SetHeight(y)

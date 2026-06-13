@@ -147,10 +147,21 @@ local function RenderRow(self, row, qid, cat, isPvp, isAccount)
     pcall(function() complete = C_QuestLog.IsComplete(qid) and true or false end)
     local color = complete and "40FF40" or (CAT_COLOR[cat] or "FFD200")
 
+    -- niveau de quête en préfixe, coloré par difficulté : [80] Titre
+    local lvlPrefix = ""
+    if C_QuestLog.GetQuestDifficultyLevel then
+        local okl, lvl = pcall(C_QuestLog.GetQuestDifficultyLevel, qid)
+        if okl and type(lvl) == "number" and lvl > 0 then
+            local dc = GetQuestDifficultyColor and GetQuestDifficultyColor(lvl)
+            local lhex = dc and ("%02x%02x%02x"):format(dc.r * 255, dc.g * 255, dc.b * 255) or "BBBBBB"
+            lvlPrefix = ("|cFF%s[%d]|r "):format(lhex, lvl)
+        end
+    end
+
     local prefix = ""
     if isPvp then prefix = prefix .. PVP_ICON end
     if isAccount then prefix = prefix .. ACCOUNT_ICON end
-    row.title.text:SetText(prefix .. "|cFF" .. color .. title .. "|r")
+    row.title.text:SetText(prefix .. lvlPrefix .. "|cFF" .. color .. title .. "|r")
 
     local watched = false
     pcall(function()
@@ -419,33 +430,32 @@ function M:GetTrackedQuestIDs()
             local ok, qid = pcall(C_QuestLog.GetQuestIDForWorldQuestWatchIndex, i); if ok then add(qid) end
         end
     end
-    -- expéditions / tâches : UNIQUEMENT celles de la zone où se trouve le personnage
-    -- (comportement du traqueur Blizzard : C_TaskQuest.IsActive = on est dans la zone de réalisation)
-    local n = C_QuestLog.GetNumQuestLogEntries() or 0
-    for i = 1, n do
-        local info = C_QuestLog.GetInfo(i)
-        if info and not info.isHeader and (info.isTask or info.isBounty) and info.questID then
-            local inArea = true
-            if C_TaskQuest and C_TaskQuest.IsActive then
-                local ok, act = pcall(C_TaskQuest.IsActive, info.questID)
-                inArea = ok and act or false
+    -- expéditions / quêtes mondiales / objectifs bonus de la ZONE COURANTE
+    -- (méthode du suivi Blizzard : les tâches sont attachées à la carte, pas au journal)
+    if C_TaskQuest and C_TaskQuest.GetQuestsForPlayerByMapID and C_Map and C_Map.GetBestMapForUnit then
+        local mapID = C_Map.GetBestMapForUnit("player")
+        if mapID then
+            local ok, tasks = pcall(C_TaskQuest.GetQuestsForPlayerByMapID, mapID)
+            if ok and type(tasks) == "table" then
+                for _, t in ipairs(tasks) do
+                    add(t.questID or t.questId)
+                end
             end
-            if inArea then add(info.questID) end
         end
     end
     return ids
 end
 
--- Compteur total/max pour le bandeau.
+-- Compteur bandeau : quêtes AFFICHÉES (suivies) / total du journal.
 function M:UpdateCounter()
+    local shown = #self:GetTrackedQuestIDs()
     local total = 0
     local n = C_QuestLog.GetNumQuestLogEntries() or 0
     for i = 1, n do
         local info = C_QuestLog.GetInfo(i)
         if info and not info.isHeader then total = total + 1 end
     end
-    local max = (C_QuestLog.GetMaxNumQuests and C_QuestLog.GetMaxNumQuests()) or 35
-    SP:SetModuleHeaderText(self, ("%d / %d"):format(total, max))
+    SP:SetModuleHeaderText(self, ("%d / %d"):format(shown, total))
 end
 
 -- ============================================================

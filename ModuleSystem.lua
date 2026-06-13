@@ -251,9 +251,10 @@ function SP:CreateModuleFrame(m)
     suffix:SetPoint("RIGHT", lock, "LEFT", -6, 0)
     m.suffixFS = suffix
 
-    -- Clic droit = menu contextuel ; drag = reorder. (Plus de collapse au clic gauche.)
+    -- Clic gauche = réduire/ouvrir (sans flèche) ; clic droit = menu ; drag = reorder.
     header:SetScript("OnClick", function(_, button)
-        if button == "RightButton" then SP:ShowModuleMenu(m) end
+        if button == "RightButton" then SP:ShowModuleMenu(m)
+        elseif not m.headerless then SP:ToggleCollapse(m) end
     end)
     header:SetScript("OnDragStart", function() SP:BeginReorder(m) end)
     header:SetScript("OnDragStop",  function() SP:EndReorder(m) end)

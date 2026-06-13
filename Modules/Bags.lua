@@ -78,11 +78,9 @@ end
 -- Libellé de sous-catégorie (sous-type d'objet).
 local function GroupLabel(info, cat)
     local _, itype, isub, _, _, classID = C_Item.GetItemInfoInstant(info.itemID)
-    if cat.groupPrefix and cat.groupPrefix ~= "" then
-        return cat.groupPrefix .. ": " .. (isub or itype or "Autres")
-    end
-    if classID == 4 then return (itype or "Armure") .. (isub and (": " .. isub) or "") end  -- armure
-    return itype or "Autres"  -- armes / autres par type
+    -- labels simplifiés (plus de préfixe « Composant: » / « Conso: ») : juste le sous-type
+    if classID == 4 then return isub or itype or "Armure" end   -- armure : sous-type
+    return isub or itype or "Autres"                            -- conso/artisanat/armes : sous-type
 end
 
 function M:CategoryForItem(info, cats, enabledSet)
@@ -122,15 +120,23 @@ local function CreateSlot(self, i)
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     b:SetScript("PreClick", function(s, btn)
-        if btn == "LeftButton" and s.bag and not InCombatLockdown() then C_Container.PickupContainerItem(s.bag, s.slot) end
+        if btn == "LeftButton" and s.bag and not InCombatLockdown() then
+            local had = CursorHasItem and CursorHasItem()
+            C_Container.PickupContainerItem(s.bag, s.slot)
+            SP:PlayItemSound(had and "drop" or "pickup")
+        end
     end)
-    -- vrai drag & drop (le moteur joue les sons WoW de prise/dépôt)
+    -- vrai drag & drop (+ son de prise/dépôt)
     b:RegisterForDrag("LeftButton")
     b:SetScript("OnDragStart", function(s)
-        if s.bag and not InCombatLockdown() then C_Container.PickupContainerItem(s.bag, s.slot) end
+        if s.bag and not InCombatLockdown() then C_Container.PickupContainerItem(s.bag, s.slot); SP:PlayItemSound("pickup") end
     end)
     b:SetScript("OnReceiveDrag", function(s)
-        if s.bag and not InCombatLockdown() then C_Container.PickupContainerItem(s.bag, s.slot) end
+        if s.bag and not InCombatLockdown() then
+            local had = CursorHasItem and CursorHasItem()
+            C_Container.PickupContainerItem(s.bag, s.slot)
+            SP:PlayItemSound(had and "drop" or "pickup")
+        end
     end)
     return b
 end
