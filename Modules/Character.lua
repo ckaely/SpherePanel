@@ -13,8 +13,8 @@ local ADDON_NAME, SP = ...
 
 local M = { name = "Character", label = "Personnage", defaultHeight = 300 }
 
-local CELL = 34   -- taille d'une case d'équipement
-local CELL_H = 38 -- hauteur de rangée colonne
+local CELL = 28    -- taille d'une case d'équipement (plus petite)
+local CELL_H = 34  -- hauteur de rangée colonne (espacée)
 
 -- libellé FR + "peut être enchanté" (gate l'alerte « ✗ enchant »)
 local LABEL = {
@@ -225,24 +225,28 @@ local function MakeSlotButton(self, parent)
     return slot
 end
 
--- Case = bouton de slot + texte d'enchant à côté (selon le côté de colonne).
+-- Case = stripe de contraste + bouton de slot + NOM d'objet (ligne 1) + enchant (ligne 2).
 function M:_Cell(key, side)
     self.cells = self.cells or {}
     local c = self.cells[key]
     if not c then
         c = { side = side }
         c.frame = CreateFrame("Frame", nil, self.gear); c.frame:SetHeight(CELL_H)
+        c.stripe = c.frame:CreateTexture(nil, "BACKGROUND"); c.stripe:SetAllPoints(c.frame)
         c.slot = MakeSlotButton(self, c.frame)
+        c.name = c.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); c.name:SetWordWrap(false)
         c.ench = c.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); c.ench:SetWordWrap(false)
         if side == "R" then
             c.slot:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0)
-            c.ench:SetPoint("RIGHT", c.slot, "LEFT", -4, 0); c.ench:SetPoint("LEFT", c.frame, "LEFT", 2, 0); c.ench:SetJustifyH("RIGHT")
+            c.name:SetPoint("TOPRIGHT", c.slot, "TOPLEFT", -5, -1);  c.name:SetPoint("LEFT", c.frame, "LEFT", 2, 0); c.name:SetJustifyH("RIGHT")
+            c.ench:SetPoint("BOTTOMRIGHT", c.slot, "BOTTOMLEFT", -5, 1); c.ench:SetPoint("LEFT", c.frame, "LEFT", 2, 0); c.ench:SetJustifyH("RIGHT")
         elseif side == "L" then
             c.slot:SetPoint("LEFT", c.frame, "LEFT", 2, 0)
-            c.ench:SetPoint("LEFT", c.slot, "RIGHT", 4, 0); c.ench:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0); c.ench:SetJustifyH("LEFT")
+            c.name:SetPoint("TOPLEFT", c.slot, "TOPRIGHT", 5, -1);  c.name:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0); c.name:SetJustifyH("LEFT")
+            c.ench:SetPoint("BOTTOMLEFT", c.slot, "BOTTOMRIGHT", 5, 1); c.ench:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0); c.ench:SetJustifyH("LEFT")
         else
             c.slot:SetPoint("CENTER", c.frame, "CENTER", 0, 0)
-            c.ench:Hide()
+            c.name:Hide(); c.ench:Hide()
         end
         self.cells[key] = c
     end
@@ -338,9 +342,21 @@ function M:ApplyKeyOverride()
     end
 end
 
+-- Bandeau : nom du personnage (couleur de classe) + niveau.
+function M:UpdateTitle()
+    if not self.labelFS then return end
+    local n = UnitName("player") or "Personnage"
+    local lvl = UnitLevel("player") or 0
+    local _, classFile = UnitClass("player")
+    local cc = classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
+    local hex = cc and ("ff%02x%02x%02x"):format(cc.r * 255, cc.g * 255, cc.b * 255) or "ffffffff"
+    self.labelFS:SetText(("|c%s%s|r |cFFAAAAAAniv. %d|r"):format(hex, n, lvl))
+end
+
 -- ============================================================
 function M:Refresh()
     if not self._enabled then return end
+    self:UpdateTitle()
     if self.tab == "stats" then self:RefreshStats() else self:RefreshGear() end
 end
 
@@ -359,16 +375,18 @@ function M:RefreshGear()
     local half = math.floor(W / 2)
     local tot = { ench = 0, okEnch = 0, sock = 0, okSock = 0, opt = 0, items = 0 }
 
-    -- remplit une case + cumule le récap
-    local function fill(key, side, x, y, w)
+    -- remplit une case + cumule le récap. stripeOn = contraste de ligne (colonnes).
+    local function fill(key, side, x, y, w, stripeOn)
         local c = self:_Cell(key, side)
         c.frame:ClearAllPoints()
         c.frame:SetPoint("TOPLEFT", self.gear, "TOPLEFT", x, -y)
         c.frame:SetWidth(w); c.frame:Show()
+        if c.stripe then c.stripe:SetColorTexture(1, 1, 1, (side ~= "B" and stripeOn) and 0.05 or 0) end
         local slotId = select(1, GetInventorySlotInfo(key))
         c.slot.slotId = slotId
         local a = AuditSlot(slotId)
         local canEnch = CANENCH[key]
+        local function setCol(fs, txt) if fs then if side == "B" then fs:Hide() else fs:Show(); fs:SetText(txt or "") end end end
         if a.has then
             tot.items = tot.items + 1
             c.slot.icon:SetTexture(a.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -386,33 +404,29 @@ function M:RefreshGear()
                 tot.sock = tot.sock + a.sockets; tot.okSock = tot.okSock + a.gemsFilled
                 if a.gemsFilled < a.sockets then slotOK = false end
             end
-            -- texte d'enchant à côté (colonnes uniquement)
-            if side ~= "B" and c.ench then
-                c.ench:Show()
-                if a.enchanted then
-                    c.ench:SetText("|cFF40FF40" .. (a.enchShort or "Enchanté") .. "|r")
-                elseif canEnch then
-                    c.ench:SetText("|cFFFF4040✗ enchant|r")
-                else
-                    c.ench:SetText("")
-                end
-            elseif c.ench then c.ench:SetText("") end
+            -- ligne 1 : NOM de l'objet (couleur de rareté) ; ligne 2 : enchant
+            setCol(c.name, qhex(a.quality) .. (a.name or "?") .. "|r")
+            local enchTxt
+            if a.enchanted then enchTxt = "|cFF40FF40" .. (a.enchShort or "Enchanté") .. "|r"
+            elseif canEnch then enchTxt = "|cFFFF4040✗ enchantement|r"
+            else enchTxt = "" end
+            setCol(c.ench, enchTxt)
             if slotOK then tot.opt = tot.opt + 1 end
         else
             c.slot.icon:SetTexture("Interface\\PaperDoll\\UI-Backpack-EmptySlot")
             c.slot.icon:SetAlpha(1)
             c.slot.border:SetColorTexture(0.45, 0.12, 0.12, 1)
             c.slot.ilvlFS:SetText("")
-            if c.ench and side ~= "B" then c.ench:Show(); c.ench:SetText("|cFF888888" .. (LABEL[key] or "") .. "|r")
-            elseif c.ench then c.ench:SetText("") end
+            setCol(c.name, "|cFF888888" .. (LABEL[key] or "") .. "|r")
+            setCol(c.ench, "|cFF666666vide|r")
         end
     end
 
     -- zigzag : un item par ligne, pleine largeur, côté alterné (icône gauche/droite)
     local topY = 44
     local y = topY
-    for _, e in ipairs(COLUMN) do
-        fill(e[1], e[2], 2, y, W - 4)
+    for idx, e in ipairs(COLUMN) do
+        fill(e[1], e[2], 2, y, W - 4, idx % 2 == 0)
         y = y + CELL_H
     end
     y = y + 4

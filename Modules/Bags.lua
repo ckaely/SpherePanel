@@ -414,24 +414,18 @@ function M:Refresh()
                         b:Show()
                         y = y + size + GAP
                     elseif c.group then
-                        -- sous-catégories par sous-type
-                        local groups, order = {}, {}
-                        for _, it in ipairs(items) do
-                            local gl = GroupLabel(it.info, c)
-                            if not groups[gl] then groups[gl] = {}; order[#order + 1] = gl end
-                            local g = groups[gl]; g[#g + 1] = it
-                        end
-                        table.sort(order)
-                        for _, gl in ipairs(order) do
-                            subi = subi + 1
-                            local sf = self:_AcquireSub(subi)
-                            sf:ClearAllPoints(); sf:SetPoint("TOPLEFT", self.list, "TOPLEFT", 4, -y)
-                            sf:SetText(gl); sf:SetTextColor(SUB_COLOR[1], SUB_COLOR[2], SUB_COLOR[3])
-                            sf:Show()
-                            y = y + SUB_H
-                            y = y + grid(groups[gl], y)
-                            y = y + 2
-                        end
+                        -- groupées par sous-type MAIS en UNE grille continue (compact, zéro ligne
+                        -- perdue) : on trie par sous-type pour garder les mêmes types adjacents.
+                        local sorted = {}
+                        for _, it in ipairs(items) do sorted[#sorted + 1] = it end
+                        table.sort(sorted, function(p, q)
+                            local gp = GroupLabel(p.info, c) or ""
+                            local gq = GroupLabel(q.info, c) or ""
+                            if gp ~= gq then return gp < gq end
+                            return (p.info.itemID or 0) < (q.info.itemID or 0)
+                        end)
+                        y = y + grid(sorted, y)
+                        y = y + 2
                     else
                         y = y + grid(items, y)
                         y = y + 2

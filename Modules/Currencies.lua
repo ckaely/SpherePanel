@@ -80,6 +80,7 @@ function M:Refresh()
     y = y + ROW
 
     -- monnaies suivies (cochées dans l'onglet Monnaies)
+    local fav = {}   -- favorites (suivies sac à dos) → bandeau
     if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize then
         local n = C_CurrencyInfo.GetCurrencyListSize() or 0
         for i = 1, n do
@@ -97,6 +98,10 @@ function M:Refresh()
                     local txt = ("%s  |cFFFFFFFF%d|r"):format(info.name or "?", qty)
                     if maxQ > 0 then txt = txt .. ("|cFF888888 / %d|r"):format(maxQ) end
                     r.fs:SetText(txt)
+                    -- favorites (suivies sac à dos) → bandeau du module
+                    if info.isShowInBackpack and #fav < 6 and info.iconFileID then
+                        fav[#fav + 1] = ("|T%d:13:13:0:0|t%d"):format(info.iconFileID, qty)
+                    end
                     r:ClearAllPoints()
                     r:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
                     r:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
@@ -108,6 +113,7 @@ function M:Refresh()
     end
 
     for i = shown + 1, #self.rows do self.rows[i]:Hide() end
+    SP:SetModuleHeaderText(self, table.concat(fav, "  "))   -- favorites dans le bandeau
     SP:SetAutoHeight(self, math.max(40, y + 4))
 end
 
