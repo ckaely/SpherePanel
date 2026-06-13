@@ -221,17 +221,13 @@ function SP:CreateModuleFrame(m)
 
     local baseLvl = header:GetFrameLevel()
 
-    -- Flèche collapse/expand
-    local arrow = CreateFrame("Button", nil, header)
-    arrow:SetSize(UIc.HEADER_H - 4, UIc.HEADER_H - 4)
-    arrow:SetPoint("LEFT", header, "LEFT", 3, 0)
-    arrow:SetFrameLevel(baseLvl + 2)
-    arrow:SetScript("OnClick", function() SP:ToggleCollapse(m) end)
-    m.arrow = arrow
+    -- Bouton de réduction RETIRÉ (DEC-026) : plus de flèche ▶/▼ ni de clic-collapse.
+    -- L'état `collapsed` subsiste UNIQUEMENT pour le pilotage programmatique (Bags via B,
+    -- SilverDragon sur alerte, touche C du module Personnage).
 
     -- Label
     local label = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    label:SetPoint("LEFT", arrow, "RIGHT", 4, 0)
+    label:SetPoint("LEFT", header, "LEFT", 8, 0)
     label:SetText(m.label)
     m.labelFS = label
 
@@ -255,9 +251,9 @@ function SP:CreateModuleFrame(m)
     suffix:SetPoint("RIGHT", lock, "LEFT", -6, 0)
     m.suffixFS = suffix
 
-    -- Clic gauche = collapse ; clic droit = menu contextuel ; drag = reorder.
+    -- Clic droit = menu contextuel ; drag = reorder. (Plus de collapse au clic gauche.)
     header:SetScript("OnClick", function(_, button)
-        if button == "RightButton" then SP:ShowModuleMenu(m) else SP:ToggleCollapse(m) end
+        if button == "RightButton" then SP:ShowModuleMenu(m) end
     end)
     header:SetScript("OnDragStart", function() SP:BeginReorder(m) end)
     header:SetScript("OnDragStop",  function() SP:EndReorder(m) end)

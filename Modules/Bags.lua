@@ -199,21 +199,9 @@ end
 function M:OnResize(w, h) self:RequestRefresh() end
 
 function M:CollapseOthers(collapse)
-    if collapse then
-        self._savedStates = {}
-        for _, m in ipairs(SP.modules) do
-            if m.name ~= self.name then
-                local c = SP:GetModuleConfig(m.name)
-                if c then self._savedStates[m.name] = c.collapsed; c.collapsed = true; SP:UpdateCollapseVisual(m) end
-            end
-        end
-    elseif self._savedStates then
-        for name, st in pairs(self._savedStates) do
-            local c, m = SP:GetModuleConfig(name), SP.modulesByName[name]
-            if c and m then c.collapsed = st; SP:UpdateCollapseVisual(m) end
-        end
-        self._savedStates = nil
-    end
+    -- DEC-026 : la réduction de bandeau a été retirée (plus de bouton ▶/▼). Réduire les
+    -- autres modules les laisserait inaccessibles (surtout après /reload). No-op conservé
+    -- pour la compatibilité d'appel — le sac garde sa propre ouverture/fermeture via B.
 end
 
 -- "Récent" : items pas vus depuis la dernière ouverture (diff de snapshot).
