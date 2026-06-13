@@ -151,7 +151,7 @@ function M:BuildCustomMenus()
         b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         b.label, b.action = item[1], item.fn
         b:SetScript("OnClick", function(s) pcall(s.action) end)
-        b:SetScript("OnEnter", function(s) GameTooltip:SetOwner(s, "ANCHOR_RIGHT"); GameTooltip:SetText(s.label); GameTooltip:Show() end)
+        b:SetScript("OnEnter", function(s) SP:AnchorTooltipOutsidePanel(GameTooltip, s); GameTooltip:SetText(s.label); GameTooltip:Show() end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
         self.buttons[i] = b
     end
@@ -458,7 +458,7 @@ function M:AcquireHolder(i)
         ov:Hide()
         ov:SetScript("OnClick", function() if h.button then M:ExcludeButton(h.button); M:SetManage(true) end end)
         ov:SetScript("OnEnter", function(s)
-            GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+            SP:AnchorTooltipOutsidePanel(GameTooltip, s)
             GameTooltip:SetText("Exclure : " .. tostring(h.button and h.button:GetName() or "?"))
             GameTooltip:Show()
         end)

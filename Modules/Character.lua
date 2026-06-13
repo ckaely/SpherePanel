@@ -134,7 +134,7 @@ function M:Init(body)
     self.charBtn:SetText("Blizz")
     self.charBtn:SetScript("OnClick", function() if ToggleCharacter then pcall(ToggleCharacter, "PaperDollFrame") end end)
     self.charBtn:SetScript("OnEnter", function(s)
-        GameTooltip:SetOwner(s, "ANCHOR_LEFT"); GameTooltip:SetText("Feuille Blizzard (transmo, titres)"); GameTooltip:Show()
+        SP:AnchorTooltipOutsidePanel(GameTooltip, s); GameTooltip:SetText("Feuille Blizzard (transmo, titres)"); GameTooltip:Show()
     end)
     self.charBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
@@ -173,7 +173,7 @@ function M:_GearRow(i)
         slot.glow:SetPoint("TOPLEFT", slot, "TOPLEFT", -3, 3); slot.glow:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 3, -3)
         slot.glow:SetColorTexture(1, 0.82, 0.2, 0.55); slot.glow:SetBlendMode("ADD"); slot.glow:Hide()
         slot:SetScript("OnEnter", function(s)
-            if s.slotId then GameTooltip:SetOwner(s, "ANCHOR_RIGHT"); pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", s.slotId); GameTooltip:Show() end
+            if s.slotId then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", s.slotId); GameTooltip:Show() end
         end)
         slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
         slot:SetScript("OnDragStart", function(s)
@@ -329,6 +329,7 @@ function M:RefreshGear()
         if a.has then
             totalItems = totalItems + 1
             r.slot.icon:SetTexture(a.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            r.slot.icon:SetAlpha((slotId and IsInventoryItemLocked(slotId)) and 0.35 or 1)  -- "en déplacement"
             local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[a.quality]
             r.slot.border:SetColorTexture(qc and qc.r or 0.3, qc and qc.g or 0.3, qc and qc.b or 0.3, 1)
             r.name:SetText(qhex(a.quality) .. (a.name or "?") .. "|r")
@@ -363,6 +364,7 @@ function M:RefreshGear()
             if slotOK then optimized = optimized + 1 end
         else
             r.slot.icon:SetTexture("Interface\\PaperDoll\\UI-Backpack-EmptySlot")
+            r.slot.icon:SetAlpha(1)
             r.slot.border:SetColorTexture(0.5, 0.1, 0.1, 1)
             r.name:SetText("|cFF888888" .. label .. "|r")
             r.ilvl:SetText("|cFFFF4040—|r")
@@ -481,7 +483,7 @@ function M:RefreshStats()
             fs._tip = d.tip
             fs:SetScript("OnEnter", function(s)
                 if not s._tip then return end
-                GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
+                SP:AnchorTooltipOutsidePanel(GameTooltip, s)
                 GameTooltip:SetText(s._tip[1], 1, 0.82, 0)
                 for k = 2, #s._tip do if s._tip[k] then GameTooltip:AddLine(s._tip[k], 1, 1, 1, true) end end
                 GameTooltip:Show()

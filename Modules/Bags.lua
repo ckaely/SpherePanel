@@ -118,11 +118,19 @@ local function CreateSlot(self, i)
     end
     b.hl = b:CreateTexture(nil, "HIGHLIGHT"); b.hl:SetAllPoints(b); b.hl:SetColorTexture(1, 1, 1, 0.2)
     b:SetScript("OnEnter", function(s)
-        if s.bag and s.slot then GameTooltip:SetOwner(s, "ANCHOR_LEFT"); pcall(GameTooltip.SetBagItem, GameTooltip, s.bag, s.slot); GameTooltip:Show() end
+        if s.bag and s.slot then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetBagItem, GameTooltip, s.bag, s.slot); GameTooltip:Show() end
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     b:SetScript("PreClick", function(s, btn)
         if btn == "LeftButton" and s.bag and not InCombatLockdown() then C_Container.PickupContainerItem(s.bag, s.slot) end
+    end)
+    -- vrai drag & drop (le moteur joue les sons WoW de prise/dépôt)
+    b:RegisterForDrag("LeftButton")
+    b:SetScript("OnDragStart", function(s)
+        if s.bag and not InCombatLockdown() then C_Container.PickupContainerItem(s.bag, s.slot) end
+    end)
+    b:SetScript("OnReceiveDrag", function(s)
+        if s.bag and not InCombatLockdown() then C_Container.PickupContainerItem(s.bag, s.slot) end
     end)
     return b
 end
@@ -301,6 +309,7 @@ function M:Refresh()
         if not (it.info and it.info.itemID) then
             b.icon:SetTexture(nil)
             b.icon:SetDesaturated(false)
+            b.icon:SetAlpha(1)
             b.border:SetColorTexture(0.18, 0.18, 0.18, 0.65)
             b.count:SetText(it.emptyCount and tostring(it.emptyCount) or "")
             b.ilvl:SetText("")
@@ -310,6 +319,7 @@ function M:Refresh()
             return
         end
         b.icon:SetTexture(it.info.iconFileID)
+        b.icon:SetAlpha(it.info.isLocked and 0.35 or 1)   -- "en déplacement" pendant le drag
         local q = it.info.quality or 1
         b.icon:SetDesaturated((q == 0) and greyJunk or false)
         local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]

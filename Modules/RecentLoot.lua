@@ -18,7 +18,7 @@ local function CreateRow(self, i)
     r.fs:SetJustifyH("LEFT"); r.fs:SetWordWrap(false)
     local hl = r:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(r); hl:SetColorTexture(1, 1, 1, 0.08)
     r:SetScript("OnEnter", function(s)
-        if s.link then GameTooltip:SetOwner(s, "ANCHOR_LEFT"); pcall(GameTooltip.SetHyperlink, GameTooltip, s.link); GameTooltip:Show() end
+        if s.link then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetHyperlink, GameTooltip, s.link); GameTooltip:Show() end
     end)
     r:SetScript("OnLeave", function() GameTooltip:Hide() end)
     r:SetScript("OnClick", function(s)

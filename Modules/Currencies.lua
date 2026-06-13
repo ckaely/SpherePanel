@@ -19,7 +19,7 @@ local function CreateRow(self, i)
     r:EnableMouse(true)
     r:SetScript("OnEnter", function(s)
         if s.currencyID then
-            GameTooltip:SetOwner(s, "ANCHOR_LEFT")
+            SP:AnchorTooltipOutsidePanel(GameTooltip, s)
             pcall(GameTooltip.SetCurrencyByID, GameTooltip, s.currencyID)
             GameTooltip:Show()
         end

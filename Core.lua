@@ -93,6 +93,21 @@ function SP:SetIcon(tex, index)
     return true
 end
 
+-- Règle globale : ancrer un tooltip À L'EXTÉRIEUR du panneau, jamais par-dessus.
+-- Choisit le côté selon la position écran du propriétaire (moitié droite → tooltip à gauche,
+-- et inversement). `preferredSide` ("LEFT"/"RIGHT") force le côté. GameTooltip reste clampé à l'écran.
+function SP:AnchorTooltipOutsidePanel(tooltip, owner, preferredSide)
+    tooltip = tooltip or GameTooltip
+    local side = preferredSide
+    if not side then
+        local ox = owner and owner.GetCenter and select(1, owner:GetCenter())
+        local sw = UIParent:GetWidth() or 1920
+        side = (ox and ox > sw * 0.5) and "LEFT" or "RIGHT"
+    end
+    tooltip:SetOwner(owner, "ANCHOR_" .. side)
+    return tooltip
+end
+
 -- Log console simple, throttle-able plus tard. Préfixe coloré.
 function SP:Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cFF4AA3FFSpherePanel|r " .. tostring(msg))

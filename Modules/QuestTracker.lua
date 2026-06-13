@@ -247,7 +247,7 @@ function M:Init(body)
             if mouse == "RightButton" then self:IsolateFilter(s.fkey) else self:ToggleFilter(s.fkey) end
         end)
         b:SetScript("OnEnter", function(s)
-            GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
+            SP:AnchorTooltipOutsidePanel(GameTooltip, s)
             local f = SP:GetModuleConfig(self.name).filters
             GameTooltip:SetText(s.tip .. (f[s.fkey] and " |cFF40FF40(affiché)|r" or " |cFFFF5555(masqué)|r"))
             GameTooltip:Show()
