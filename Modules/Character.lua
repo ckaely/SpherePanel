@@ -28,12 +28,16 @@ local CANENCH = {
     FINGER0SLOT = true, FINGER1SLOT = true, MAINHANDSLOT = true, SECONDARYHANDSLOT = true,
     HEADSLOT = true, SHOULDERSLOT = true,
 }
--- disposition paperdoll 2 colonnes + rangée du bas (schéma utilisateur)
-local COL_L  = { "HEADSLOT", "SHOULDERSLOT", "CHESTSLOT", "LEGSSLOT" }       -- pièces de set à gauche
-local COL_R  = { "HANDSSLOT", "WRISTSLOT", "WAISTSLOT", "FEETSLOT" }
+-- disposition en ZIGZAG (schéma utilisateur) : UN seul item par ligne, alternance gauche/droite.
+-- L'item de droite est décalé d'une ligne sous celui de gauche → les textes ne se touchent jamais.
+local COLUMN = {
+    { "HEADSLOT", "L" },   { "HANDSSLOT", "R" },
+    { "SHOULDERSLOT", "L" }, { "WRISTSLOT", "R" },
+    { "CHESTSLOT", "L" },  { "WAISTSLOT", "R" },
+    { "LEGSSLOT", "L" },   { "FEETSLOT", "R" },
+}
+-- rangée du bas (grille) : armes / cou / cape / anneaux / bijoux
 local BOTTOM = { "MAINHANDSLOT", "SECONDARYHANDSLOT", "NECKSLOT", "BACKSLOT", "FINGER0SLOT", "FINGER1SLOT", "TRINKET0SLOT", "TRINKET1SLOT" }
-local ALLSLOTS = {}  -- pour le récap (compte)
-do for _, t in ipairs({ COL_L, COL_R, BOTTOM }) do for _, s in ipairs(t) do ALLSLOTS[#ALLSLOTS + 1] = s end end end
 
 local ENCH_TYPE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemEnchantmentPermanent
 local GEM_TYPE  = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.GemSocket
@@ -404,11 +408,14 @@ function M:RefreshGear()
         end
     end
 
-    -- colonnes (4 rangées), à partir de y=44 (sous le résumé)
+    -- zigzag : un item par ligne, pleine largeur, côté alterné (icône gauche/droite)
     local topY = 44
-    for i, key in ipairs(COL_L) do fill(key, "L", 2, topY + (i - 1) * CELL_H, half - 4) end
-    for i, key in ipairs(COL_R) do fill(key, "R", half + 2, topY + (i - 1) * CELL_H, half - 4) end
-    local y = topY + #COL_L * CELL_H + 4
+    local y = topY
+    for _, e in ipairs(COLUMN) do
+        fill(e[1], e[2], 2, y, W - 4)
+        y = y + CELL_H
+    end
+    y = y + 4
 
     -- rangée du bas : armes / bijoux / anneaux / cou / cape (grille d'icônes)
     local perRow = math.max(1, math.floor(W / (CELL + 4)))
