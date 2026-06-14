@@ -135,6 +135,10 @@ function M:Init(body)
         local guid = select(12, ...)
         local typeKey = NormType(event:gsub("^CHAT_MSG_", ""))
         if event == "CHAT_MSG_WHISPER" and author and author ~= "" then self._lastWhisper = author end
+        -- whisper reçu → révèle le module quelques secondes (notification douce)
+        if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and self._enabled then
+            SP:RevealModule(self, 6)
+        end
         self:AddMessage(typeKey, msg, author, channelName, guid)
     end)
 

@@ -41,6 +41,13 @@ local CAT_COLOR = {
 local PVP_ICON     = "|TInterface\\Icons\\Achievement_PVP_A_A:13:13|t "
 local ACCOUNT_ICON = "|TInterface\\FriendsFrame\\UI-Toast-FriendOnlineIcon:13:13|t "
 
+-- ordre + libellé des sections (séparateurs visuels)
+local CAT_ORDER = { "campaign", "worldquest", "weekly", "daily", "dungeon", "raid", "pvp", "account", "classic" }
+local CAT_LABEL = {
+    campaign = "Campagne", worldquest = "Expéditions", weekly = "Hebdomadaire", daily = "Journalières",
+    dungeon = "Donjon", raid = "Raid", pvp = "JcJ", account = "Compte", classic = "Quêtes",
+}
+
 local function safeBool(fn, ...)
     if type(fn) ~= "function" then return false end
     local ok, v = pcall(fn, ...)
@@ -290,6 +297,7 @@ function M:Init(body)
     self.ev = CreateFrame("Frame")
     self.ev:SetScript("OnEvent", function(_, event)
         if event == "PLAYER_ENTERING_WORLD" then self:PrewarmPool(30) end
+        if event == "QUEST_ACCEPTED" and self._loginDone then SP:RevealModule(self, 6) end  -- notif nouvelle quête
         self:HideBlizzard()
         self:RequestRefresh()
     end)
@@ -400,6 +408,23 @@ function M:AcquireEntry()
     return row
 end
 
+-- Séparateur de section : libellé + trait.
+function M:AcquireSep()
+    self._seps = self._seps or {}
+    self._sepUsed = (self._sepUsed or 0) + 1
+    local s = self._seps[self._sepUsed]
+    if not s then
+        s = CreateFrame("Frame", nil, self.list); s:SetHeight(14)
+        s.fs = s:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        s.fs:SetPoint("LEFT", s, "LEFT", 2, 0)
+        s.line = s:CreateTexture(nil, "ARTWORK"); s.line:SetHeight(1)
+        s.line:SetPoint("RIGHT", s, "RIGHT", -2, 0)
+        s.line:SetPoint("LEFT", s.fs, "RIGHT", 6, 0)
+        self._seps[self._sepUsed] = s
+    end
+    return s
+end
+
 function M:ReleaseAll()
     for i = 1, self._usedCount do if self._pool[i] then self._pool[i]:Hide() end end
     self._usedCount = 0
@@ -476,23 +501,63 @@ function M:Refresh()
 
     local filters = SP:GetModuleConfig(self.name).filters
     local ids = self:GetTrackedQuestIDs()
-    local y = 4
-    local count = 0
+    self._sepUsed = 0
+
+    -- regroupe par catégorie
+    local buckets = {}
     for _, qid in ipairs(ids) do
         local cat, isPvp, isAccount = Classify(qid)
         if filters[cat] ~= false then
-            local row = self:AcquireEntry()
-            if not row then break end
-            row:ClearAllPoints()
-            row:SetPoint("TOPLEFT",  self.list, "TOPLEFT",  2, -(y - self.scroll))
-            row:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -(y - self.scroll))
-            local ok, h = pcall(RenderRow, self, row, qid, cat, isPvp, isAccount)
-            if not ok or type(h) ~= "number" then h = 15 end
-            row:Show()
-            y = y + h + 4
-            count = count + 1
+            buckets[cat] = buckets[cat] or {}
+            table.insert(buckets[cat], { qid = qid, pvp = isPvp, acc = isAccount })
         end
     end
+
+    -- auto-ouverture si une NOUVELLE expédition apparaît
+    self._seenWQ = self._seenWQ or {}
+    if buckets.worldquest then
+        for _, e in ipairs(buckets.worldquest) do
+            if not self._seenWQ[e.qid] then
+                self._seenWQ[e.qid] = true
+                if self._loginDone then SP:RevealModule(self, 6) end
+            end
+        end
+    end
+    self._loginDone = true
+
+    local y = 4
+    local count = 0
+    for _, cat in ipairs(CAT_ORDER) do
+        local list = buckets[cat]
+        if list and #list > 0 then
+            -- séparateur de section
+            local sep = self:AcquireSep()
+            local hex = CAT_COLOR[cat] or "FFD200"
+            sep.fs:SetText("|cFF" .. hex .. (CAT_LABEL[cat] or cat) .. "|r")
+            local r, g, b = tonumber(hex:sub(1, 2), 16) / 255, tonumber(hex:sub(3, 4), 16) / 255, tonumber(hex:sub(5, 6), 16) / 255
+            sep.line:SetColorTexture(r, g, b, 0.35)
+            sep:ClearAllPoints()
+            sep:SetPoint("TOPLEFT", self.list, "TOPLEFT", 2, -(y - self.scroll))
+            sep:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -(y - self.scroll))
+            sep:Show()
+            y = y + 16
+
+            for _, e in ipairs(list) do
+                local row = self:AcquireEntry()
+                if not row then break end
+                row:ClearAllPoints()
+                row:SetPoint("TOPLEFT",  self.list, "TOPLEFT",  2, -(y - self.scroll))
+                row:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -(y - self.scroll))
+                local ok, h = pcall(RenderRow, self, row, e.qid, cat, e.pvp, e.acc)
+                if not ok or type(h) ~= "number" then h = 15 end
+                row:Show()
+                y = y + h + 4
+                count = count + 1
+            end
+        end
+    end
+    -- masque les séparateurs inutilisés
+    if self._seps then for i = self._sepUsed + 1, #self._seps do self._seps[i]:Hide() end end
     self._contentH = y
     local visible = self.list:GetHeight() or 1
     if self.scroll > math.max(0, y - visible) then self.scroll = math.max(0, y - visible) end

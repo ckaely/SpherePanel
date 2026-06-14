@@ -274,8 +274,15 @@ function SP:_UpdateEdgeGlows(p, side, isP2)
                 edge.glows[i] = g
             end
             g._m = m
+            -- bordure = couleur PERSONNALISÉE du module si définie, sinon palette générique
             local c = GLOW_COLORS[((i - 1) % #GLOW_COLORS) + 1]
-            g.tex:SetColorTexture(c[1], c[2], c[3], 0.85)
+            local app = SP.GetModuleAppearanceConfig and SP:GetModuleAppearanceConfig(m.name)
+            local bc = app and app.bgColor
+            local def = (SP.db.panel.moduleAppearance and SP.db.panel.moduleAppearance.bgColor) or { r = 0.12, g = 0.15, b = 0.20 }
+            if bc and (math.abs((bc.r or 0) - def.r) > 0.02 or math.abs((bc.g or 0) - def.g) > 0.02 or math.abs((bc.b or 0) - def.b) > 0.02) then
+                c = { bc.r, bc.g, bc.b }
+            end
+            g.tex:SetColorTexture(c[1], c[2], c[3], 0.9)
             local top = f:GetTop()
             if top and uh and slidOff then
                 g:ClearAllPoints()

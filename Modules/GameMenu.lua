@@ -241,21 +241,28 @@ function M:EmbedMicroMenu()
 end
 
 function M:LayoutMicroMenu()
-    if not self.microButtons then return 40 end
+    if not self.microButtons or #self.microButtons == 0 then return 40 end
     local w = self.menusPage:GetWidth()
     if not w or w < 1 then w = (SP.db.panel.width or 280) - 8 end
-    local x, y, rowH = 0, 0, 0
+    -- largeur totale à taille native
+    local totalW, maxH = 0, 0
+    for _, b in ipairs(self.microButtons) do
+        totalW = totalW + (b:GetWidth() or 24) + 2
+        maxH = math.max(maxH, b:GetHeight() or 30)
+    end
+    -- TOUT sur UNE ligne : mise à l'échelle pour rentrer dans la largeur
+    local scale = math.min(1, (w - 2) / math.max(1, totalW))
+    local x = 0
     for _, b in ipairs(self.microButtons) do
         if b:GetParent() ~= self.menusPage then pcall(b.SetParent, b, self.menusPage) end
-        local bw, bh = b:GetWidth() or 24, b:GetHeight() or 30
-        if x + bw > w then x = 0; y = y + rowH + 2; rowH = 0 end
+        pcall(b.SetScale, b, scale)
         b:ClearAllPoints()
-        b:SetPoint("TOPLEFT", self.menusPage, "TOPLEFT", x, -y)
+        -- positions exprimées dans le repère mis à l'échelle du bouton
+        b:SetPoint("TOPLEFT", self.menusPage, "TOPLEFT", x / scale, 0)
         b:Show()
-        x = x + bw + 2
-        if bh > rowH then rowH = bh end
+        x = x + ((b:GetWidth() or 24) + 2) * scale
     end
-    return y + rowH
+    return maxH * scale + 2
 end
 
 function M:RestoreMicroMenu()

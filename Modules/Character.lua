@@ -79,13 +79,11 @@ local function AuditSlot(slotId)
                 a.enchanted = true
                 a.enchantText = lt
                 -- nom court : retire le préfixe "Enchanté : " et un éventuel atlas
-                local short = lt
-                if ENCHANTED_TOOLTIP_LINE then
-                    local m = lt:match(ENCHANTED_TOOLTIP_LINE:gsub("%%s", "(.+)"))
-                    if m then short = m end
-                end
-                short = short:gsub("|A:.-|a", ""):gsub("^%s+", ""):gsub("%s+$", "")
-                a.enchShort = short
+                local short = lt:gsub("|A:.-|a", "")
+                -- garde UNIQUEMENT le nom : retire tout préfixe "Xxx : " (Enchantement d'arme/de cape/Enchanté…)
+                local afterColon = short:match(".*[:：]%s*(.+)$")
+                if afterColon then short = afterColon end
+                a.enchShort = short:gsub("^%s+", ""):gsub("%s+$", "")
             end
             if GEM_TYPE and line.type == GEM_TYPE then
                 a.sockets = a.sockets + 1
@@ -414,7 +412,7 @@ function M:RefreshGear()
             setCol(c.name, qhex(a.quality) .. (a.name or "?") .. "|r")
             local enchTxt
             if a.enchanted then enchTxt = "|cFF40FF40" .. (a.enchShort or "Enchanté") .. "|r"
-            elseif canEnch then enchTxt = "|cFFFF4040✗ enchantement|r"
+            elseif canEnch then enchTxt = "|cFFFF4040|A:common-icon-redx:11:11:0:0|a Manque|r"
             else enchTxt = "" end
             setCol(c.ench, enchTxt)
             if slotOK then tot.opt = tot.opt + 1 end

@@ -33,3 +33,6 @@ Modules\Character.lua
 Modules\SilverDragon.lua
 Modules\GameMenu.lua
 Modules\SquareMap.lua
+
+# Integration AddonScope (additif, non destructif)
+AddonScopeLink.lua

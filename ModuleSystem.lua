@@ -76,6 +76,30 @@ function SP:ApplyAllModuleAppearance()
     for _, m in ipairs(SP.modules or {}) do SP:ApplyModuleAppearance(m) end
 end
 
+-- Révèle un module quelques secondes (notification douce) puis restaure son état.
+-- Réutilise forceReveal (respecté par fade/slide) + déplie si replié, et re-replie après.
+function SP:RevealModule(m, seconds)
+    if not m then return end
+    local cfg = SP:GetModuleConfig(m.name)
+    if m._revealPrevCollapsed == nil then m._revealPrevCollapsed = (cfg and cfg.collapsed) or false end
+    if cfg and cfg.collapsed then cfg.collapsed = false; SP:UpdateCollapseVisual(m) end
+    m._forceReveal = true
+    if SP.panel then SP.panel:Show() end
+    if m.frame and UIFrameFadeIn and m._layoutTop then pcall(UIFrameFadeIn, m.frame, 0.3, m.frame:GetAlpha() or 1, 1) end
+    SP:RebuildLayout()
+    if m._revealTimer then m._revealTimer:Cancel() end
+    m._revealTimer = C_Timer.NewTimer(seconds or 5, function()
+        m._forceReveal = false
+        if m._revealPrevCollapsed then
+            local c = SP:GetModuleConfig(m.name)
+            if c then c.collapsed = true; SP:UpdateCollapseVisual(m) end
+        end
+        m._revealPrevCollapsed = nil
+        m._revealTimer = nil
+        SP:RebuildLayout()
+    end)
+end
+
 -- ============================================================
 -- A) Enregistrement
 -- ============================================================
