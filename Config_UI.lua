@@ -161,11 +161,16 @@ local function ChatOptions(page, y)
         function() return cfg.classColorNames end, function(v) cfg.classColorNames = v; applyChat() end)
     MakeSlider(page, "Taille de police", 24, y - 30, 8, 24, 1,
         function() return cfg.fontSize or 12 end, function(v) cfg.fontSize = v; applyChat() end, function(v) return tostring(v) end)
+    -- largeur (= largeur du panneau ; le Chat l'occupe) : min/max, live, sauvegardé
+    MakeSlider(page, "Largeur du panneau", 24, y - 74, 180, 600, 5,
+        function() return SP.db.panel.width or 280 end,
+        function(v) SP.db.panel.width = v; if SP.panel then SP.panel:SetWidth(v); if SP.OnPanelResized then SP:OnPanelResized() end end end,
+        function(v) return v .. " px" end)
     local lh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 72); lh:SetText("Canaux — activer / couleur / nom / ordre")
+    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 116); lh:SetText("Canaux — activer / couleur / nom / ordre")
     page.chRows = {}
     page.RefreshChannels = function()
-        local yy = y - 92
+        local yy = y - 136
         for i, ch in ipairs(cfg.channels) do
             local row = page.chRows[i]
             if not row then

@@ -98,11 +98,12 @@ function M:Init(body)
     pull:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -60)
     pull:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     pull:EnableMouseWheel(true)
-    local function pullLabel() pull:SetText(("Pull %ds"):format(cfg.pullSec)) end
-    pullLabel()
+    self.pull, self.pullCfg = pull, cfg
+    self:UpdatePullLabel()
     pull:SetScript("OnMouseWheel", function(_, delta)
+        if self._pullEnd then return end   -- pas d'ajustement pendant le décompte
         cfg.pullSec = math.max(3, math.min(60, (cfg.pullSec or 10) + delta))
-        pullLabel()
+        self:UpdatePullLabel()
     end)
     pull:SetScript("OnClick", function(_, btn)
         if not (C_PartyInfo and C_PartyInfo.DoCountdown) then return end
@@ -113,6 +114,9 @@ function M:Init(body)
         GameTooltip:SetOwner(s, "ANCHOR_TOP")
         GameTooltip:SetText("Compte à rebours de pull")
         GameTooltip:AddLine("Molette : ajuster | Clic : lancer | Clic droit : annuler", 0.7, 0.7, 0.7)
+        local relay = (C_AddOns.IsAddOnLoaded("BigWigs") and "BigWigs")
+            or (C_AddOns.IsAddOnLoaded("DBM-Core") and "DBM") or nil
+        if relay then GameTooltip:AddLine("Relayé par " .. relay, 0.4, 0.8, 1) end
         GameTooltip:Show()
     end)
     pull:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -138,11 +142,59 @@ function M:Init(body)
     roles:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
-function M:Enable()
-    if self._placeholder then self._placeholder:Hide() end
+-- ===== compte à rebours de pull (live, relayé par Blizzard/DBM/BigWigs via START_TIMER) =====
+function M:UpdatePullLabel()
+    if not self.pull then return end
+    if self._pullEnd then
+        local rem = math.max(0, self._pullEnd - GetTime())
+        self.pull:SetText(("|cFFFF4040%d|r"):format(math.ceil(rem)))
+        SP:SetModuleHeaderText(self, ("|cFFFF8800Pull %d|r"):format(math.ceil(rem)))
+    else
+        self.pull:SetText(("Pull %ds"):format((self.pullCfg and self.pullCfg.pullSec) or 10))
+        SP:SetModuleHeaderText(self, "")
+    end
 end
 
-function M:Disable() end
+function M:StartPull(remaining)
+    if not remaining or remaining <= 0 then self:ClearPull(); return end
+    self._pullEnd = GetTime() + remaining
+    if not self._pullTicker then
+        self._pullTicker = C_Timer.NewTicker(0.2, function()
+            if not self._pullEnd or GetTime() >= self._pullEnd then self:ClearPull()
+            else self:UpdatePullLabel() end
+        end)
+    end
+    self:UpdatePullLabel()
+end
+
+function M:ClearPull()
+    self._pullEnd = nil
+    if self._pullTicker then self._pullTicker:Cancel(); self._pullTicker = nil end
+    self:UpdatePullLabel()
+end
+
+function M:Enable()
+    if self._placeholder then self._placeholder:Hide() end
+    if not self.ev then
+        self.ev = CreateFrame("Frame")
+        self.ev:SetScript("OnEvent", function(_, e, a, b)
+            if e == "START_TIMER" then
+                if b and b > 0 then self:StartPull(b) end       -- a=type, b=secondes restantes
+            elseif e == "PLAYER_REGEN_DISABLED" then
+                self:ClearPull()                                -- combat engagé → fin du décompte
+            end
+        end)
+    end
+    pcall(self.ev.RegisterEvent, self.ev, "START_TIMER")
+    pcall(self.ev.RegisterEvent, self.ev, "PLAYER_REGEN_DISABLED")
+    self:UpdatePullLabel()
+end
+
+function M:Disable()
+    if self.ev then self.ev:UnregisterAllEvents() end
+    self:ClearPull()
+end
+
 function M:OnResize(w, h) end
 
 SP:RegisterModule(M)
