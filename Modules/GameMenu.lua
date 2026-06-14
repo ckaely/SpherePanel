@@ -207,24 +207,43 @@ end
 -- ------------------------------------------------------------
 -- Vrai micro-menu Blizzard intégré dans l'onglet Menus
 -- ------------------------------------------------------------
+-- Noms connus des boutons du micro-menu (11.x/12.x) — fallback si MICRO_BUTTONS est vide.
+local FALLBACK_MICRO = {
+    "CharacterMicroButton", "ProfessionMicroButton", "PlayerSpellsMicroButton",
+    "SpellbookMicroButton", "TalentMicroButton", "AchievementMicroButton",
+    "QuestLogMicroButton", "GuildMicroButton", "LFDMicroButton", "CollectionsMicroButton",
+    "EJMicroButton", "MainMenuMicroButton", "HelpMicroButton", "StoreMicroButton",
+}
+
 function M:EmbedMicroMenu()
-    local names = _G.MICRO_BUTTONS
-    if type(names) ~= "table" then return false end
     self.microButtons = self.microButtons or {}
     self.microSaved = self.microSaved or {}
-    local got = false
-    for _, name in ipairs(names) do
-        local b = _G[name]
-        if b and not self.microSaved[b] then
-            local pts = {}
-            for i = 1, b:GetNumPoints() do pts[i] = { b:GetPoint(i) } end
-            self.microSaved[b] = { parent = b:GetParent(), points = pts, scale = b:GetScale() }
-            b:SetParent(self.menusPage)
-            b:SetScale(1)
-            self.microButtons[#self.microButtons + 1] = b
-            got = true
+    if InCombatLockdown() then return self._microEmbedded end
+    local seen = {}
+    local function grab(b)
+        if not b or seen[b] or self.microSaved[b] then return end
+        if not (b.GetObjectType and b:GetObjectType() == "Button") then return end
+        seen[b] = true
+        local pts = {}
+        for i = 1, b:GetNumPoints() do pts[i] = { b:GetPoint(i) } end
+        self.microSaved[b] = { parent = b:GetParent(), points = pts, scale = b:GetScale(), shown = b:IsShown() }
+        pcall(b.SetParent, b, self.menusPage)
+        pcall(b.SetScale, b, 1)
+        pcall(b.Show, b)
+        self.microButtons[#self.microButtons + 1] = b
+    end
+    -- 1) liste officielle si non vide, sinon noms connus
+    local names = (type(_G.MICRO_BUTTONS) == "table" and #_G.MICRO_BUTTONS > 0) and _G.MICRO_BUTTONS or FALLBACK_MICRO
+    for _, name in ipairs(names) do grab(_G[name]) end
+    -- 2) complément : enfants du conteneur MicroMenu (refonte 12.x)
+    local container = _G.MicroMenuContainer or _G.MicroMenu
+    if container and container.GetChildren then
+        for _, c in ipairs({ container:GetChildren() }) do
+            local n = c.GetName and c:GetName()
+            if n and n:find("MicroButton") then grab(c) end
         end
     end
+    local got = #self.microButtons > 0
     if got and not self._microHooked then
         self._microHooked = true
         if _G.UpdateMicroButtons then
