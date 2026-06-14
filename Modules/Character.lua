@@ -36,8 +36,14 @@ local COLUMN = {
     { "CHESTSLOT", "L" },  { "WAISTSLOT", "R" },
     { "LEGSSLOT", "L" },   { "FEETSLOT", "R" },
 }
--- rangée du bas (grille) : armes / cou / cape / anneaux / bijoux
-local BOTTOM = { "MAINHANDSLOT", "SECONDARYHANDSLOT", "NECKSLOT", "BACKSLOT", "FINGER0SLOT", "FINGER1SLOT", "TRINKET0SLOT", "TRINKET1SLOT" }
+-- rangée du bas : paires regroupées en colonnes de 2 (armes / collier+cape / bagues / bijoux / chemise+tabard)
+local BOTTOM_PAIRS = {
+    { "MAINHANDSLOT", "SECONDARYHANDSLOT" }, -- armes
+    { "NECKSLOT", "BACKSLOT" },              -- collier / cape
+    { "FINGER0SLOT", "FINGER1SLOT" },        -- bagues
+    { "TRINKET0SLOT", "TRINKET1SLOT" },      -- bijoux
+    { "SHIRTSLOT", "TABARDSLOT" },           -- chemise / tabard
+}
 
 local ENCH_TYPE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemEnchantmentPermanent
 local GEM_TYPE  = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.GemSocket
@@ -431,14 +437,15 @@ function M:RefreshGear()
     end
     y = y + 4
 
-    -- rangée du bas : armes / bijoux / anneaux / cou / cape (grille d'icônes)
-    local perRow = math.max(1, math.floor(W / (CELL + 4)))
-    for i, key in ipairs(BOTTOM) do
-        local col = (i - 1) % perRow
-        local rowN = math.floor((i - 1) / perRow)
-        fill(key, "B", 2 + col * (CELL + 4), y + rowN * (CELL + 4), CELL)
+    -- rangée du bas : 5 colonnes de paires verticales (2 lignes chacune)
+    local cols = #BOTTOM_PAIRS
+    local colW = math.floor(W / cols)
+    for p, pair in ipairs(BOTTOM_PAIRS) do
+        local x = 2 + (p - 1) * colW
+        fill(pair[1], "B", x, y, colW)              -- ligne du haut
+        fill(pair[2], "B", x, y + CELL + 4, colW)   -- ligne du bas
     end
-    y = y + (math.ceil(#BOTTOM / perRow)) * (CELL + 4) + 4
+    y = y + 2 * (CELL + 4) + 4
 
     self:UpdateSlotHighlights()
 
