@@ -538,13 +538,28 @@ function SP:_EnsureDragWidgets()
         g.label:SetPoint("LEFT", g, "LEFT", 6, 0)
         SP._ghost = g
     end
-    if not SP._dropLine and SP.panel then
-        local ln = SP.panel.content:CreateTexture(nil, "OVERLAY")
+    if not SP._dropLine then
+        -- ligne portée par une frame TOOLTIP → peut s'afficher au-dessus du panneau ① OU ②
+        local f = CreateFrame("Frame", nil, UIParent); f:SetFrameStrata("TOOLTIP")
+        local ln = f:CreateTexture(nil, "OVERLAY")
         ln:SetColorTexture(0.30, 0.70, 1.0, 0.95)
         ln:SetHeight(2)
         ln:Hide()
-        SP._dropLine = ln
+        SP._dropFrame, SP._dropLine = f, ln
     end
+end
+
+-- Modules visibles d'UN panneau (① ou ②), dans l'ordre, avec position de layout.
+function SP:GetPanelModules(isP2)
+    isP2 = isP2 and true or false
+    local t = {}
+    for _, m in ipairs(SP:GetOrderedModules()) do
+        local cfg = SP:GetModuleConfig(m.name)
+        if cfg and cfg.enabled and m.frame and m._layoutTop and ((m._onPanel2 and true or false) == isP2) then
+            t[#t + 1] = m
+        end
+    end
+    return t
 end
 
 function SP:BeginReorder(m)
@@ -558,36 +573,37 @@ function SP:BeginReorder(m)
     g:SetScript("OnUpdate", function() SP:UpdateReorder() end)
 end
 
--- Index d'insertion (parmi les modules visibles) selon la position Y du curseur.
--- Utilise content:GetTop() + _layoutTop/_layoutHeight stockés (pas de mesure de frame runtime).
-function SP:ComputeDropIndex()
-    local content = SP.panel.content
-    local top = content:GetTop()
+-- Panneau actuellement survolé par le curseur (pour le drag) → content + isP2.
+function SP:_DragTarget()
+    if SP.panel2 and SP.panel2:IsShown() and SP.panel2:IsMouseOver() then
+        return SP.panel2.content, true
+    end
+    return SP.panel.content, false
+end
+
+-- Index d'insertion parmi `mods` (modules d'un panneau) selon la position Y du curseur.
+function SP:ComputeDropIndex(content, mods)
+    local top = content and content:GetTop()
     if not top then return nil end
     local scale = content:GetEffectiveScale()
     local _, cy = GetCursorPosition()
     cy = cy / scale
-    local off = top - cy          -- distance vers le bas depuis le haut du contenu
-    local vis = SP:GetVisibleOrderedModules()
-    for i, m in ipairs(vis) do
+    local off = top - cy
+    for i, m in ipairs(mods) do
         local mt, mh = m._layoutTop, m._layoutHeight or 0
-        if mt and off < (mt + mh / 2) then
-            return i
-        end
+        if mt and off < (mt + mh / 2) then return i end
     end
-    return #vis + 1
+    return #mods + 1
 end
 
-function SP:ShowDropIndicator(idx)
+function SP:ShowDropIndicator(content, mods, idx)
     local ln = SP._dropLine
-    if not ln then return end
-    local content = SP.panel.content
-    local vis = SP:GetVisibleOrderedModules()
+    if not ln or not content then return end
     local yTop
-    if idx and vis[idx] and vis[idx]._layoutTop then
-        yTop = vis[idx]._layoutTop
+    if idx and mods[idx] and mods[idx]._layoutTop then
+        yTop = mods[idx]._layoutTop
     else
-        local last = vis[#vis]
+        local last = mods[#mods]
         yTop = last and ((last._layoutTop or 0) + (last._layoutHeight or 0)) or 0
     end
     ln:ClearAllPoints()
@@ -604,7 +620,10 @@ function SP:UpdateReorder()
     x, y = x / scale, y / scale
     g:ClearAllPoints()
     g:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x + 8, y + 8)
-    SP:ShowDropIndicator(SP:ComputeDropIndex())
+    -- ligne d'insertion sur le panneau survolé (① ou ②)
+    local content, isP2 = SP:_DragTarget()
+    local mods = SP:GetPanelModules(isP2)
+    SP:ShowDropIndicator(content, mods, SP:ComputeDropIndex(content, mods))
 end
 
 function SP:EndReorder(m)
@@ -612,23 +631,16 @@ function SP:EndReorder(m)
     if g then g:SetScript("OnUpdate", nil); g:Hide() end
     if SP._dropLine then SP._dropLine:Hide() end
 
-    -- déposé sur le second panneau → le module y déménage
+    -- panneau cible = celui survolé ; on calcule l'index AVANT de déplacer le module
+    local content, isP2 = SP:_DragTarget()
+    local mods = SP:GetPanelModules(isP2)
+    local dropIdx = SP:ComputeDropIndex(content, mods)
+    local beforeName = (dropIdx and mods[dropIdx]) and mods[dropIdx].name or nil
+
+    -- assignation du panneau (① ou ②) selon le survol
     local cfg = SP:GetModuleConfig(m.name)
-    if SP.panel2 and SP.panel2:IsShown() and SP.panel2:IsMouseOver() then
-        if cfg then cfg.panel = 2 end
-        SP._dragModule = nil
-        SP:RebuildLayout()
-        return
-    elseif cfg and cfg.panel == 2 and SP.panel and SP.panel:IsMouseOver() then
-        cfg.panel = 1   -- retour au panneau principal (puis réordonné ci-dessous)
-    end
-
-    local dropIdx = SP:ComputeDropIndex()
+    if cfg then cfg.panel = isP2 and 2 or 1 end
     SP._dragModule = nil
-    if not dropIdx then SP:RebuildLayout(); return end
-
-    local vis = SP:GetVisibleOrderedModules()
-    local beforeName = vis[dropIdx] and vis[dropIdx].name or nil
 
     -- Liste complète des noms ordonnés, dragged retiré, réinséré avant beforeName.
     local full = {}
