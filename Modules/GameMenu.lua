@@ -43,6 +43,12 @@ local ITEMS = {
       fn = function() if ToggleGuildFrame then ToggleGuildFrame() end end },
     { "JcJ",           tex = "Interface\\Icons\\Achievement_PVP_A_A",
       fn = function() if TogglePVPUI then TogglePVPUI() end end },
+    { "Métiers",       micro = "ProfessionMicroButton",    tex = "Interface\\Icons\\Trade_Engineering",
+      fn = function() if ToggleProfessionsBook then ToggleProfessionsBook() elseif ToggleSpellBook then ToggleSpellBook("professions") end end },
+    { "Boutique",      micro = "StoreMicroButton",         tex = "Interface\\Icons\\WoW_Store",
+      fn = function() if ToggleStoreUI then ToggleStoreUI() end end },
+    { "Aide",          micro = "HelpMicroButton",          tex = "Interface\\Icons\\INV_Misc_QuestionMark",
+      fn = function() if ToggleHelpFrame then ToggleHelpFrame() end end },
     { "Menu",          micro = "MainMenuMicroButton",      tex = "Interface\\Icons\\INV_Misc_Gear_01",
       fn = function() ToggleGameMenu() end },
 }
@@ -159,12 +165,9 @@ end
 
 function M:Enable()
     if InCombatLockdown() then return end
-    -- ré-embarque le micro-menu à CHAQUE Enable (un Disable l'a restitué à Blizzard)
-    if not self._microEmbedded then
-        if not self:EmbedMicroMenu() and #self.buttons == 0 then
-            self:BuildCustomMenus()   -- fallback icônes maison
-        end
-    end
+    -- micro-menu = boutons MAISON (icônes réelles Blizzard via ApplyIcon + vraies fonctions).
+    -- Le reparentage du conteneur MicroMenu 12.x est trop fragile (boutons re-cachés) → abandonné.
+    if not self._built then self:BuildCustomMenus() end
     self._built = true
     if self._placeholder then self._placeholder:Hide() end
     self._enabled = true
@@ -176,20 +179,9 @@ function M:Enable()
     C_Timer.After(8, function()
         if self._enabled and not InCombatLockdown() then self:CollectAddons(); self:Layout() end
     end)
-    -- enforcement : GW2_UI & co reparentent les micro-boutons → on les reprend périodiquement
-    if not self._microTicker then
-        self._microTicker = C_Timer.NewTicker(2, function()
-            if not self._enabled or InCombatLockdown() then return end
-            if (SP:GetModuleConfig(self.name).activeTab or "menus") ~= "menus" then return end
-            if not self._microEmbedded then
-                self:EmbedMicroMenu()
-            else
-                -- un bouton volé par un autre addon ? on ré-asserte parent + layout
-                for _, b in ipairs(self.microButtons or {}) do
-                    if b:GetParent() ~= self.menusPage then self:LayoutMicroMenu(); break end
-                end
-            end
-        end)
+    -- (reparentage micro-menu abandonné en 12.x : boutons maison stables, pas de ticker)
+    if false then
+        self._microTicker = C_Timer.NewTicker(2, function() end)
     end
     self:SetTab(SP:GetModuleConfig(self.name).activeTab or "menus")
     self:UpdateHeaderInfo()
@@ -391,19 +383,22 @@ function M:Layout()
         needed = self:LayoutAddons(w)
     elseif cfg.activeTab == "modules" then
         needed = self._modulesTabH or 40
-    elseif self._microEmbedded then
-        needed = self:LayoutMicroMenu()
     else
-        local rowW = PER_ROW * (BTN + GAP) - GAP
-        local leftPad = math.max(GAP, (w - rowW) / 2)
-        for i, b in ipairs(self.buttons) do
-            local col, rowN = (i - 1) % PER_ROW, math.floor((i - 1) / PER_ROW)
+        -- micro-menu maison : TOUT sur UNE ligne, cases redimensionnées pour rentrer
+        local n = #self.buttons
+        local cell = BTN
+        if n > 0 then cell = math.min(BTN, math.floor((w - 4 - (n - 1) * GAP) / n)) end
+        cell = math.max(14, cell)
+        local rowW = n * cell + (n - 1) * GAP
+        local x = math.max(2, (w - rowW) / 2)
+        for _, b in ipairs(self.buttons) do
+            b:SetScale(1); b:SetSize(cell, cell)
             b:ClearAllPoints()
-            b:SetPoint("TOPLEFT", self.menusPage, "TOPLEFT", leftPad + col * (BTN + GAP), -(GAP + rowN * (BTN + GAP)))
+            b:SetPoint("TOPLEFT", self.menusPage, "TOPLEFT", x, 0)
             b:Show()
+            x = x + cell + GAP
         end
-        local rows = math.ceil(#self.buttons / PER_ROW)
-        needed = GAP + rows * (BTN + GAP)
+        needed = cell + 4
     end
 
     needed = (needed or 40) + TAB_H + 4
