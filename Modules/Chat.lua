@@ -62,11 +62,32 @@ function M:Init(body)
     self.seps = {}
     self.msgInfo = {}
     self._idc = 0
+    self.tab = "chat"
+    self.socialRows = {}
+
+    -- onglets [Chat | Social] sur le bandeau (molette = switch)
+    if self.header then
+        if self.suffixFS then self.suffixFS:Hide() end
+        self.tabBtns = {}
+        local anchor, prev = self.lock or self.header, nil
+        for _, d in ipairs({ { "social", "Social" }, { "chat", "Chat" } }) do
+            local b = CreateFrame("Button", nil, self.header); b:SetSize(42, 16)
+            if prev then b:SetPoint("RIGHT", prev, "LEFT", -3, 0) else b:SetPoint("RIGHT", anchor, "LEFT", -6, 0) end
+            b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetAllPoints(b); b.fs:SetText(d[2])
+            b.hl = b:CreateTexture(nil, "BACKGROUND"); b.hl:SetAllPoints(b); b.hl:SetColorTexture(0.30, 0.55, 0.95, 0.30); b.hl:Hide()
+            b.tab = d[1]; b:SetScript("OnClick", function(s) self:SetTab(s.tab) end)
+            self.tabBtns[d[1]] = b; prev = b
+        end
+        self.header:EnableMouseWheel(true)
+        self.header:SetScript("OnMouseWheel", function() self:SetTab(self.tab == "social" and "chat" or "social") end)
+    end
 
     self.bar = CreateFrame("Frame", nil, body)
     self.bar:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -2)
     self.bar:SetPoint("TOPRIGHT", body, "TOPRIGHT", -4, -2)
     self.bar:SetHeight(16)
+    self.bar:EnableMouseWheel(true)
+    self.bar:SetScript("OnMouseWheel", function(_, d) self:CycleChannel(d) end)  -- molette = canal suivant/précédent
     self.viewLabel = self.bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.viewLabel:SetPoint("RIGHT", self.bar, "RIGHT", 0, 0)
 
@@ -142,7 +163,24 @@ function M:Init(body)
         self:AddMessage(typeKey, msg, author, channelName, guid)
     end)
 
+    -- conteneur SOCIAL (ex-module Social) : liste amis / BNet / guilde
+    self.social = CreateFrame("Frame", nil, body)
+    self.social:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
+    self.social:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -2, 2)
+    self.social:SetClipsChildren(true); self.social:Hide()
+    self.socialScroll = 0
+    self.social:EnableMouseWheel(true)
+    self.social:SetScript("OnMouseWheel", function(_, d)
+        local vis = self.social:GetHeight() or 1
+        local maxS = math.max(0, (self._socialH or 0) - vis)
+        self.socialScroll = math.min(maxS, math.max(0, self.socialScroll - d * 30))
+        self:RefreshSocial()
+    end)
+    self.sev = CreateFrame("Frame")
+    self.sev:SetScript("OnEvent", function() if self.tab == "social" then self:RefreshSocial() end end)
+
     self:ApplyConfig()
+    self:SetTab(self.tab or "chat")
 end
 
 function M:Enable()
@@ -150,11 +188,26 @@ function M:Enable()
     if self._placeholder then self._placeholder:Hide() end
     self:ApplyConfig()
     for _, e in ipairs(CHAT_EVENTS) do pcall(self.ev.RegisterEvent, self.ev, e) end
+    -- onglet Social : events + rafraîchissement périodique
+    if self.sev then
+        for _, e in ipairs({ "FRIENDLIST_UPDATE", "BN_FRIEND_INFO_CHANGED", "GUILD_ROSTER_UPDATE", "PLAYER_ENTERING_WORLD" }) do
+            pcall(self.sev.RegisterEvent, self.sev, e)
+        end
+    end
+    if not self._socialTicker then
+        self._socialTicker = C_Timer.NewTicker(30, function()
+            if C_FriendList and C_FriendList.ShowFriends then pcall(C_FriendList.ShowFriends) end
+            if C_GuildInfo and C_GuildInfo.GuildRoster then pcall(C_GuildInfo.GuildRoster) end
+            if self.tab == "social" then self:RefreshSocial() end
+        end)
+    end
 end
 
 function M:Disable()
     self._enabled = false
     if self.ev then self.ev:UnregisterAllEvents() end
+    if self.sev then self.sev:UnregisterAllEvents() end
+    if self._socialTicker then self._socialTicker:Cancel(); self._socialTicker = nil end
 end
 
 function M:OnResize(w, h) end
@@ -366,6 +419,104 @@ function M:Send(text)
     else
         pcall(SendChatMessage, text, "SAY")
     end
+end
+
+-- ============================================================
+-- Onglets Chat / Social + cycle de canaux
+-- ============================================================
+function M:SetTab(tab)
+    self.tab = tab
+    local chatOn = (tab ~= "social")
+    if self.bar then self.bar:SetShown(chatOn) end
+    if self.smf then self.smf:SetShown(chatOn) end
+    if self.eb then self.eb:SetShown(chatOn) end
+    if self.social then self.social:SetShown(not chatOn) end
+    if self.tabBtns then for k, b in pairs(self.tabBtns) do b.hl:SetShown(k == tab) end end
+    if not chatOn then self:RefreshSocial() end
+end
+
+function M:CycleChannel(delta)
+    local keys = { "A" }
+    for _, ch in ipairs(SP:GetModuleConfig(self.name).channels or {}) do
+        if ch.enabled and ch.key ~= "A" then keys[#keys + 1] = ch.key end
+    end
+    local idx = 1
+    for i, k in ipairs(keys) do if k == self.viewFilter then idx = i; break end end
+    idx = ((idx - 1 - delta) % #keys) + 1
+    self:SetView(keys[idx])
+end
+
+local function socialClassColor(class)
+    local c = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+    if c then return ("|cff%02x%02x%02x"):format(c.r * 255, c.g * 255, c.b * 255) end
+    return "|cffffffff"
+end
+
+function M:_SocialRow(i)
+    local r = self.socialRows[i]
+    if not r then
+        r = CreateFrame("Button", nil, self.social); r:SetHeight(15)
+        r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        r.fs = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        r.fs:SetPoint("LEFT", r, "LEFT", 2, 0); r.fs:SetPoint("RIGHT", r, "RIGHT", -2, 0)
+        r.fs:SetJustifyH("LEFT"); r.fs:SetWordWrap(false)
+        local hl = r:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(r); hl:SetColorTexture(1, 1, 1, 0.08)
+        r:SetScript("OnClick", function(s, btn)
+            if not s.who then return end
+            if btn == "RightButton" then
+                if C_PartyInfo and C_PartyInfo.InviteUnit then pcall(C_PartyInfo.InviteUnit, s.who) end
+            else
+                self:StartWhisper(s.who)
+            end
+        end)
+        self.socialRows[i] = r
+    end
+    return r
+end
+
+function M:RefreshSocial()
+    if not self.social then return end
+    local entries = {}
+    local nBN = BNGetNumFriends and BNGetNumFriends() or 0
+    for i = 1, nBN do
+        local ok, acc = pcall(C_BattleNet.GetFriendAccountInfo, i)
+        local g = ok and acc and acc.gameAccountInfo
+        if g and g.isOnline and g.clientProgram == "WoW" and g.characterName then
+            entries[#entries + 1] = { who = g.characterName .. (g.realmName and ("-" .. g.realmName) or ""),
+                txt = ("|cFF82C5FF[BN]|r %s |cFF888888%s|r"):format(g.characterName, acc.accountName or "") }
+        end
+    end
+    local nF = (C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetNumFriends()) or 0
+    for i = 1, nF do
+        local ok, info = pcall(C_FriendList.GetFriendInfoByIndex, i)
+        if ok and info and info.connected then
+            entries[#entries + 1] = { who = info.name,
+                txt = ("|cFF40FF40[Ami]|r %s |cFF888888%d %s|r"):format(info.name, info.level or 0, info.className or "") }
+        end
+    end
+    if IsInGuild and IsInGuild() then
+        local total = GetNumGuildMembers() or 0
+        for i = 1, total do
+            local name, _, _, level, _, _, _, _, online, _, classFile = GetGuildRosterInfo(i)
+            if online and name then
+                entries[#entries + 1] = { who = name,
+                    txt = ("|cFF40FF90[G]|r %s%s|r |cFF888888%d|r"):format(socialClassColor(classFile), Ambiguate(name, "guild"), level or 0) }
+                if #entries > 120 then break end
+            end
+        end
+    end
+    local y = 0
+    for i, e in ipairs(entries) do
+        local r = self:_SocialRow(i)
+        r.who = e.who; r.fs:SetText(e.txt)
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", self.social, "TOPLEFT", 0, -(y - (self.socialScroll or 0)))
+        r:SetPoint("TOPRIGHT", self.social, "TOPRIGHT", 0, -(y - (self.socialScroll or 0)))
+        r:Show()
+        y = y + 15
+    end
+    for i = #entries + 1, #self.socialRows do self.socialRows[i]:Hide() end
+    self._socialH = y
 end
 
 SP:RegisterModule(M)

@@ -113,9 +113,9 @@ function M:Init(body)
         self.tabBtns = {}
         local anchor = self.lock or self.header
         local prev
-        for _, d in ipairs({ { "stats", "Stats" }, { "gear", "Équip." } }) do
+        for _, d in ipairs({ { "alts", "Alters" }, { "stats", "Stats" }, { "gear", "Équip." } }) do
             local b = CreateFrame("Button", nil, self.header)
-            b:SetSize(44, 16)
+            b:SetSize(42, 16)
             if prev then b:SetPoint("RIGHT", prev, "LEFT", -3, 0)
             else b:SetPoint("RIGHT", anchor, "LEFT", -6, 0) end
             b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -128,8 +128,12 @@ function M:Init(body)
             prev = b
         end
         self.header:EnableMouseWheel(true)
-        self.header:SetScript("OnMouseWheel", function()
-            self:SetTab(self.tab == "gear" and "stats" or "gear")
+        local CYCLE = { "gear", "stats", "alts" }
+        self.header:SetScript("OnMouseWheel", function(_, delta)
+            local idx = 1
+            for i, t in ipairs(CYCLE) do if t == self.tab then idx = i break end end
+            idx = ((idx - 1 - delta) % #CYCLE) + 1
+            self:SetTab(CYCLE[idx])
         end)
     end
 
@@ -167,6 +171,13 @@ function M:Init(body)
     self.stats:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -2)
     self.stats:SetPoint("TOPRIGHT", body, "TOPRIGHT", -4, 0)
     self.stats:SetHeight(1); self.stats:Hide()
+
+    -- ===== conteneur ALTERS (ex-module Personnages / AlterEgo) =====
+    self.alts = CreateFrame("Frame", nil, body)
+    self.alts:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -2)
+    self.alts:SetPoint("TOPRIGHT", body, "TOPRIGHT", -4, 0)
+    self.alts:SetHeight(1); self.alts:Hide()
+    self.altRows = {}
 
     self.ev = CreateFrame("Frame")
     self.ev:SetScript("OnEvent", function(_, e)
@@ -289,6 +300,7 @@ function M:SetTab(tab)
     if self.tabBtns then for k, b in pairs(self.tabBtns) do b.hl:SetShown(k == tab) end end
     self.gear:SetShown(tab == "gear")
     self.stats:SetShown(tab == "stats")
+    if self.alts then self.alts:SetShown(tab == "alts") end
     self:Refresh()
 end
 
@@ -361,7 +373,87 @@ end
 function M:Refresh()
     if not self._enabled then return end
     self:UpdateTitle()
-    if self.tab == "stats" then self:RefreshStats() else self:RefreshGear() end
+    if self.tab == "stats" then self:RefreshStats()
+    elseif self.tab == "alts" then self:RefreshAlts()
+    else self:RefreshGear() end
+end
+
+-- ===== Onglet ALTERS (lecture d'AlterEgoDB) =====
+local function altClassHex(c)
+    local file = c.info and c.info.class and c.info.class.file
+    local col = file and RAID_CLASS_COLORS and RAID_CLASS_COLORS[file]
+    if col then return ("|cff%02x%02x%02x"):format(col.r * 255, col.g * 255, col.b * 255) end
+    return "|cffffffff"
+end
+
+local function altRatingHex(r)
+    local col = C_ChallengeMode and C_ChallengeMode.GetDungeonScoreRarityColor and C_ChallengeMode.GetDungeonScoreRarityColor(r or 0)
+    if col then return ("|cff%02x%02x%02x"):format(col.r * 255, col.g * 255, col.b * 255) end
+    return "|cffffffff"
+end
+
+local function GetAltChars()
+    local db = _G.AlterEgoDB
+    local chars = db and db.global and db.global.characters
+    if not chars then return {} end
+    local list = {}
+    for _, c in pairs(chars) do
+        if c.info and c.info.name and c.info.name ~= "" then list[#list + 1] = c end
+    end
+    table.sort(list, function(a, b)
+        local ia = a.info.ilvl and (a.info.ilvl.equipped or a.info.ilvl.level) or 0
+        local ib = b.info.ilvl and (b.info.ilvl.equipped or b.info.ilvl.level) or 0
+        return ia > ib
+    end)
+    return list
+end
+
+function M:_AltRow(i)
+    local r = self.altRows[i]
+    if not r then
+        r = CreateFrame("Frame", nil, self.alts); r:SetHeight(16)
+        r.stripe = r:CreateTexture(nil, "BACKGROUND"); r.stripe:SetAllPoints(r)
+        r.l = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        r.l:SetPoint("LEFT", r, "LEFT", 4, 0); r.l:SetJustifyH("LEFT")
+        r.r = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        r.r:SetPoint("RIGHT", r, "RIGHT", -4, 0); r.r:SetJustifyH("RIGHT")
+        self.altRows[i] = r
+    end
+    return r
+end
+
+function M:RefreshAlts()
+    local chars = GetAltChars()
+    local y, i = 2, 0
+    local function row(left, right, header)
+        i = i + 1
+        local r = self:_AltRow(i)
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", self.alts, "TOPLEFT", 0, -y)
+        r:SetPoint("TOPRIGHT", self.alts, "TOPRIGHT", 0, -y)
+        r.stripe:SetColorTexture(0.29, 0.64, 1, header and 0.12 or (i % 2 == 0 and 0.04 or 0))
+        r.l:SetText(left or ""); r.r:SetText(right or "")
+        r:Show()
+        y = y + 16
+    end
+
+    if #chars == 0 then
+        row("|cFFFF7777Requiert : AlterEgo|r", "")
+    else
+        row("|cFF8FC4FFPersonnage|r", "|cFF8FC4FFiLvl · Cote · Clé|r", true)
+        for _, c in ipairs(chars) do
+            local hex = altClassHex(c)
+            local ilvl = c.info.ilvl and (c.info.ilvl.equipped or c.info.ilvl.level) or 0
+            local mp = c.mythicplus or {}
+            local ks = mp.keystone
+            local keyTxt = (ks and (ks.level or 0) > 0) and ("|cFFA335EE+%d|r"):format(ks.level) or "|cFF666666—|r"
+            row(("%s%s|r |cFF888888%s|r"):format(hex, c.info.name, c.info.realm or ""),
+                ("|cFFFFFFFF%.0f|r · %s%d|r · %s"):format(ilvl, altRatingHex(mp.rating), mp.rating or 0, keyTxt))
+        end
+    end
+    for j = i + 1, #self.altRows do self.altRows[j]:Hide() end
+    self.alts:SetHeight(y)
+    SP:SetAutoHeight(self, y + 4)
 end
 
 local function qhex(q)

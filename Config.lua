@@ -46,7 +46,7 @@ SP.defaults = {
         order = {
             "GameMenu", "RaidTools", "GroupBuffs", "MythicPlus", "QuestTracker", "Chat",
             "DamageMeter", "Raid", "Auras", "Bags", "RecentLoot", "Currencies",
-            "Character", "Reputations", "Knowledge", "AlterEgo", "Social", "SilverDragon", "Agenda", "SquareMap",
+            "Character", "Reputations", "Knowledge", "SilverDragon", "Agenda", "SquareMap",
         },
         -- Config par module : enabled / collapsed / height.
         QuestTracker   = { enabled = true,  collapsed = false, height = 300,
@@ -90,13 +90,11 @@ SP.defaults = {
         RaidTools      = { enabled = true,  collapsed = false, height = 96, pullSec = 10,
             conditions = { enabled = true, group = true } },  -- visible uniquement en groupe
         MythicPlus     = { enabled = true,  collapsed = false, height = 90  },
-        Social         = { enabled = true,  collapsed = false, height = 140 },
         RecentLoot     = { enabled = true,  collapsed = false, height = 120 },
         GroupBuffs     = { enabled = true,  collapsed = false, height = 40,
             conditions = { enabled = true, group = true } },  -- pertinent en groupe
         Reputations    = { enabled = true,  collapsed = false, height = 150 },
         Currencies     = { enabled = true,  collapsed = false, height = 100 },
-        AlterEgo       = { enabled = true,  collapsed = false, height = 120 },
         Character      = { enabled = true,  collapsed = false, height = 300, replaceCharSheet = true },
         SilverDragon   = { enabled = true,  collapsed = false, height = 80  },
         GameMenu       = { enabled = true,  collapsed = false, height = 64,

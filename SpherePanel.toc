@@ -23,12 +23,10 @@ Modules\Knowledge.lua
 Modules\Agenda.lua
 Modules\RaidTools.lua
 Modules\MythicPlus.lua
-Modules\Social.lua
 Modules\RecentLoot.lua
 Modules\GroupBuffs.lua
 Modules\Reputations.lua
 Modules\Currencies.lua
-Modules\AlterEgo.lua
 Modules\Character.lua
 Modules\SilverDragon.lua
 Modules\GameMenu.lua
