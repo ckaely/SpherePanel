@@ -245,16 +245,22 @@ function M:Init(body)
     self._pool = {}
     self._usedCount = 0
 
-    -- Toolbar de filtres (haut du module)
-    self.toolbar = CreateFrame("Frame", nil, body)
-    self.toolbar:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
-    self.toolbar:SetPoint("TOPRIGHT", body, "TOPRIGHT", -2, -2)
-    self.toolbar:SetHeight(TOOLBAR_H)
+    -- Toolbar de filtres : DANS LE BANDEAU (header), à gauche du cadenas
+    local HFBTN = 15
+    self.toolbar = CreateFrame("Frame", nil, self.header or body)
+    self.toolbar:SetHeight(HFBTN)
+    self.toolbar:SetWidth(#FILTERS * (HFBTN + 1))
+    if self.header then
+        self.toolbar:SetPoint("RIGHT", self.lock or self.header, self.lock and "LEFT" or "RIGHT", -6, 0)
+        self.toolbar:SetFrameLevel(self.header:GetFrameLevel() + 3)
+    else
+        self.toolbar:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
+    end
     self.filterBtns = {}
     local x = 0
     for _, item in ipairs(FILTERS) do
         local b = CreateFrame("Button", nil, self.toolbar)
-        b:SetSize(FBTN, FBTN)
+        b:SetSize(HFBTN, HFBTN)
         b:SetPoint("LEFT", self.toolbar, "LEFT", x, 0)
         b.icon = b:CreateTexture(nil, "ARTWORK")
         b.icon:SetAllPoints(b)
@@ -272,12 +278,18 @@ function M:Init(body)
         end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
         self.filterBtns[item.key] = b
-        x = x + FBTN + 2
+        x = x + HFBTN + 1
     end
 
-    -- Conteneur de la liste (sous la toolbar, clippé)
+    -- compteur (suffixe) déplacé à gauche, après le label, pour libérer le bandeau droit
+    if self.suffixFS and self.labelFS then
+        self.suffixFS:ClearAllPoints()
+        self.suffixFS:SetPoint("LEFT", self.labelFS, "RIGHT", 8, 0)
+    end
+
+    -- Conteneur de la liste : tout en haut du corps (la toolbar a quitté le corps)
     self.list = CreateFrame("Frame", nil, body)
-    self.list:SetPoint("TOPLEFT", self.toolbar, "BOTTOMLEFT", -2, -2)
+    self.list:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
     self.list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", 0, 0)
     self.list:SetClipsChildren(true)
     self.scroll = 0
