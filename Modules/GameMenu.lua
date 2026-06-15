@@ -54,15 +54,10 @@ local ITEMS = {
 }
 
 local function ApplyIcon(tex, item)
-    if item.micro then
-        local mb = _G[item.micro]
-        local nt = mb and mb.GetNormalTexture and mb:GetNormalTexture()
-        if nt then
-            local atlas = nt.GetAtlas and nt:GetAtlas()
-            if atlas and atlas ~= "" and pcall(tex.SetAtlas, tex, atlas, true) then return end
-        end
-    end
+    -- icônes carrées uniformes (Interface\Icons) recadrées : rendu propre et cohérent
+    -- (les atlas du micro-menu 12.x rendent mal une fois réduits → on ne les utilise pas).
     tex:SetTexture(item.tex or FALLBACK_ICON)
+    tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 end
 
 local function HasClick(f)
@@ -150,9 +145,14 @@ function M:BuildCustomMenus()
     for i, item in ipairs(ITEMS) do
         local b = CreateFrame("Button", nil, self.menusPage)
         b:SetSize(BTN, BTN)
+        -- fond + bordure subtils pour un rendu net et cohérent
+        local bg = b:CreateTexture(nil, "BACKGROUND"); bg:SetAllPoints(b); bg:SetColorTexture(0, 0, 0, 0.35)
+        local border = b:CreateTexture(nil, "BORDER")
+        border:SetPoint("TOPLEFT", b, "TOPLEFT", -1, 1); border:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 1, -1)
+        border:SetColorTexture(0.30, 0.30, 0.36, 0.9)
         local tex = b:CreateTexture(nil, "ARTWORK")
-        tex:SetPoint("TOPLEFT", b, "TOPLEFT", 2, -2)
-        tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -2, 2)
+        tex:SetPoint("TOPLEFT", b, "TOPLEFT", 1, -1)
+        tex:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 1)
         ApplyIcon(tex, item)
         b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
         b.label, b.action = item[1], item.fn

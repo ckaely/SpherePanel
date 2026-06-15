@@ -116,8 +116,20 @@ function M:CleanMinimap()
         if _G[nm] then self:Suppress(_G[nm]) end
     end
     if _G.MinimapZoneText then self:Suppress(_G.MinimapZoneText) end
-    -- le cluster ENTIER (zone, heure, calendrier, pistage, mail) : la minimap vit dans le module
-    if _G.MinimapCluster then self:Suppress(_G.MinimapCluster) end
+    -- décorations du cluster individuellement (le cluster entier est géré par EditMode → Hide combattu) :
+    -- zone / heure / calendrier / pistage / courrier / barre du haut.
+    local mc = _G.MinimapCluster
+    if mc then
+        self:Suppress(mc.BorderTop)
+        self:Suppress(mc.ZoneTextButton)
+        self:Suppress(mc.InstanceDifficulty)
+        self:Suppress(mc.TrackingFrame)
+        self:Suppress(mc.Tracking)
+        self:Suppress(mc.IndicatorFrame)   -- contient courrier / ordres d'artisanat (12.x)
+    end
+    self:Suppress(_G.GameTimeFrame)         -- calendrier
+    self:Suppress(_G.TimeManagerClockButton) -- horloge
+    self:Suppress(_G.MiniMapMailFrame)      -- courrier (legacy)
     -- boutons +/- de zoom et hitareas (enfants keyed de Minimap en retail moderne)
     for _, key in ipairs({ "ZoomIn", "ZoomOut", "ZoomHitArea" }) do
         if Minimap[key] then self:Suppress(Minimap[key]) end

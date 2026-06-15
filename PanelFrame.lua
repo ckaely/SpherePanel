@@ -46,13 +46,22 @@ function SP:CreatePanel()
     tlabel:SetPoint("LEFT", orb, "RIGHT", 4, 0)
     tlabel:SetText("|cFF4AA3FFSphere|rPanel")
 
-    -- zone d'info à droite du bandeau (horloge / FPS, alimentée par le module Menus)
-    local tinfo = title:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    tinfo:SetPoint("RIGHT", title, "RIGHT", -8, 0)
+    -- Frame PERSISTANTE (enfant de p, jamais estompée car le fade ne touche que p.title/p.bg) :
+    -- horloge / FPS / courrier restent visibles même quand le bandeau s'estompe.
+    local persist = CreateFrame("Frame", nil, p)
+    persist:SetPoint("TOPRIGHT", p, "TOPRIGHT", 0, 0)
+    persist:SetPoint("BOTTOMRIGHT", title, "BOTTOMRIGHT", 0, 0)
+    persist:SetWidth(150)
+    persist:SetFrameLevel((title:GetFrameLevel() or 1) + 5)
+    p.persist = persist
+
+    -- zone d'info (horloge / FPS, alimentée par le module Menus)
+    local tinfo = persist:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    tinfo:SetPoint("RIGHT", persist, "RIGHT", -8, 0)
     p.titleInfo = tinfo
 
     -- icône courrier non lu (visible seulement si du courrier attend)
-    local mail = title:CreateTexture(nil, "OVERLAY")
+    local mail = persist:CreateTexture(nil, "OVERLAY")
     mail:SetSize(14, 14)
     mail:SetPoint("RIGHT", tinfo, "LEFT", -6, 0)
     if not (pcall(mail.SetAtlas, mail, "auctionhouse-icon-mail", true) and mail:GetAtlas()) then
@@ -336,6 +345,15 @@ end
 
 function SP:_PanelTick(p, elapsed)
     SP:_TickCosmetics(p, elapsed)
+    -- horloge / FPS permanents (pilotés par le panneau, indépendants de l'état du module Menus)
+    if p == SP.panel then
+        p._clockAccum = (p._clockAccum or 0) + elapsed
+        if p._clockAccum >= 1 then
+            p._clockAccum = 0
+            local gm = SP.modulesByName and SP.modulesByName["GameMenu"]
+            if gm and gm.UpdateHeaderInfo then gm:UpdateHeaderInfo() end
+        end
+    end
     local b = (SP.db and SP.db.panel and SP.db.panel.behavior) or 3
     if b == 1 or b == 2 then SP:_TickSlide(p, elapsed, b, SP.db.panel.side, false)
     else SP:_TickFree(p, elapsed) end
@@ -377,11 +395,11 @@ function SP:ApplyPanelBehavior()
         local vpos = SP.db.panel.vpos or "top"
         p:ClearAllPoints()
         if vpos == "bottom" then
-            if side == "left" then p:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 4)
-            else p:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 4) end
+            if side == "left" then p:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, 0)
+            else p:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -x, 0) end
         else
-            if side == "left" then p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, -4)
-            else p:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, -4) end
+            if side == "left" then p:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, 0)
+            else p:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -x, 0) end
         end
     end
     if p.edge then
