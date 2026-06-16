@@ -5,7 +5,7 @@
 ## Version: 0.1.0
 ## SavedVariables: SPDB
 ## DefaultState: enabled
-## OptionalDeps: MyusKnowledgePointsTracker, Details, Pawn, AlterEgo
+## OptionalDeps: MyusKnowledgePointsTracker, Details, Pawn, AlterEgo, AddonScope
 
 Core.lua
 Config.lua
@@ -27,6 +27,7 @@ Modules\RecentLoot.lua
 Modules\GroupBuffs.lua
 Modules\Reputations.lua
 Modules\Currencies.lua
+Modules\PerfMonitor.lua
 Modules\Character.lua
 Modules\SilverDragon.lua
 Modules\GameMenu.lua

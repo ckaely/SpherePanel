@@ -46,7 +46,7 @@ SP.defaults = {
         order = {
             "GameMenu", "RaidTools", "GroupBuffs", "MythicPlus", "QuestTracker", "Chat",
             "DamageMeter", "Raid", "Auras", "Bags", "RecentLoot", "Currencies",
-            "Character", "Reputations", "Knowledge", "SilverDragon", "Agenda", "SquareMap",
+            "Character", "PerfMonitor", "Reputations", "Knowledge", "SilverDragon", "Agenda", "SquareMap",
         },
         -- Config par module : enabled / collapsed / height.
         QuestTracker   = { enabled = true,  collapsed = false, height = 300,
@@ -96,6 +96,7 @@ SP.defaults = {
         Reputations    = { enabled = true,  collapsed = false, height = 150 },
         Currencies     = { enabled = true,  collapsed = false, height = 100 },
         Character      = { enabled = true,  collapsed = false, height = 300, replaceCharSheet = true },
+        PerfMonitor    = { enabled = true,  collapsed = true,  height = 220 },
         SilverDragon   = { enabled = true,  collapsed = false, height = 80  },
         GameMenu       = { enabled = true,  collapsed = false, height = 64,
             activeTab = "menus",     -- "menus" ou "addons"

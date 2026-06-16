@@ -361,6 +361,7 @@ local REQUIRES = {
     DamageMeter  = { "Details (optionnel, sinon moteur interne)" },
     Bags         = { "Pawn (optionnel, flèche upgrade)" },
     AlterEgo     = { "AlterEgo" },
+    PerfMonitor  = { "AddonScope" },
 }
 
 -- ===== Page d'un module =====================================================
