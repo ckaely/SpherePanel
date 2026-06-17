@@ -19,6 +19,9 @@ local CONDITIONS = {
     { "group", "En groupe" }, { "combat", "En combat" }, { "nocombat", "Hors combat" },
 }
 
+-- helpers partagés (définis plus bas, forward-declarés pour être utilisables partout)
+local MakeScrollPage, MakeRadioRow, SectionHeader
+
 -- ===== Helpers de contrôles =================================================
 local function MakeCheck(parent, label, x, y, getf, setf)
     local c = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
@@ -154,42 +157,56 @@ local function SquareMapOptions(page, y)
         function() return cfg.hideWhenDisabled end, function(v) cfg.hideWhenDisabled = v end)
 end
 
-local function ChatOptions(page, y)
+local function ChatOptions(root, y, opage)
     local cfg = SP:GetModuleConfig("Chat")
     local function applyChat() local mm = SP.modulesByName and SP.modulesByName["Chat"]; if mm and mm.ApplyConfig then mm:ApplyConfig() end end
-    MakeCheck(page, "Colorer les noms par classe", 16, y,
+
+    y = SectionHeader(root, y, "Affichage")
+    MakeCheck(root, "Colorer les noms par classe", 16, y,
         function() return cfg.classColorNames end, function(v) cfg.classColorNames = v; applyChat() end)
-    MakeSlider(page, "Taille de police", 24, y - 30, 8, 24, 1,
+    y = y - 30
+    MakeSlider(root, "Taille de police", 16, y, 8, 24, 1,
         function() return cfg.fontSize or 12 end, function(v) cfg.fontSize = v; applyChat() end, function(v) return tostring(v) end)
-    -- largeur (= largeur du panneau ; le Chat l'occupe) : min/max, live, sauvegardé
-    MakeSlider(page, "Largeur du panneau", 24, y - 74, 180, 600, 5,
+    y = y - 48
+    MakeSlider(root, "Largeur du panneau", 16, y, 180, 600, 5,
         function() return SP.db.panel.width or 280 end,
         function(v) SP.db.panel.width = v; if SP.panel then SP.panel:SetWidth(v); if SP.OnPanelResized then SP:OnPanelResized() end end end,
         function(v) return v .. " px" end)
-    local lh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 116); lh:SetText("Canaux — activer / couleur / nom / ordre")
-    page.chRows = {}
-    page.RefreshChannels = function()
-        local yy = y - 136
+    y = y - 50
+
+    y = SectionHeader(root, y, "Canaux — glisser pour réordonner")
+    local th = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    th:SetPoint("TOPLEFT", root, "TOPLEFT", 12, y); th:SetText("|cFF888888glisser  ·  actif  ·  couleur  ·  nom  ·  canal|r")
+    y = y - 16
+    local listTop = y
+
+    root.chRows = root.chRows or {}
+    root._refresh = function()
+        local yy = listTop
         for i, ch in ipairs(cfg.channels) do
-            local row = page.chRows[i]
+            local row = root.chRows[i]
             if not row then
-                row = CreateFrame("Frame", nil, page); row:SetSize(380, 22)
-                row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
-                row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row, "LEFT", 0, 0)
+                row = CreateFrame("Frame", nil, root); row:SetHeight(24)
+                row.stripe = row:CreateTexture(nil, "BACKGROUND"); row.stripe:SetAllPoints(row)
+                row.grip = CreateFrame("Button", nil, row); row.grip:SetSize(16, 20); row.grip:SetPoint("LEFT", row, "LEFT", 4, 0)
+                row.grip:RegisterForDrag("LeftButton")
+                for _k = 1, 3 do local bar = row.grip:CreateTexture(nil, "ARTWORK"); bar:SetSize(10, 2); bar:SetPoint("CENTER", row.grip, "CENTER", 0, (_k - 2) * 4); bar:SetColorTexture(0.72, 0.72, 0.78, 0.9) end
+                row.grip:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+                row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row.grip, "RIGHT", 2, 0)
                 row.swatch = CreateFrame("Button", nil, row); row.swatch:SetSize(16, 16); row.swatch:SetPoint("LEFT", row.check, "RIGHT", 4, 0)
                 row.swatch.tex = row.swatch:CreateTexture(nil, "ARTWORK"); row.swatch.tex:SetAllPoints(row.swatch)
-                row.nameBox = CreateFrame("EditBox", nil, row, "InputBoxTemplate")
-                row.nameBox:SetSize(90, 18); row.nameBox:SetAutoFocus(false); row.nameBox:SetPoint("LEFT", row.swatch, "RIGHT", 10, 0)
-                row.key = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); row.key:SetPoint("LEFT", row.nameBox, "RIGHT", 6, 0)
-                row.up = CreateFrame("Button", nil, row); row.up:SetSize(18, 18); row.up:SetPoint("LEFT", row, "LEFT", 200, 0); row.up:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up")
-                row.down = CreateFrame("Button", nil, row); row.down:SetSize(18, 18); row.down:SetPoint("LEFT", row.up, "RIGHT", 2, 0); row.down:SetNormalTexture("Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up")
-                page.chRows[i] = row
+                row.swatch.bd = row.swatch:CreateTexture(nil, "BACKGROUND"); row.swatch.bd:SetPoint("TOPLEFT", -1, 1); row.swatch.bd:SetPoint("BOTTOMRIGHT", 1, -1); row.swatch.bd:SetColorTexture(0, 0, 0, 0.8)
+                row.nameBox = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.nameBox:SetSize(100, 18); row.nameBox:SetAutoFocus(false); row.nameBox:SetPoint("LEFT", row.swatch, "RIGHT", 10, 0)
+                row.key = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); row.key:SetPoint("LEFT", row.nameBox, "RIGHT", 8, 0)
+                root.chRows[i] = row
             end
-            row:ClearAllPoints(); row:SetPoint("TOPLEFT", page, "TOPLEFT", 8, yy)
-            row.key:SetText("(" .. ch.key .. ")")
+            row.chRef = ch
+            row.stripe:SetColorTexture(1, 1, 1, (i % 2 == 0) and 0.05 or 0)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", root, "TOPLEFT", 8, yy)
+            row:SetPoint("TOPRIGHT", root, "TOPRIGHT", -8, yy)
+            row.key:SetText("|cFF666666(" .. ch.key .. ")|r")
             row.nameBox:SetText(ch.label or ch.key)
-            row.nameBox:SetScript("OnEnterPressed", function(s) ch.label = s:GetText(); s:ClearFocus(); applyChat() end)
             row.nameBox:SetScript("OnTextChanged", function(s, u) if u then ch.label = s:GetText(); applyChat() end end)
             row.check:SetChecked(ch.enabled and true or false)
             row.check:SetScript("OnClick", function(s) ch.enabled = s:GetChecked() and true or false; applyChat() end)
@@ -201,15 +218,34 @@ local function ChatOptions(page, y)
                         cancelFunc = function() end })
                 end
             end)
-            row.up:SetScript("OnClick", function() if i > 1 then cfg.channels[i], cfg.channels[i - 1] = cfg.channels[i - 1], cfg.channels[i]; page.RefreshChannels(); applyChat() end end)
-            row.down:SetScript("OnClick", function() if i < #cfg.channels then cfg.channels[i], cfg.channels[i + 1] = cfg.channels[i + 1], cfg.channels[i]; page.RefreshChannels(); applyChat() end end)
+            row.grip:SetScript("OnDragStart", function() root._dragCh = ch end)
+            row.grip:SetScript("OnDragStop", function()
+                local src = root._dragCh; root._dragCh = nil
+                if not src then return end
+                local target
+                for _, r in ipairs(root.chRows) do
+                    if r:IsShown() and r:IsMouseOver() and r.chRef then target = r.chRef; break end
+                end
+                if target and target ~= src then
+                    local chs, si, ti = cfg.channels
+                    for idx, cc in ipairs(chs) do if cc == src then si = idx end; if cc == target then ti = idx end end
+                    if si and ti then
+                        table.remove(chs, si)
+                        table.insert(chs, (si < ti) and (ti - 1) or ti, src)
+                        root._refresh(); applyChat()
+                    end
+                end
+            end)
             row:Show()
-            yy = yy - 24
+            yy = yy - 26
         end
-        for j = #cfg.channels + 1, #page.chRows do page.chRows[j]:Hide() end
+        for j = #cfg.channels + 1, #root.chRows do root.chRows[j]:Hide() end
+        root._impBtn:ClearAllPoints(); root._impBtn:SetPoint("TOPLEFT", root, "TOPLEFT", 12, yy - 4)
+        root:SetHeight(math.max(560, -(yy) + 60))
     end
-    local imp = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
-    imp:SetSize(200, 22); imp:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 8, 8); imp:SetText("Importer les canaux rejoints")
+
+    local imp = CreateFrame("Button", nil, root, "UIPanelButtonTemplate")
+    imp:SetSize(210, 22); imp:SetText("+ Importer les canaux rejoints")
     imp:SetScript("OnClick", function()
         local list = { GetChannelList() }
         for i = 1, #list, 3 do
@@ -220,76 +256,67 @@ local function ChatOptions(page, y)
                 if not exists then cfg.channels[#cfg.channels + 1] = { key = key, label = nm, channelName = nm, enabled = true, r = 0.9, g = 0.8, b = 0.5 } end
             end
         end
-        page.RefreshChannels(); applyChat()
+        root._refresh(); applyChat()
     end)
-    page:SetScript("OnShow", function() page.RefreshChannels() end)
-    page.RefreshChannels()
+    root._impBtn = imp
+    root._refresh()
+    return listTop - (#cfg.channels + 2) * 26
 end
 
-local function BagsOptions(page, y)
+local function BagsOptions(root, y, opage)
     local cfg = SP:GetModuleConfig("Bags")
     local function apply() local m = SP.modulesByName and SP.modulesByName["Bags"]; if m and m.RequestRefresh then m:RequestRefresh() end end
     cfg.displayMode = cfg.displayMode or "categorized"
-    local modeLabel = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    modeLabel:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 2)
-    modeLabel:SetText("Affichage")
-    local modes = {
-        { key = "categorized", label = "Categories" },
-        { key = "onebag", label = "One bag" },
-        { key = "split", label = "Split bag" },
-    }
-    local modeButtons = {}
-    local function refreshModes()
-        for _, btn in ipairs(modeButtons) do btn:SetChecked(cfg.displayMode == btn.modeKey) end
-    end
-    for i, opt in ipairs(modes) do
-        local cb = CreateFrame("CheckButton", nil, page, "UICheckButtonTemplate")
-        cb:SetPoint("TOPLEFT", page, "TOPLEFT", 16 + (i - 1) * 120, y - 22)
-        cb.text = cb:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        cb.text:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-        cb.text:SetText(opt.label)
-        cb.modeKey = opt.key
-        cb:SetScript("OnClick", function(s)
-            cfg.displayMode = s.modeKey
-            refreshModes()
-            apply()
-        end)
-        modeButtons[#modeButtons + 1] = cb
-    end
-    refreshModes()
-    y = y - 44
-    MakeSlider(page, "Taille des icônes", 16, y - 4, 20, 48, 1,
+
+    y = SectionHeader(root, y, "Affichage")
+    MakeRadioRow(root, 16, y, { { "categorized", "Catégories" }, { "onebag", "Un sac" }, { "split", "Par sac" } },
+        function() return cfg.displayMode end, function(v) cfg.displayMode = v; apply() end)
+    y = y - 28
+    MakeSlider(root, "Taille des icônes", 16, y, 20, 48, 1,
         function() return _G.BAGANATOR_CONFIG and _G.BAGANATOR_CONFIG.bag_icon_size or 30 end,
         function(v) _G.BAGANATOR_CONFIG = _G.BAGANATOR_CONFIG or {}; _G.BAGANATOR_CONFIG.bag_icon_size = v; apply() end,
         function(v) return v .. " px" end)
-    MakeCheck(page, "Afficher l'iLvl", 16, y - 34,
-        function() return cfg.showIlvl end, function(v) cfg.showIlvl = v; apply() end)
-    MakeCheck(page, "Flèche d'upgrade (Pawn)", 160, y - 34,
-        function() return cfg.showUpgrade end, function(v) cfg.showUpgrade = v; apply() end)
-    MakeCheck(page, "Afficher les monnaies", 16, y - 58,
-        function() return cfg.showCurrencies ~= false end, function(v) cfg.showCurrencies = v; apply() end)
-    y = y - 24
-    local lh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 62); lh:SetText("Catégories — glisser ≡ pour l'ordre · couleur · nom · filtre")
-    page.bagRows = {}
-    page.RefreshBags = function()
-        local yy = y - 84
+    y = y - 48
+    MakeCheck(root, "Afficher l'iLvl", 16, y, function() return cfg.showIlvl end, function(v) cfg.showIlvl = v; apply() end)
+    MakeCheck(root, "Flèche d'upgrade (Pawn)", 180, y, function() return cfg.showUpgrade end, function(v) cfg.showUpgrade = v; apply() end)
+    y = y - 26
+    MakeCheck(root, "Afficher les monnaies", 16, y, function() return cfg.showCurrencies ~= false end, function(v) cfg.showCurrencies = v; apply() end)
+    y = y - 30
+
+    y = SectionHeader(root, y, "Catégories — glisser pour réordonner")
+    -- en-tête de table
+    local th = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    th:SetPoint("TOPLEFT", root, "TOPLEFT", 12, y); th:SetText("|cFF888888glisser  ·  actif  ·  couleur  ·  nom  ·  filtre  ·  suppr|r")
+    y = y - 16
+    local listTop = y
+
+    root.bagRows = root.bagRows or {}
+    root._refresh = function()
+        local yy = listTop
         for i, c in ipairs(cfg.categories) do
-            local row = page.bagRows[i]
+            local row = root.bagRows[i]
             if not row then
-                row = CreateFrame("Frame", nil, page); row:SetSize(450, 22)
-                row.grip = CreateFrame("Button", nil, row); row.grip:SetSize(16, 18); row.grip:SetPoint("LEFT", row, "LEFT", 0, 0)
+                row = CreateFrame("Frame", nil, root); row:SetHeight(24)
+                row.stripe = row:CreateTexture(nil, "BACKGROUND"); row.stripe:SetAllPoints(row)
+                row.grip = CreateFrame("Button", nil, row); row.grip:SetSize(16, 20); row.grip:SetPoint("LEFT", row, "LEFT", 4, 0)
                 row.grip:RegisterForDrag("LeftButton")
-                row.grip.fs = row.grip:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge"); row.grip.fs:SetAllPoints(row.grip); row.grip.fs:SetText("|cFF888888≡|r")
+                for _k = 1, 3 do local bar = row.grip:CreateTexture(nil, "ARTWORK"); bar:SetSize(10, 2); bar:SetPoint("CENTER", row.grip, "CENTER", 0, (_k - 2) * 4); bar:SetColorTexture(0.72, 0.72, 0.78, 0.9) end
+                row.grip:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
                 row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row.grip, "RIGHT", 2, 0)
-                row.color = CreateFrame("Button", nil, row); row.color:SetSize(16, 16); row.color:SetPoint("LEFT", row.check, "RIGHT", 2, 0)
+                row.color = CreateFrame("Button", nil, row); row.color:SetSize(16, 16); row.color:SetPoint("LEFT", row.check, "RIGHT", 4, 0)
                 row.color.tex = row.color:CreateTexture(nil, "ARTWORK"); row.color.tex:SetAllPoints(row.color)
-                row.name = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.name:SetSize(80, 18); row.name:SetAutoFocus(false); row.name:SetPoint("LEFT", row.color, "RIGHT", 8, 0)
-                row.search = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.search:SetSize(100, 18); row.search:SetAutoFocus(false); row.search:SetPoint("LEFT", row.name, "RIGHT", 10, 0)
-                page.bagRows[i] = row
+                row.color.bd = row.color:CreateTexture(nil, "BACKGROUND"); row.color.bd:SetPoint("TOPLEFT", -1, 1); row.color.bd:SetPoint("BOTTOMRIGHT", 1, -1); row.color.bd:SetColorTexture(0, 0, 0, 0.8)
+                row.name = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.name:SetSize(90, 18); row.name:SetAutoFocus(false); row.name:SetPoint("LEFT", row.color, "RIGHT", 10, 0)
+                row.search = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.search:SetSize(120, 18); row.search:SetAutoFocus(false); row.search:SetPoint("LEFT", row.name, "RIGHT", 12, 0)
+                row.del = CreateFrame("Button", nil, row); row.del:SetSize(16, 16); row.del:SetPoint("LEFT", row.search, "RIGHT", 8, 0)
+                row.del.fs = row.del:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); row.del.fs:SetAllPoints(row.del); row.del.fs:SetText("|cFFFF6666x|r")
+                root.bagRows[i] = row
             end
             row.catRef = c
-            row:ClearAllPoints(); row:SetPoint("TOPLEFT", page, "TOPLEFT", 8, yy)
+            row.stripe:SetColorTexture(1, 1, 1, (i % 2 == 0) and 0.05 or 0)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", root, "TOPLEFT", 8, yy)
+            row:SetPoint("TOPRIGHT", root, "TOPRIGHT", -8, yy)
             row.check:SetChecked(c.enabled and true or false)
             row.check:SetScript("OnClick", function(s) c.enabled = s:GetChecked() and true or false; apply() end)
             c.color = c.color or { 1, 0.82, 0 }
@@ -305,12 +332,19 @@ local function BagsOptions(page, y)
             row.name:SetScript("OnTextChanged", function(s, u) if u then c.label = s:GetText(); apply() end end)
             row.search:SetText(c.search or "")
             row.search:SetScript("OnTextChanged", function(s, u) if u then c.search = s:GetText(); apply() end end)
-            row.grip:SetScript("OnDragStart", function() page._dragCat = c end)
+            -- suppression (uniquement les filtres custom Cxx)
+            local isCustom = type(c.key) == "string" and c.key:match("^C%d+$")
+            row.del:SetShown(isCustom and true or false)
+            row.del:SetScript("OnClick", function()
+                for idx, cc in ipairs(cfg.categories) do if cc == c then table.remove(cfg.categories, idx); break end end
+                root._refresh(); apply()
+            end)
+            row.grip:SetScript("OnDragStart", function() root._dragCat = c end)
             row.grip:SetScript("OnDragStop", function()
-                local src = page._dragCat; page._dragCat = nil
+                local src = root._dragCat; root._dragCat = nil
                 if not src then return end
                 local target
-                for _, r in ipairs(page.bagRows) do
+                for _, r in ipairs(root.bagRows) do
                     if r:IsShown() and r:IsMouseOver() and r.catRef then target = r.catRef; break end
                 end
                 if target and target ~= src then
@@ -319,23 +353,29 @@ local function BagsOptions(page, y)
                     if si and ti then
                         table.remove(cats, si)
                         table.insert(cats, (si < ti) and (ti - 1) or ti, src)
-                        page.RefreshBags(); apply()
+                        root._refresh(); apply()
                     end
                 end
             end)
-            row:Show(); yy = yy - 24
+            row:Show()
+            yy = yy - 26
         end
-        for j = #cfg.categories + 1, #page.bagRows do page.bagRows[j]:Hide() end
+        for j = #cfg.categories + 1, #root.bagRows do root.bagRows[j]:Hide() end
+        -- bouton ajouter, après les lignes (scrolle avec)
+        root._addBtn:ClearAllPoints(); root._addBtn:SetPoint("TOPLEFT", root, "TOPLEFT", 12, yy - 4)
+        root:SetHeight(math.max(560, -(yy) + 60))
     end
-    local add = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
-    add:SetSize(170, 22); add:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 8, 8); add:SetText("Ajouter un filtre (par nom)")
+
+    local add = CreateFrame("Button", nil, root, "UIPanelButtonTemplate")
+    add:SetSize(180, 22); add:SetText("+ Ajouter un filtre (par nom)")
     add:SetScript("OnClick", function()
         local n = 0; for _, c in ipairs(cfg.categories) do if type(c.key) == "string" and c.key:match("^C%d+$") then n = n + 1 end end
         table.insert(cfg.categories, 1, { key = "C" .. (n + 1), label = "Filtre " .. (n + 1), enabled = true, collapsed = false, search = "", color = { 0.5, 0.85, 1 } })
-        page.RefreshBags(); apply()
+        root._refresh(); apply()
     end)
-    page:SetScript("OnShow", function() refreshModes(); page.RefreshBags() end)
-    page.RefreshBags()
+    root._addBtn = add
+    root._refresh()
+    return listTop - (#cfg.categories + 2) * 26
 end
 
 local function CharacterOptions(page, y)
@@ -370,46 +410,59 @@ local REQUIRES = {
 -- ===== Page d'un module =====================================================
 local function BuildModulePage(page, m)
     local cfg = SP:GetModuleConfig(m.name)
-    local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText(m.label .. "  |cFF888888(" .. m.name .. ")|r")
-    MakeCheck(page, "Activé", 8, -32,
+    local root = MakeScrollPage(page, 700)   -- tout scrolle → plus rien ne déborde du panneau
+    page._inner = root
+
+    local y = -8
+    local hdr = root:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    hdr:SetPoint("TOPLEFT", root, "TOPLEFT", 8, y); hdr:SetText(m.label .. "  |cFF888888(" .. m.name .. ")|r")
+    y = y - 30
+
+    MakeCheck(root, "Activé", 8, y,
         function() return cfg and cfg.enabled end,
         function(v) if v then SP:EnableModule(m.name) else SP:DisableModuleUI(m) end end)
-
-    -- Dépendance addon tiers (statut chargé/absent)
     if REQUIRES[m.name] then
-        local req = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        req:SetPoint("TOPLEFT", page, "TOPLEFT", 200, -38)
+        local req = root:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        req:SetPoint("TOPLEFT", root, "TOPLEFT", 210, y - 4)
         local parts = {}
         for _, dep in ipairs(REQUIRES[m.name]) do
-            local addonName = dep:match("^(%S+)")
-            local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded(addonName)
+            local an = dep:match("^(%S+)")
+            local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded(an)
             parts[#parts + 1] = (loaded and "|cFF40FF40" or "|cFFFF7777") .. dep .. "|r"
         end
         req:SetText("Requiert : " .. table.concat(parts, ", "))
     end
+    y = y - 32
 
-    -- Hauteur du module (tous sauf Menus) : slider = hauteur fixe ; "Auto" = recalcul automatique
-    local afterH = -64
     if m.name ~= "GameMenu" then
-        MakeSlider(page, "Hauteur", 16, -68, 40, 600, 5,
+        MakeSlider(root, "Hauteur", 16, y, 40, 600, 5,
             function() return (cfg and cfg.height) or m.defaultHeight or 150 end,
             function(v) if cfg then cfg.height = v; cfg.fixedHeight = true; SP:RebuildLayout() end end,
             function(v) return v .. " px" end)
-        local auto = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
-        auto:SetSize(50, 20); auto:SetPoint("TOPLEFT", page, "TOPLEFT", 250, -74)
-        auto:SetText("Auto")
+        local auto = CreateFrame("Button", nil, root, "UIPanelButtonTemplate")
+        auto:SetSize(50, 20); auto:SetPoint("TOPLEFT", root, "TOPLEFT", 250, y - 6); auto:SetText("Auto")
         auto:SetScript("OnClick", function()
             if cfg then cfg.fixedHeight = false end
             local mod = SP.modulesByName[m.name]
             if mod then pcall(mod.OnResize, mod, 0, 0); if mod.RequestRefresh then mod:RequestRefresh() end end
             SP:RebuildLayout()
         end)
-        afterH = -112
+        y = y - 50
     end
 
-    local afterCond = BuildConditions(page, m, afterH)
-    if SPECIFIC[m.name] then SPECIFIC[m.name](page, afterCond) end
+    local afterCond = BuildConditions(root, m, y)
+    local bottom = afterCond
+    if SPECIFIC[m.name] then bottom = SPECIFIC[m.name](root, afterCond, page) or afterCond end
+    root:SetHeight(math.max(560, -bottom + 40))
+
+    -- ouverture de la page : remonte en haut + rafraîchit les listes dynamiques
+    page:SetScript("OnShow", function()
+        page._scroll = 0
+        root:ClearAllPoints()
+        root:SetPoint("TOPLEFT", page, "TOPLEFT", 0, 0)
+        root:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0)
+        if root._refresh then root._refresh() end
+    end)
 end
 
 -- ===== Modules (vue d'ensemble, boîtes vert/rouge) ==========================
@@ -445,7 +498,6 @@ function SP:_RefreshModulesPage(page)
 end
 
 -- ===== Apparence ============================================================
-local MakeScrollPage
 
 local function BuildApparence(page)
     local root = MakeScrollPage(page, 760)
@@ -535,7 +587,7 @@ local function BuildApparence(page)
 end
 
 -- Page scrollable : retourne un conteneur interne déplacé à la molette.
-function MakeScrollPage(page, innerH)
+MakeScrollPage = function(page, innerH)
     page:SetClipsChildren(true)
     local inner = CreateFrame("Frame", nil, page)
     inner:SetPoint("TOPLEFT", page, "TOPLEFT", 0, 0)
@@ -554,7 +606,7 @@ function MakeScrollPage(page, innerH)
 end
 
 -- ===== Comportement (scrollable, sections nettes) ===========================
-local function MakeRadioRow(parent, x, y, defs, getf, setf)
+MakeRadioRow = function(parent, x, y, defs, getf, setf)
     -- defs = { {val,label,disabled?}, ... } ; une seule coche active ; molette non requise
     local btns = {}
     local cx = x
@@ -582,7 +634,7 @@ local function MakeRadioRow(parent, x, y, defs, getf, setf)
     return btns, refresh
 end
 
-local function SectionHeader(parent, y, text)
+SectionHeader = function(parent, y, text)
     local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     h:SetPoint("TOPLEFT", parent, "TOPLEFT", 6, y)
     h:SetText("|cFF4AA3FF" .. text .. "|r")
