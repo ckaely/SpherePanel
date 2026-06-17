@@ -167,12 +167,8 @@ local function ChatOptions(root, y, opage)
     y = y - 30
     MakeSlider(root, "Taille de police", 16, y, 8, 24, 1,
         function() return cfg.fontSize or 12 end, function(v) cfg.fontSize = v; applyChat() end, function(v) return tostring(v) end)
-    y = y - 48
-    MakeSlider(root, "Largeur du panneau", 16, y, 180, 600, 5,
-        function() return SP.db.panel.width or 280 end,
-        function(v) SP.db.panel.width = v; if SP.panel then SP.panel:SetWidth(v); if SP.OnPanelResized then SP:OnPanelResized() end end end,
-        function(v) return v .. " px" end)
     y = y - 50
+    -- (la largeur du module Chat se règle via « Largeur du module » en haut de page — individuelle)
 
     y = SectionHeader(root, y, "Canaux — glisser pour réordonner")
     local th = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -447,6 +443,15 @@ local function BuildModulePage(page, m)
             if mod then pcall(mod.OnResize, mod, 0, 0); if mod.RequestRefresh then mod:RequestRefresh() end end
             SP:RebuildLayout()
         end)
+        y = y - 50
+        -- Largeur INDIVIDUELLE du module (n'affecte pas le panneau ni les autres modules)
+        MakeSlider(root, "Largeur du module", 16, y, 180, 800, 5,
+            function() return (cfg and cfg.width and cfg.width > 0) and cfg.width or (SP.db.panel.width or 280) end,
+            function(v) if cfg then cfg.width = v; SP:RebuildLayout() end end,
+            function(v) return v .. " px" end)
+        local wauto = CreateFrame("Button", nil, root, "UIPanelButtonTemplate")
+        wauto:SetSize(50, 20); wauto:SetPoint("TOPLEFT", root, "TOPLEFT", 250, y - 6); wauto:SetText("Pleine")
+        wauto:SetScript("OnClick", function() if cfg then cfg.width = nil; SP:RebuildLayout() end end)
         y = y - 50
     end
 

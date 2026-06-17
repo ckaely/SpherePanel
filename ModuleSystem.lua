@@ -497,7 +497,13 @@ function SP:RebuildLayout()
             local y = onP2 and y2 or y1
             m.frame:ClearAllPoints()
             m.frame:SetPoint("TOPLEFT",  content, "TOPLEFT",  0, -y)
-            m.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
+            -- largeur INDIVIDUELLE par module (cfg.width) : ancrage TOPLEFT seul + SetWidth ;
+            -- sinon pleine largeur du panneau (double ancrage). N'affecte ni le panneau ni les voisins.
+            if cfg.width and cfg.width > 0 then
+                m.frame:SetWidth(cfg.width)
+            else
+                m.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
+            end
             m.frame:SetHeight(h)
             m.frame:Show()
             m._layoutTop, m._layoutHeight = y, h
