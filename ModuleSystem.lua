@@ -389,6 +389,12 @@ function SP:ShowModuleMenu(m)
         root:CreateButton((cfg and cfg.pinned) and "Déverrouiller" or "Verrouiller", function()
             SP:TogglePin(m)
         end)
+        -- Fixer dans l'angle (haut/bas ; le côté gauche/droite suit celui du panneau)
+        local sub = root:CreateButton("Fixer dans l'angle")
+        local function setCorner(v) if cfg then cfg.corner = v; SP:RebuildLayout() end end
+        sub:CreateButton(((cfg and cfg.corner == "top") and "* " or "") .. "Haut", function() setCorner("top") end)
+        sub:CreateButton(((cfg and cfg.corner == "bottom") and "* " or "") .. "Bas", function() setCorner("bottom") end)
+        sub:CreateButton(((cfg and not cfg.corner) and "* " or "") .. "Aucun (dans le flux)", function() setCorner(nil) end)
         root:CreateButton("Masquer", function() SP:DisableModuleUI(m) end)
     end
     if MenuUtil and MenuUtil.CreateContextMenu then
@@ -489,7 +495,7 @@ function SP:RebuildLayout()
 
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
-        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) then
+        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) and not cfg.corner then
             -- panneau cible (2 si demandé ET second panneau actif, sinon 1)
             local onP2 = (cfg.panel == 2) and p2 ~= nil
             local content = onP2 and p2.content or panel.content
@@ -517,6 +523,36 @@ function SP:RebuildLayout()
         elseif m.frame then
             m.frame:Hide()
             m._layoutTop, m._layoutHeight = nil, nil
+        end
+    end
+
+    -- ===== modules FIXÉS DANS UN ANGLE (hors flux) : ancrés au coin de l'écran =====
+    for _, m in ipairs(SP:GetOrderedModules()) do
+        local cfg = SP:GetModuleConfig(m.name)
+        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) and cfg.corner then
+            local onP2 = (cfg.panel == 2) and p2 ~= nil
+            local content = onP2 and p2.content or panel.content
+            if m.frame:GetParent() ~= content then m.frame:SetParent(content) end
+            local h = UIc.HEADER_H
+            if m.headerless then
+                h = cfg.height or m.defaultHeight or 100
+            elseif not cfg.collapsed then
+                local bodyH = cfg.height or m.defaultHeight or 100
+                if m.body then m.body:SetHeight(bodyH) end
+                h = h + bodyH
+            end
+            local sideLeft = onP2 and (SP._p2side == "left") or (SP.db.panel.side == "left")
+            local w = (cfg.width and cfg.width > 0) and cfg.width or (content:GetWidth() or 280)
+            local hp = sideLeft and "LEFT" or "RIGHT"
+            local vp = (cfg.corner == "bottom") and "BOTTOM" or "TOP"
+            m.frame:ClearAllPoints()
+            m.frame:SetPoint(vp .. hp, UIParent, vp .. hp, sideLeft and 4 or -4, (vp == "BOTTOM") and 24 or -24)
+            m.frame:SetWidth(w); m.frame:SetHeight(h)
+            m.frame:SetAlpha(1); m.frame:Show()
+            m._layoutTop, m._layoutHeight = nil, nil   -- exclu du fade/slide → reste fixe dans l'angle
+            m._corner = true
+        elseif m.frame and cfg and not cfg.corner then
+            m._corner = nil
         end
     end
 

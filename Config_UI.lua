@@ -461,6 +461,13 @@ local function BuildModulePage(page, m)
         wauto:SetSize(50, 20); wauto:SetPoint("TOPLEFT", root, "TOPLEFT", 250, y - 6); wauto:SetText("Pleine")
         wauto:SetScript("OnClick", function() if cfg then cfg.width = nil; SP:RebuildLayout() end end)
         y = y - 50
+        -- Fixer dans un angle (le côté gauche/droite suit le panneau)
+        local cl = root:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cl:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y - 6); cl:SetText("|cFFAAAAAAFixer dans l'angle :|r")
+        MakeRadioRow(root, 130, y, { { "none", "Aucun" }, { "top", "Haut" }, { "bottom", "Bas" } },
+            function() return cfg.corner or "none" end,
+            function(v) cfg.corner = (v ~= "none") and v or nil; SP:RebuildLayout() end)
+        y = y - 30
     end
 
     -- Bordure (mode individuel / comportement 2) : auto, = texte, = fond, ou perso
