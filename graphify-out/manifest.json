@@ -1,17 +1,17 @@
 {
   "Config.lua": {
-    "mtime": 1781275006.7505789,
-    "ast_hash": "64c7f5cbb7126f38dee5959bdf05dc9b",
+    "mtime": 1781617445.8949502,
+    "ast_hash": "613d19497482a647a64b690028c8356b",
     "semantic_hash": ""
   },
   "Config_UI.lua": {
-    "mtime": 1781275536.4643822,
-    "ast_hash": "0e4f6cb8718056ca24809d3f03e80429",
+    "mtime": 1781617569.050567,
+    "ast_hash": "042daf5396836b597bc9ce70e0e55b78",
     "semantic_hash": ""
   },
   "Core.lua": {
-    "mtime": 1781273738.1263604,
-    "ast_hash": "0a7c08258cc50f103c2e36556d819018",
+    "mtime": 1781369601.1178846,
+    "ast_hash": "09b87086da0d284bbca3fa6ea0d83e1b",
     "semantic_hash": ""
   },
   "Media/IconAtlas.lua": {
@@ -20,8 +20,8 @@
     "semantic_hash": ""
   },
   "ModuleSystem.lua": {
-    "mtime": 1781270834.1591873,
-    "ast_hash": "ef20bf015700c6db060b1ae1eb312568",
+    "mtime": 1781473761.5994751,
+    "ast_hash": "2506742d82742fe75702af0760de8e3d",
     "semantic_hash": ""
   },
   "Modules/Agenda.lua": {
@@ -40,18 +40,18 @@
     "semantic_hash": ""
   },
   "Modules/Bags.lua": {
-    "mtime": 1781275250.971337,
-    "ast_hash": "3c39c79802f57f3ab01d725eeb6f077a",
+    "mtime": 1781617606.497353,
+    "ast_hash": "883ca498af6e676fed2b1ddfce557213",
     "semantic_hash": ""
   },
   "Modules/Chat.lua": {
-    "mtime": 1780991798.3534217,
-    "ast_hash": "f0e99888c6dc90ccb23a13718ef6076d",
+    "mtime": 1781558822.92054,
+    "ast_hash": "b45894fd86a58e745f2b8aae9bd4dd00",
     "semantic_hash": ""
   },
   "Modules/Currencies.lua": {
-    "mtime": 1781112569.5729523,
-    "ast_hash": "09843c0664bd4c2c3a846af1841923e4",
+    "mtime": 1781373477.184631,
+    "ast_hash": "c3072bfe5effa0baad8b6741c83fd683",
     "semantic_hash": ""
   },
   "Modules/DamageMeter.lua": {
@@ -60,8 +60,8 @@
     "semantic_hash": ""
   },
   "Modules/GameMenu.lua": {
-    "mtime": 1781159859.5926783,
-    "ast_hash": "7a48e5aff7d27d424f514f218793dc6f",
+    "mtime": 1781557764.3588874,
+    "ast_hash": "b67552069b46592ddc99f2718befad3d",
     "semantic_hash": ""
   },
   "Modules/GroupBuffs.lua": {
@@ -70,8 +70,8 @@
     "semantic_hash": ""
   },
   "Modules/Knowledge.lua": {
-    "mtime": 1781078512.3478189,
-    "ast_hash": "e1ef48fc009688e2bfe7a7f756d186b0",
+    "mtime": 1781358485.8077629,
+    "ast_hash": "865011979b052bc7d694a7512504690d",
     "semantic_hash": ""
   },
   "Modules/MinimapButtons.lua": {
@@ -80,13 +80,13 @@
     "semantic_hash": ""
   },
   "Modules/MythicPlus.lua": {
-    "mtime": 1781112406.4093559,
-    "ast_hash": "3cd1ec396a595c46f9060eb2f1c51776",
+    "mtime": 1781470846.2904007,
+    "ast_hash": "93e3186e0cf8c33eefb3a95c94b7d88a",
     "semantic_hash": ""
   },
   "Modules/QuestTracker.lua": {
-    "mtime": 1781159732.4991033,
-    "ast_hash": "44c53c9833dddcf258c7b2d73e6b8234",
+    "mtime": 1781510629.1626215,
+    "ast_hash": "79926408f8f7b06ba5aa8e0dc3f1e07d",
     "semantic_hash": ""
   },
   "Modules/Raid.lua": {
@@ -95,13 +95,13 @@
     "semantic_hash": ""
   },
   "Modules/RaidTools.lua": {
-    "mtime": 1781111785.1892395,
-    "ast_hash": "e9490f7f156178f4ba28593761127634",
+    "mtime": 1781471541.0291307,
+    "ast_hash": "ad16d9c2546bc4ee8c75a6c28a9e20f0",
     "semantic_hash": ""
   },
   "Modules/RecentLoot.lua": {
-    "mtime": 1781112473.2038555,
-    "ast_hash": "2215b10a9de355688d41db5e52477ed4",
+    "mtime": 1781358450.3996432,
+    "ast_hash": "875cc41b4dac41f69e4492d7e7443dd1",
     "semantic_hash": ""
   },
   "Modules/Reputations.lua": {
@@ -110,8 +110,8 @@
     "semantic_hash": ""
   },
   "Modules/SilverDragon.lua": {
-    "mtime": 1781273730.698913,
-    "ast_hash": "c187580225ed1ca331c081487821246e",
+    "mtime": 1781358452.3666654,
+    "ast_hash": "87bab38a78b2f7092f976db6b9b60705",
     "semantic_hash": ""
   },
   "Modules/Social.lua": {
@@ -120,18 +120,33 @@
     "semantic_hash": ""
   },
   "Modules/SquareMap.lua": {
-    "mtime": 1781159823.2526593,
-    "ast_hash": "bc758579894c15fb18deeb858158fd70",
+    "mtime": 1781557813.2403724,
+    "ast_hash": "d7df7b26fa44457cb60a97a3cd464667",
     "semantic_hash": ""
   },
   "PanelFrame.lua": {
-    "mtime": 1781275313.285577,
-    "ast_hash": "ef7b870ec22c5f15b0f2e413eac38547",
+    "mtime": 1781557737.815121,
+    "ast_hash": "3b46a8ca42b717b73726356ed9e411ad",
     "semantic_hash": ""
   },
   "SpherePanel.toc": {
-    "mtime": 1781131664.20605,
-    "ast_hash": "5eb675de03c3b862da1b6128059792e3",
+    "mtime": 1781598142.720333,
+    "ast_hash": "b2aceb7714f73e68ac1cbe23045c9167",
+    "semantic_hash": ""
+  },
+  "AddonScopeLink.lua": {
+    "mtime": 1781467477.1390913,
+    "ast_hash": "6c03a336c18bb9a642465d268bfcbcc5",
+    "semantic_hash": ""
+  },
+  "Modules/Character.lua": {
+    "mtime": 1781557981.3474545,
+    "ast_hash": "c8346eb68e30d302f0cd3cdd6b3bd109",
+    "semantic_hash": ""
+  },
+  "Modules/PerfMonitor.lua": {
+    "mtime": 1781598130.2095203,
+    "ast_hash": "0bf1ad25766a0e680fb2aa52047e4be3",
     "semantic_hash": ""
   }
 }

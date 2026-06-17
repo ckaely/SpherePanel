@@ -266,6 +266,9 @@ local function BagsOptions(page, y)
         function() return cfg.showIlvl end, function(v) cfg.showIlvl = v; apply() end)
     MakeCheck(page, "Flèche d'upgrade (Pawn)", 160, y - 34,
         function() return cfg.showUpgrade end, function(v) cfg.showUpgrade = v; apply() end)
+    MakeCheck(page, "Afficher les monnaies", 16, y - 58,
+        function() return cfg.showCurrencies ~= false end, function(v) cfg.showCurrencies = v; apply() end)
+    y = y - 24
     local lh = page:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     lh:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y - 62); lh:SetText("Catégories — glisser ≡ pour l'ordre · couleur · nom · filtre")
     page.bagRows = {}

@@ -73,6 +73,7 @@ SP.defaults = {
             showIlvl = true, showUpgrade = true,   -- iLvl + flèche upgrade (Pawn) sur l'équipement
             known = {},   -- snapshot itemID connus (pour la section Récent)
             -- color = couleur du titre ; group/groupPrefix = sous-catégories par sous-type ; search = filtre nom
+            showCurrencies = true,                 -- or + monnaies suivies/sac a dos dans le module Sac
             displayMode = "categorized",           -- categorized / onebag / split
             categories = {
                 { key = "recent",     label = "Récent",     enabled = true,  collapsed = false, color = { 0.40, 0.90, 0.40 } },

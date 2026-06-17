@@ -15,6 +15,7 @@ local M = {
 
 local BAGS = { 0, 1, 2, 3, 4, 5 }
 local GAP, HDR_H, SUB_H = 2, 18, 15
+local CURRENCY_ROW = 17
 local SUB_COLOR = { 0.45, 0.75, 0.95 }
 
 local function BagCfg(key, default)
@@ -156,10 +157,34 @@ local function CreateSub(self, i)
     return s
 end
 
+local function CreateCurrencyRow(self, i)
+    local r = CreateFrame("Frame", nil, self.list)
+    r:SetHeight(CURRENCY_ROW)
+    r.icon = r:CreateTexture(nil, "ARTWORK")
+    r.icon:SetSize(14, 14)
+    r.icon:SetPoint("LEFT", r, "LEFT", 4, 0)
+    r.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    r.fs = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    r.fs:SetPoint("LEFT", r.icon, "RIGHT", 5, 0)
+    r.fs:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+    r.fs:SetJustifyH("LEFT")
+    r.fs:SetWordWrap(false)
+    r:EnableMouse(true)
+    r:SetScript("OnEnter", function(s)
+        if s.currencyID then
+            SP:AnchorTooltipOutsidePanel(GameTooltip, s)
+            pcall(GameTooltip.SetCurrencyByID, GameTooltip, s.currencyID)
+            GameTooltip:Show()
+        end
+    end)
+    r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    return r
+end
+
 -- ===== cycle de vie =========================================================
 function M:Init(body)
     self.body = body
-    self.slots, self.headers, self.subs = {}, {}, {}
+    self.slots, self.headers, self.subs, self.currencyRows = {}, {}, {}, {}
     self.list = CreateFrame("Frame", nil, body)
     self.list:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
     self.list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -2, 2)
@@ -189,7 +214,7 @@ function M:Enable()
     self._enabled = true
     self:SanitizeCategories()
     if self._placeholder then self._placeholder:Hide() end
-    for _, e in ipairs({ "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "PLAYER_REGEN_ENABLED" }) do
+    for _, e in ipairs({ "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "PLAYER_REGEN_ENABLED", "CURRENCY_DISPLAY_UPDATE", "PLAYER_MONEY", "PLAYER_ENTERING_WORLD" }) do
         pcall(self.ev.RegisterEvent, self.ev, e)
     end
     if not InCombatLockdown() then
@@ -207,6 +232,7 @@ function M:Disable()
     for _, b in ipairs(self.slots) do b:Hide() end
     for _, h in ipairs(self.headers) do h:Hide() end
     for _, s in ipairs(self.subs) do s:Hide() end
+    for _, r in ipairs(self.currencyRows) do r:Hide() end
     SP:SetModuleHeaderText(self, "")
 end
 
@@ -263,6 +289,38 @@ end
 function M:_AcquireSlot(i) local b = self.slots[i] or CreateSlot(self, i); self.slots[i] = b; return b end
 function M:_AcquireHeader(i) local h = self.headers[i] or CreateHeader(self, i); self.headers[i] = h; return h end
 function M:_AcquireSub(i) local s = self.subs[i] or CreateSub(self, i); self.subs[i] = s; return s end
+function M:_AcquireCurrencyRow(i) local r = self.currencyRows[i] or CreateCurrencyRow(self, i); self.currencyRows[i] = r; return r end
+
+function M:_CollectCurrencies()
+    local rows = {}
+    local money = GetMoney and GetMoney() or 0
+    rows[#rows + 1] = {
+        icon = "Interface\\MoneyFrame\\UI-GoldIcon",
+        text = GetMoneyString and GetMoneyString(money, true) or tostring(math.floor(money / 10000)) .. " po",
+    }
+
+    if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize then
+        local n = C_CurrencyInfo.GetCurrencyListSize() or 0
+        for i = 1, n do
+            local ok, info = pcall(C_CurrencyInfo.GetCurrencyListInfo, i)
+            if ok and info and not info.isHeader and (info.isShowInBackpack or info.isWatched) then
+                local okLink, link = pcall(C_CurrencyInfo.GetCurrencyListLink, i)
+                local id = okLink and link and tonumber(link:match("Hcurrency:(%d+)")) or nil
+                local qty = info.quantity or 0
+                local maxQ = info.maxQuantity or 0
+                local text = ("%s  |cFFFFFFFF%d|r"):format(info.name or "?", qty)
+                if maxQ > 0 then text = text .. ("|cFF888888 / %d|r"):format(maxQ) end
+                rows[#rows + 1] = {
+                    currencyID = id,
+                    icon = info.iconFileID or "Interface\\Icons\\INV_Misc_QuestionMark",
+                    text = text,
+                }
+            end
+        end
+    end
+
+    return rows
+end
 
 function M:Refresh()
     if not self._enabled or not self.body or not C_Container then return end
@@ -358,6 +416,38 @@ function M:Refresh()
         return math.ceil(#items / perRow) * (size + GAP)
     end
 
+    local currencyShown = 0
+    if cfg.showCurrencies ~= false then
+        local currencies = self:_CollectCurrencies()
+        if #currencies > 0 then
+            hi = hi + 1
+            local hdr = self:_AcquireHeader(hi)
+            hdr.arrow:SetText("")
+            hdr.fs:SetText(("Monnaies  |cFF888888%d|r"):format(#currencies))
+            hdr.fs:SetTextColor(1, 0.82, 0)
+            hdr:ClearAllPoints()
+            hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
+            hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
+            hdr:SetScript("OnClick", nil)
+            hdr:Show()
+            y = y + HDR_H + 1
+
+            for _, cur in ipairs(currencies) do
+                currencyShown = currencyShown + 1
+                local r = self:_AcquireCurrencyRow(currencyShown)
+                r.currencyID = cur.currencyID
+                r.icon:SetTexture(cur.icon)
+                r.fs:SetText(cur.text)
+                r:ClearAllPoints()
+                r:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
+                r:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
+                r:Show()
+                y = y + CURRENCY_ROW
+            end
+            y = y + 3
+        end
+    end
+
     if mode == "onebag" then
         y = y + grid(allSlots, y) + 2
     elseif mode == "split" then
@@ -439,6 +529,7 @@ function M:Refresh()
     for i = si + 1, #self.slots do self.slots[i]:Hide() end
     for i = hi + 1, #self.headers do self.headers[i]:Hide() end
     for i = subi + 1, #self.subs do self.subs[i]:Hide() end
+    for i = currencyShown + 1, #self.currencyRows do self.currencyRows[i]:Hide() end
 
     SP:SetModuleHeaderText(self, ("%d / %d"):format(free, total))
     local needed = math.max(HDR_H, y)
