@@ -468,8 +468,7 @@ local function BuildModulePage(page, m)
     if app then
         app.glowMode = app.glowMode or "auto"
         app.glowColor = app.glowColor or { r = 0.29, g = 0.64, b = 1 }
-        app.glowThickness = app.glowThickness or 6
-        app.glowAlpha = app.glowAlpha or 0.9
+        -- NB : glowThickness/glowAlpha restent nil tant que non réglés ici → héritent du GLOBAL (Général)
         y = SectionHeader(root, y, "Bordure quand réduit (mode individuel)")
         MakeRadioRow(root, 16, y, { { "auto", "Auto" }, { "text", "= Texte" }, { "bg", "= Fond" }, { "custom", "Perso" } },
             function() return app.glowMode end,
@@ -479,12 +478,12 @@ local function BuildModulePage(page, m)
         sw:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y - 2); sw:SetText("|cFFAAAAAACouleur perso :|r")
         MakeColorSwatch(root, 120, y - 4, app.glowColor, false, function() app.glowMode = "custom" end)
         y = y - 30
-        MakeSlider(root, "Épaisseur de bordure", 16, y, 2, 16, 1,
-            function() return app.glowThickness or 6 end,
+        MakeSlider(root, "Épaisseur de bordure (vide = global)", 16, y, 2, 16, 1,
+            function() return app.glowThickness or SP.db.panel.glowThickness or 6 end,
             function(v) app.glowThickness = v end, function(v) return v .. " px" end)
         y = y - 48
-        MakeSlider(root, "Transparence de bordure", 16, y, 0.1, 1, 0.05,
-            function() return app.glowAlpha or 0.9 end,
+        MakeSlider(root, "Transparence de bordure (vide = global)", 16, y, 0.1, 1, 0.05,
+            function() return app.glowAlpha or SP.db.panel.glowAlpha or 0.9 end,
             function(v) app.glowAlpha = v end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
         y = y - 48
     end
@@ -818,8 +817,15 @@ local function BuildGeneral(page)
         function() return SP.db.panel.width or 280 end,
         function(v) SP.db.panel.width = v; if SP.panel then SP.panel:SetWidth(v); SP:OnPanelResized() end end,
         function(v) return v .. " px" end)
+    -- bordures GLOBALES (chaque module peut surcharger dans sa propre page)
+    MakeSlider(page, "Épaisseur des bordures (global)", 16, -96, 2, 16, 1,
+        function() return SP.db.panel.glowThickness or 6 end,
+        function(v) SP.db.panel.glowThickness = v end, function(v) return v .. " px" end)
+    MakeSlider(page, "Transparence des bordures (global)", 16, -144, 0.1, 1, 0.05,
+        function() return SP.db.panel.glowAlpha or 0.9 end,
+        function(v) SP.db.panel.glowAlpha = v end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
     local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -96)
+    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, -196)
     note:SetText("|cFF777777Astuce : clic droit sur un bandeau = menu (Paramètres / Verrouiller / Masquer).|r")
 end
 

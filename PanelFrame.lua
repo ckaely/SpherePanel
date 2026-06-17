@@ -240,6 +240,11 @@ function SP:_TickSlide(p, elapsed, b, side, isP2)
             local cur = lerp(m._curSlide or 0, goal, elapsed, dur)
             if math.abs(cur - goal) < 0.5 then cur = goal end
             m._curSlide = cur
+            -- fondu d'alpha EN PLUS du glissement → le module se ferme VRAIMENT (SMF/contenu inclus)
+            local aGoal = reveal and 1 or 0
+            local aCur = lerp(f:GetAlpha() or 1, aGoal, elapsed, dur)
+            if math.abs(aCur - aGoal) < 0.03 then aCur = aGoal end
+            f:SetAlpha(aCur)
             if not (InCombatLockdown() and m.secureChildren) then
                 if SP.AnchorModuleFrame then
                     SP:AnchorModuleFrame(m, p.content, cur, m._layoutTop)
@@ -295,11 +300,11 @@ function SP:_UpdateEdgeGlows(p, side, isP2)
             elseif mode == "bg" and app and app.bgColor then c = { app.bgColor.r, app.bgColor.g, app.bgColor.b }
             elseif mode == "custom" and app and app.glowColor then c = { app.glowColor.r, app.glowColor.g, app.glowColor.b }
             else c = GLOW_COLORS[((i - 1) % #GLOW_COLORS) + 1] end
-            g.tex:SetColorTexture(c[1] or 0.3, c[2] or 0.6, c[3] or 1, (app and app.glowAlpha) or 0.9)
+            g.tex:SetColorTexture(c[1] or 0.3, c[2] or 0.6, c[3] or 1, (app and app.glowAlpha) or SP.db.panel.glowAlpha or 0.9)
             local top = f:GetTop()
             if top and uh and slidOff then
                 g:ClearAllPoints()
-                g:SetWidth((app and app.glowThickness) or 6); g:SetHeight(f:GetHeight() or 20)
+                g:SetWidth((app and app.glowThickness) or SP.db.panel.glowThickness or 6); g:SetHeight(f:GetHeight() or 20)
                 g:SetPoint(leftSide and "LEFT" or "RIGHT", edge, leftSide and "LEFT" or "RIGHT", 0, 0)
                 g:SetPoint("TOP", edge, "TOP", 0, -(uh - top))
                 g:Show()
@@ -316,6 +321,7 @@ function SP:_ResetSlides(p, isP2)
     for _, m in ipairs(SP.modules) do
         if m.frame and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             m._curSlide = 0
+            m.frame:SetAlpha(1)   -- mode libre : modules pleinement visibles
             if not (InCombatLockdown() and m.secureChildren) then
                 if SP.AnchorModuleFrame then
                     SP:AnchorModuleFrame(m, p.content, 0, m._layoutTop)

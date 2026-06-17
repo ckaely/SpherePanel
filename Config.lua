@@ -27,6 +27,8 @@ SP.defaults = {
         side     = "right",   -- "right" ou "left" : bord d'aimantation
         vpos     = "top",     -- "top" ou "bottom" : ancrage vertical en mode magnétisé
         fx       = true,      -- effets visuels (orbe pulsant + shimmer + intro)
+        glowThickness = 6,    -- épaisseur GLOBALE des bordures de module réduit (override par module)
+        glowAlpha     = 0.9,  -- transparence GLOBALE des bordures (override par module)
         panel2   = { enabled = false, x = 20, y = -200, width = 280,
                      side = "auto", vpos = "top", behavior = 3 },  -- second panneau ; side: auto=opposé au principal
         bgColor  = { r = 0.05, g = 0.05, b = 0.07, a = 0.85 },  -- fond du panneau (Apparence)
