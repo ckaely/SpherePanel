@@ -74,6 +74,9 @@ SP.defaults = {
             known = {},   -- snapshot itemID connus (pour la section Récent)
             -- color = couleur du titre ; group/groupPrefix = sous-catégories par sous-type ; search = filtre nom
             showCurrencies = true,                 -- or + monnaies suivies/sac a dos dans le module Sac
+            replaceBlizzardBags = true,            -- SpherePanel remplace l'ouverture native des sacs
+            autoOpenAtNpc = true,                  -- ouvre le module chez les PNJ qui ouvrent les sacs
+            autoSellJunk = true,                   -- vend automatiquement les objets gris chez un marchand
             displayMode = "categorized",           -- categorized / onebag / split
             categories = {
                 { key = "recent",     label = "Récent",     enabled = true,  collapsed = false, color = { 0.40, 0.90, 0.40 } },

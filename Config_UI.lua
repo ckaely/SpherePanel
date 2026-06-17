@@ -277,6 +277,14 @@ local function BagsOptions(root, y, opage)
     MakeCheck(root, "Flèche d'upgrade (Pawn)", 180, y, function() return cfg.showUpgrade end, function(v) cfg.showUpgrade = v; apply() end)
     y = y - 26
     MakeCheck(root, "Afficher les monnaies", 16, y, function() return cfg.showCurrencies ~= false end, function(v) cfg.showCurrencies = v; apply() end)
+    y = y - 26
+    MakeCheck(root, "Remplacer les sacs Blizzard", 16, y,
+        function() return cfg.replaceBlizzardBags ~= false end, function(v) cfg.replaceBlizzardBags = v; apply() end)
+    MakeCheck(root, "Ouvrir chez les PNJ", 220, y,
+        function() return cfg.autoOpenAtNpc ~= false end, function(v) cfg.autoOpenAtNpc = v; apply() end)
+    y = y - 26
+    MakeCheck(root, "Vendre la camelote", 16, y,
+        function() return cfg.autoSellJunk ~= false end, function(v) cfg.autoSellJunk = v end)
     y = y - 30
 
     y = SectionHeader(root, y, "Catégories — glisser pour réordonner")
@@ -460,6 +468,8 @@ local function BuildModulePage(page, m)
     if app then
         app.glowMode = app.glowMode or "auto"
         app.glowColor = app.glowColor or { r = 0.29, g = 0.64, b = 1 }
+        app.glowThickness = app.glowThickness or 6
+        app.glowAlpha = app.glowAlpha or 0.9
         y = SectionHeader(root, y, "Bordure quand réduit (mode individuel)")
         MakeRadioRow(root, 16, y, { { "auto", "Auto" }, { "text", "= Texte" }, { "bg", "= Fond" }, { "custom", "Perso" } },
             function() return app.glowMode end,
@@ -468,7 +478,15 @@ local function BuildModulePage(page, m)
         local sw = root:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         sw:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y - 2); sw:SetText("|cFFAAAAAACouleur perso :|r")
         MakeColorSwatch(root, 120, y - 4, app.glowColor, false, function() app.glowMode = "custom" end)
-        y = y - 32
+        y = y - 30
+        MakeSlider(root, "Épaisseur de bordure", 16, y, 2, 16, 1,
+            function() return app.glowThickness or 6 end,
+            function(v) app.glowThickness = v end, function(v) return v .. " px" end)
+        y = y - 48
+        MakeSlider(root, "Transparence de bordure", 16, y, 0.1, 1, 0.05,
+            function() return app.glowAlpha or 0.9 end,
+            function(v) app.glowAlpha = v end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
+        y = y - 48
     end
 
     local afterCond = BuildConditions(root, m, y)

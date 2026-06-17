@@ -241,9 +241,13 @@ function SP:_TickSlide(p, elapsed, b, side, isP2)
             if math.abs(cur - goal) < 0.5 then cur = goal end
             m._curSlide = cur
             if not (InCombatLockdown() and m.secureChildren) then
-                f:ClearAllPoints()
-                f:SetPoint("TOPLEFT", p.content, "TOPLEFT", cur, -m._layoutTop)
-                f:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", cur, -m._layoutTop)
+                if SP.AnchorModuleFrame then
+                    SP:AnchorModuleFrame(m, p.content, cur, m._layoutTop)
+                else
+                    f:ClearAllPoints()
+                    f:SetPoint("TOPLEFT", p.content, "TOPLEFT", cur, -m._layoutTop)
+                    f:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", cur, -m._layoutTop)
+                end
             end
         end
     end
@@ -291,11 +295,11 @@ function SP:_UpdateEdgeGlows(p, side, isP2)
             elseif mode == "bg" and app and app.bgColor then c = { app.bgColor.r, app.bgColor.g, app.bgColor.b }
             elseif mode == "custom" and app and app.glowColor then c = { app.glowColor.r, app.glowColor.g, app.glowColor.b }
             else c = GLOW_COLORS[((i - 1) % #GLOW_COLORS) + 1] end
-            g.tex:SetColorTexture(c[1] or 0.3, c[2] or 0.6, c[3] or 1, 0.9)
+            g.tex:SetColorTexture(c[1] or 0.3, c[2] or 0.6, c[3] or 1, (app and app.glowAlpha) or 0.9)
             local top = f:GetTop()
             if top and uh and slidOff then
                 g:ClearAllPoints()
-                g:SetWidth(6); g:SetHeight(f:GetHeight() or 20)
+                g:SetWidth((app and app.glowThickness) or 6); g:SetHeight(f:GetHeight() or 20)
                 g:SetPoint(leftSide and "LEFT" or "RIGHT", edge, leftSide and "LEFT" or "RIGHT", 0, 0)
                 g:SetPoint("TOP", edge, "TOP", 0, -(uh - top))
                 g:Show()
@@ -313,9 +317,13 @@ function SP:_ResetSlides(p, isP2)
         if m.frame and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             m._curSlide = 0
             if not (InCombatLockdown() and m.secureChildren) then
-                m.frame:ClearAllPoints()
-                m.frame:SetPoint("TOPLEFT", p.content, "TOPLEFT", 0, -m._layoutTop)
-                m.frame:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", 0, -m._layoutTop)
+                if SP.AnchorModuleFrame then
+                    SP:AnchorModuleFrame(m, p.content, 0, m._layoutTop)
+                else
+                    m.frame:ClearAllPoints()
+                    m.frame:SetPoint("TOPLEFT", p.content, "TOPLEFT", 0, -m._layoutTop)
+                    m.frame:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", 0, -m._layoutTop)
+                end
             end
         end
     end
@@ -572,7 +580,9 @@ function SP:OnPanelResized()
     local w = SP.panel and SP.panel:GetWidth() or (SP.db.panel.width or 280)
     for _, m in ipairs(SP.modules) do
         if m.frame and m.OnResize then
-            pcall(m.OnResize, m, w, m._layoutHeight or 0)
+            local cfg = SP:GetModuleConfig(m.name)
+            local mw = (cfg and cfg.width and cfg.width > 0) and cfg.width or w
+            pcall(m.OnResize, m, mw, m._layoutHeight or 0)
         end
     end
     SP:RebuildLayout()

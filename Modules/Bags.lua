@@ -120,11 +120,30 @@ local function CreateSlot(self, i)
         if s.bag and s.slot then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetBagItem, GameTooltip, s.bag, s.slot); GameTooltip:Show() end
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b.SplitStack = function(s, split)
+        if s.bag and s.slot and C_Container and C_Container.SplitContainerItem then
+            C_Container.SplitContainerItem(s.bag, s.slot, split)
+        end
+    end
     b:SetScript("PreClick", function(s, btn)
-        if btn == "LeftButton" and s.bag and not InCombatLockdown() then
+        if not (s.bag and s.slot) then return end
+        local link = C_Container and C_Container.GetContainerItemLink and C_Container.GetContainerItemLink(s.bag, s.slot)
+        if link and HandleModifiedItemClick and HandleModifiedItemClick(link) then return end
+        if btn == "LeftButton" and not InCombatLockdown() then
+            if IsModifiedClick and IsModifiedClick("SPLITSTACK") and not (CursorHasItem and CursorHasItem()) then
+                local info = C_Container and C_Container.GetContainerItemInfo and C_Container.GetContainerItemInfo(s.bag, s.slot)
+                local count = info and info.stackCount or 0
+                if count and count > 1 and StackSplitFrame then
+                    StackSplitFrame:OpenStackSplitFrame(count, s, "BOTTOMLEFT", "TOPLEFT")
+                    return
+                end
+            end
             local had = CursorHasItem and CursorHasItem()
-            C_Container.PickupContainerItem(s.bag, s.slot)
+            if C_Container and C_Container.PickupContainerItem then C_Container.PickupContainerItem(s.bag, s.slot) end
             SP:PlayItemSound(had and "drop" or "pickup")
+        elseif btn == "RightButton" and not InCombatLockdown() and C_Container and C_Container.UseContainerItem then
+            pcall(C_Container.UseContainerItem, s.bag, s.slot)
+            SP:PlayItemSound("drop")
         end
     end)
     -- vrai drag & drop (+ son de prise/dépôt)
@@ -192,7 +211,18 @@ function M:Init(body)
 
     self.ev = CreateFrame("Frame")
     self.ev:SetScript("OnEvent", function(_, e)
-        if e == "PLAYER_REGEN_ENABLED" then if self._dirty then self:RequestRefresh() end else self:RequestRefresh() end
+        if e == "PLAYER_REGEN_ENABLED" then
+            if self._dirty then self:RequestRefresh() end
+        elseif e == "MERCHANT_SHOW" then
+            local cfg = SP:GetModuleConfig(self.name)
+            if not cfg or cfg.autoOpenAtNpc ~= false then self:OpenBags("merchant") end
+            self:AutoSellJunk()
+        elseif e == "BANKFRAME_OPENED" or e == "MAIL_SHOW" or e == "AUCTION_HOUSE_SHOW" or e == "TRADE_SHOW" then
+            local cfg = SP:GetModuleConfig(self.name)
+            if not cfg or cfg.autoOpenAtNpc ~= false then self:OpenBags(e) end
+        else
+            self:RequestRefresh()
+        end
     end)
 
     self.toggle = CreateFrame("Button", "SpherePanelBagToggle", UIParent)
@@ -214,13 +244,20 @@ function M:Enable()
     self._enabled = true
     self:SanitizeCategories()
     if self._placeholder then self._placeholder:Hide() end
-    for _, e in ipairs({ "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "PLAYER_REGEN_ENABLED", "CURRENCY_DISPLAY_UPDATE", "PLAYER_MONEY", "PLAYER_ENTERING_WORLD" }) do
+    for _, e in ipairs({
+        "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "PLAYER_REGEN_ENABLED",
+        "CURRENCY_DISPLAY_UPDATE", "PLAYER_MONEY", "PLAYER_ENTERING_WORLD",
+        "MERCHANT_SHOW", "BANKFRAME_OPENED", "MAIL_SHOW", "AUCTION_HOUSE_SHOW", "TRADE_SHOW",
+    }) do
         pcall(self.ev.RegisterEvent, self.ev, e)
     end
+    self:InstallBagHooks()
     if not InCombatLockdown() then
         ClearOverrideBindings(self.toggle)
         SetOverrideBindingClick(self.toggle, true, "B", "SpherePanelBagToggle")
+        SetOverrideBindingClick(self.toggle, true, "SHIFT-B", "SpherePanelBagToggle")
         SetOverrideBindingClick(self.toggle, true, "TOGGLEBACKPACK", "SpherePanelBagToggle")
+        SetOverrideBindingClick(self.toggle, true, "OPENALLBAGS", "SpherePanelBagToggle")
     end
     self:RequestRefresh()
 end
@@ -263,7 +300,92 @@ function M:SnapshotOnOpen()
     cfg.known = current
 end
 
+function M:IsReplacementEnabled()
+    local cfg = SP:GetModuleConfig(self.name)
+    return cfg and cfg.replaceBlizzardBags ~= false
+end
+
+function M:OpenBags(reason)
+    local cfg = SP:GetModuleConfig(self.name)
+    if not cfg then return end
+    if not cfg.enabled then SP:EnableModule(self.name) end
+    if reason ~= "internal" and CloseAllBags then pcall(CloseAllBags) end
+    if SP.panel then SP.panel:Show() end
+    cfg.collapsed = false
+    self._forceReveal = true
+    SP:UpdateCollapseVisual(self)
+    if not InCombatLockdown() then self:SnapshotOnOpen() end
+    SP:RebuildLayout()
+    self:RequestRefresh()
+end
+
+function M:CloseBags()
+    local cfg = SP:GetModuleConfig(self.name)
+    if not cfg then return end
+    cfg.collapsed = true
+    self._forceReveal = false
+    SP:UpdateCollapseVisual(self)
+    SP:RebuildLayout()
+end
+
+function M:InstallBagHooks()
+    if self._bagHooksInstalled or not hooksecurefunc then return end
+    self._bagHooksInstalled = true
+    local function replaceOpen()
+        if not self._enabled or not self:IsReplacementEnabled() then return end
+        self:OpenBags("hook")
+    end
+    local function replaceToggle()
+        if not self._enabled or not self:IsReplacementEnabled() then return end
+        self:ToggleBags()
+    end
+    for _, fn in ipairs({ "OpenAllBags", "OpenBackpack", "OpenBag" }) do
+        if _G[fn] then pcall(hooksecurefunc, fn, replaceOpen) end
+    end
+    for _, fn in ipairs({ "ToggleAllBags", "ToggleBackpack", "ToggleBag" }) do
+        if _G[fn] then pcall(hooksecurefunc, fn, replaceToggle) end
+    end
+end
+
+function M:AutoSellJunk()
+    local cfg = SP:GetModuleConfig(self.name)
+    if not (cfg and cfg.autoSellJunk ~= false) then return end
+    if InCombatLockdown() or not (MerchantFrame and MerchantFrame:IsShown()) then return end
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.UseContainerItem) then return end
+
+    local sold, total = 0, 0
+    for _, bag in ipairs(BAGS) do
+        local n = Ct().GetContainerNumSlots(bag) or 0
+        for slot = 1, n do
+            local info = Ct().GetContainerItemInfo(bag, slot)
+            if info and info.itemID and (info.quality or 1) == 0 and not info.isLocked then
+                local ok, price = pcall(function() return select(11, GetItemInfo(info.hyperlink or info.itemID)) end)
+                price = ok and tonumber(price) or 0
+                if price and price > 0 then
+                    total = total + price * (info.stackCount or 1)
+                    sold = sold + 1
+                    pcall(C_Container.UseContainerItem, bag, slot)
+                end
+            end
+        end
+    end
+    if sold > 0 then
+        C_Timer.After(0.4, function() self:RequestRefresh() end)
+        if SP.Print then
+            local money = GetMoneyString and GetMoneyString(total, true) or tostring(total)
+            SP:Print(("Camelote vendue : %d pile(s), %s."):format(sold, money))
+        end
+    end
+end
+
 function M:ToggleBags()
+    do
+    if CloseAllBags then pcall(CloseAllBags) end
+    local c = SP:GetModuleConfig(self.name)
+    if c and c.collapsed then self:OpenBags("internal") else self:CloseBags() end
+        return
+    end
+--[[
     if CloseAllBags then pcall(CloseAllBags) end
     local cfg = SP:GetModuleConfig(self.name)
     if not cfg.enabled then SP:EnableModule(self.name) end
@@ -276,6 +398,7 @@ function M:ToggleBags()
     if not cfg.collapsed and not InCombatLockdown() then self:SnapshotOnOpen() end
     SP:RebuildLayout()
     if not cfg.collapsed then self:RequestRefresh() end
+]]
 end
 
 function M:RequestRefresh()
@@ -378,7 +501,7 @@ function M:Refresh()
             b.count:SetText(it.emptyCount and tostring(it.emptyCount) or "")
             b.ilvl:SetText("")
             b.upg:Hide()
-            pcall(function() b:SetAttribute("type2", nil); b:SetAttribute("bag", nil); b:SetAttribute("slot", nil) end)
+            pcall(function() b:SetAttribute("type2", nil); b:SetAttribute("item2", nil); b:SetAttribute("bag", nil); b:SetAttribute("slot", nil) end)
             b:Show()
             return
         end
@@ -405,7 +528,13 @@ function M:Refresh()
         else
             b.ilvl:SetText(""); b.upg:Hide()
         end
-        pcall(function() b:SetAttribute("type2", "item"); b:SetAttribute("bag", it.bag); b:SetAttribute("slot", it.slot) end)
+        pcall(function()
+            b:SetAttribute("type1", nil)
+            b:SetAttribute("type2", nil)
+            b:SetAttribute("item2", nil)
+            b:SetAttribute("bag", it.bag)
+            b:SetAttribute("slot", it.slot)
+        end)
         b:Show()
     end
 
@@ -500,7 +629,7 @@ function M:Refresh()
                         b:SetSize(size, size); b:ClearAllPoints(); b:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
                         b.icon:SetTexture(nil); b.icon:SetDesaturated(false); b.border:SetColorTexture(0.2, 0.2, 0.2, 1)
                         b.count:SetText(tostring(free)); b.ilvl:SetText(""); b.upg:Hide()
-                        pcall(function() b:SetAttribute("type2", nil); b:SetAttribute("bag", nil); b:SetAttribute("slot", nil) end)
+                        pcall(function() b:SetAttribute("type2", nil); b:SetAttribute("item2", nil); b:SetAttribute("bag", nil); b:SetAttribute("slot", nil) end)
                         b:Show()
                         y = y + size + GAP
                     elseif c.group then

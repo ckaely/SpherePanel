@@ -23,6 +23,19 @@ local CHAT_EVENTS = {
     "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
     "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
     "CHAT_MSG_CHANNEL",
+    -- registre complet (façon Blizzard) : système / butin / créatures
+    "CHAT_MSG_SYSTEM",
+    "CHAT_MSG_LOOT", "CHAT_MSG_MONEY", "CHAT_MSG_CURRENCY",
+    "CHAT_MSG_MONSTER_SAY", "CHAT_MSG_MONSTER_YELL", "CHAT_MSG_MONSTER_EMOTE",
+    "CHAT_MSG_MONSTER_WHISPER", "CHAT_MSG_RAID_BOSS_EMOTE", "CHAT_MSG_RAID_BOSS_WHISPER",
+}
+
+-- catégories supplémentaires (registre complet) ajoutées si absentes (désactivées par défaut)
+local EXTRA_CHANNELS = {
+    { key = "SYS",  label = "Système",   r = 1.0, g = 1.0, b = 0.5,  enabled = false, types = { SYSTEM = true } },
+    { key = "LOOT", label = "Butin",     r = 0.4, g = 1.0, b = 0.4,  enabled = false, types = { LOOT = true, MONEY = true, CURRENCY = true } },
+    { key = "NPC",  label = "Créatures", r = 1.0, g = 0.85, b = 0.4, enabled = false,
+      types = { MONSTER_SAY = true, MONSTER_YELL = true, MONSTER_EMOTE = true, MONSTER_WHISPER = true, RAID_BOSS_EMOTE = true, RAID_BOSS_WHISPER = true } },
 }
 
 local KEYDEF = {
@@ -183,9 +196,25 @@ function M:Init(body)
     self:SetTab(self.tab or "chat")
 end
 
+-- Ajoute les catégories du registre complet absentes de la config (migration non-destructive).
+function M:EnsureChannels()
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.channels = cfg.channels or {}
+    local have = {}
+    for _, ch in ipairs(cfg.channels) do have[ch.key] = true end
+    for _, e in ipairs(EXTRA_CHANNELS) do
+        if not have[e.key] then
+            local copy = { key = e.key, label = e.label, r = e.r, g = e.g, b = e.b, enabled = e.enabled, types = {} }
+            for t in pairs(e.types) do copy.types[t] = true end
+            cfg.channels[#cfg.channels + 1] = copy
+        end
+    end
+end
+
 function M:Enable()
     self._enabled = true
     if self._placeholder then self._placeholder:Hide() end
+    self:EnsureChannels()
     self:ApplyConfig()
     for _, e in ipairs(CHAT_EVENTS) do pcall(self.ev.RegisterEvent, self.ev, e) end
     -- onglet Social : events + rafraîchissement périodique
@@ -284,6 +313,7 @@ end
 function M:PrimaryKey(typeKey, channelName)
     for _, ch in ipairs(SP:GetModuleConfig(self.name).channels or {}) do
         if ch.enabled and ch.key ~= "A" then
+            if ch.types and ch.types[typeKey] then return ch.key end   -- registre par set de types
             local def = KEYDEF[ch.key]
             if def then
                 if def.types and def.types[typeKey] then return ch.key end

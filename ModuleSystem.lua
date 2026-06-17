@@ -467,6 +467,19 @@ end
 -- Layout : ancre les modules activés TOP→BOTTOM dans content.
 -- Stocke _layoutTop / _layoutHeight (coordonnées de layout, lues par le drag).
 -- ============================================================
+function SP:AnchorModuleFrame(m, content, x, y)
+    if not (m and m.frame and content) then return end
+    local cfg = SP:GetModuleConfig(m.name)
+    x, y = x or 0, y or 0
+    m.frame:ClearAllPoints()
+    m.frame:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
+    if cfg and cfg.width and cfg.width > 0 then
+        m.frame:SetWidth(cfg.width)
+    else
+        m.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", x, -y)
+    end
+end
+
 function SP:RebuildLayout()
     local panel = SP.panel
     if not panel then return end
@@ -495,15 +508,7 @@ function SP:RebuildLayout()
                 end
             end
             local y = onP2 and y2 or y1
-            m.frame:ClearAllPoints()
-            m.frame:SetPoint("TOPLEFT",  content, "TOPLEFT",  0, -y)
-            -- largeur INDIVIDUELLE par module (cfg.width) : ancrage TOPLEFT seul + SetWidth ;
-            -- sinon pleine largeur du panneau (double ancrage). N'affecte ni le panneau ni les voisins.
-            if cfg.width and cfg.width > 0 then
-                m.frame:SetWidth(cfg.width)
-            else
-                m.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -y)
-            end
+            SP:AnchorModuleFrame(m, content, 0, y)
             m.frame:SetHeight(h)
             m.frame:Show()
             m._layoutTop, m._layoutHeight = y, h

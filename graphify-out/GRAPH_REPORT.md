@@ -1,16 +1,16 @@
-# Graph Report - SpherePanel  (2026-06-16)
+# Graph Report - SpherePanel  (2026-06-17)
 
 ## Corpus Check
-- 30 files · ~44,517 words
+- 30 files · ~46,902 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 420 nodes · 509 edges · 30 communities (24 shown, 6 thin omitted)
+- 427 nodes · 518 edges · 30 communities (24 shown, 6 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1fc8eb12`
+- Built from commit: `bf6dc6eb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -43,15 +43,15 @@
 
 ## God Nodes (most connected - your core abstractions)
 1. `MakeCheck()` - 11 edges
-2. `MakeSlider()` - 7 edges
-3. `BuildApparence()` - 7 edges
-4. `BuildComportement()` - 7 edges
-5. `M:Refresh()` - 7 edges
+2. `MakeSlider()` - 8 edges
+3. `M:Refresh()` - 7 edges
+4. `BuildModulePage()` - 6 edges
+5. `BuildApparence()` - 6 edges
 6. `CreateOptions()` - 6 edges
-7. `BuildModulePage()` - 5 edges
-8. `M:Refresh()` - 5 edges
-9. `M:Refresh()` - 5 edges
-10. `Apply()` - 5 edges
+7. `M:Refresh()` - 5 edges
+8. `AS()` - 5 edges
+9. `hasAS()` - 5 edges
+10. `M:Refresh()` - 5 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `BagsOptions()` --calls--> `Apply()`  [INFERRED]
@@ -71,16 +71,16 @@ Cohesion: 0.10
 Nodes (10): ApplyIcon(), Classify(), CreateEntry(), GetObjLine(), M:AcquireEntry(), M:Init(), M:PrewarmPool(), M:Refresh() (+2 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.07
+Cohesion: 0.06
 Nodes (5): clamp(), copyColor(), SP:ApplyModuleAppearance(), SP:GetModuleAppearanceConfig(), SP:ResetModuleAppearance()
 
 ### Community 3 - "Community 3"
-Cohesion: 0.10
-Nodes (17): BagCfg(), ClassKey(), CreateCurrencyRow(), CreateHeader(), CreateSlot(), CreateSub(), Ct(), GroupLabel() (+9 more)
+Cohesion: 0.08
+Nodes (18): BagCfg(), ClassKey(), CreateCurrencyRow(), CreateHeader(), CreateSlot(), CreateSub(), Ct(), GroupLabel() (+10 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.21
-Nodes (20): AurasOptions(), BagsOptions(), BuildApparence(), BuildComportement(), BuildConditions(), BuildGeneral(), BuildModulePage(), CharacterOptions() (+12 more)
+Cohesion: 0.24
+Nodes (18): AurasOptions(), BagsOptions(), BuildApparence(), BuildComportement(), BuildConditions(), BuildGeneral(), BuildModulePage(), CharacterOptions() (+10 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.09
@@ -135,8 +135,8 @@ Cohesion: 0.10
 Nodes (10): altClassHex(), altRatingHex(), GetAltChars(), M:_Cell(), M:RefreshAlts(), M:RefreshGear(), M:RefreshStats(), MakeSlotButton() (+2 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.20
-Nodes (4): AS(), hasAS(), M:RefreshPerf(), M:RefreshTop()
+Cohesion: 0.18
+Nodes (5): AS(), hasAS(), M:RefreshAlertes(), M:RefreshPerf(), M:RefreshTop()
 
 ## Knowledge Gaps
 - **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
@@ -147,14 +147,14 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `BagsOptions()` connect `Community 4` to `Community 12`?**
   _High betweenness centrality (0.003) - this node is a cross-community bridge._
 - **Why does `Apply()` connect `Community 12` to `Community 4`?**
-  _High betweenness centrality (0.003) - this node is a cross-community bridge._
+  _High betweenness centrality (0.002) - this node is a cross-community bridge._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.09230769230769231 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**
   _Cohesion score 0.09538461538461539 - nodes in this community are weakly interconnected._
 - **Should `Community 2` be split into smaller, more focused modules?**
-  _Cohesion score 0.0659536541889483 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06386554621848739 - nodes in this community are weakly interconnected._
 - **Should `Community 3` be split into smaller, more focused modules?**
-  _Cohesion score 0.10256410256410256 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.0846774193548387 - nodes in this community are weakly interconnected._
 - **Should `Community 5` be split into smaller, more focused modules?**
-  _Cohesion score 0.09333333333333334 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.08923076923076922 - nodes in this community are weakly interconnected._

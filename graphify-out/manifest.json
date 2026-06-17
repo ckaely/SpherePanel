@@ -1,12 +1,12 @@
 {
   "Config.lua": {
-    "mtime": 1781617445.8949502,
-    "ast_hash": "613d19497482a647a64b690028c8356b",
+    "mtime": 1781715744.741684,
+    "ast_hash": "a5e8e9260aa4668592f11fa7ef96b5cf",
     "semantic_hash": ""
   },
   "Config_UI.lua": {
-    "mtime": 1781617569.050567,
-    "ast_hash": "042daf5396836b597bc9ce70e0e55b78",
+    "mtime": 1781715970.216174,
+    "ast_hash": "46a4e55d7ceffe6e85a7f4ea5dba89e8",
     "semantic_hash": ""
   },
   "Core.lua": {
@@ -20,8 +20,8 @@
     "semantic_hash": ""
   },
   "ModuleSystem.lua": {
-    "mtime": 1781473761.5994751,
-    "ast_hash": "2506742d82742fe75702af0760de8e3d",
+    "mtime": 1781715693.7645528,
+    "ast_hash": "b976605cfd5104f26b6cb062bbdafb54",
     "semantic_hash": ""
   },
   "Modules/Agenda.lua": {
@@ -40,13 +40,13 @@
     "semantic_hash": ""
   },
   "Modules/Bags.lua": {
-    "mtime": 1781617606.497353,
-    "ast_hash": "883ca498af6e676fed2b1ddfce557213",
+    "mtime": 1781716142.92423,
+    "ast_hash": "3f8b11692b1baab6201702b89f26b5f3",
     "semantic_hash": ""
   },
   "Modules/Chat.lua": {
-    "mtime": 1781558822.92054,
-    "ast_hash": "b45894fd86a58e745f2b8aae9bd4dd00",
+    "mtime": 1781710498.94682,
+    "ast_hash": "c4b861a92efdb940c67779bab0ca0cf6",
     "semantic_hash": ""
   },
   "Modules/Currencies.lua": {
@@ -125,8 +125,8 @@
     "semantic_hash": ""
   },
   "PanelFrame.lua": {
-    "mtime": 1781557737.815121,
-    "ast_hash": "3b46a8ca42b717b73726356ed9e411ad",
+    "mtime": 1781715711.8593867,
+    "ast_hash": "905466a7322617a305c4b69b4523c526",
     "semantic_hash": ""
   },
   "SpherePanel.toc": {
@@ -145,8 +145,8 @@
     "semantic_hash": ""
   },
   "Modules/PerfMonitor.lua": {
-    "mtime": 1781598130.2095203,
-    "ast_hash": "0bf1ad25766a0e680fb2aa52047e4be3",
+    "mtime": 1781687463.335774,
+    "ast_hash": "1e3e1afa9b69c3f683975f504ac441ac",
     "semantic_hash": ""
   }
 }
