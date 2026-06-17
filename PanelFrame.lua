@@ -283,15 +283,15 @@ function SP:_UpdateEdgeGlows(p, side, isP2)
                 edge.glows[i] = g
             end
             g._m = m
-            -- bordure = couleur PERSONNALISÉE du module si définie, sinon palette générique
-            local c = GLOW_COLORS[((i - 1) % #GLOW_COLORS) + 1]
+            -- couleur de bordure selon le mode du module : auto (palette) / texte / fond / perso
             local app = SP.GetModuleAppearanceConfig and SP:GetModuleAppearanceConfig(m.name)
-            local bc = app and app.bgColor
-            local def = (SP.db.panel.moduleAppearance and SP.db.panel.moduleAppearance.bgColor) or { r = 0.12, g = 0.15, b = 0.20 }
-            if bc and (math.abs((bc.r or 0) - def.r) > 0.02 or math.abs((bc.g or 0) - def.g) > 0.02 or math.abs((bc.b or 0) - def.b) > 0.02) then
-                c = { bc.r, bc.g, bc.b }
-            end
-            g.tex:SetColorTexture(c[1], c[2], c[3], 0.9)
+            local mode = (app and app.glowMode) or "auto"
+            local c
+            if mode == "text" and app and app.textColor then c = { app.textColor.r, app.textColor.g, app.textColor.b }
+            elseif mode == "bg" and app and app.bgColor then c = { app.bgColor.r, app.bgColor.g, app.bgColor.b }
+            elseif mode == "custom" and app and app.glowColor then c = { app.glowColor.r, app.glowColor.g, app.glowColor.b }
+            else c = GLOW_COLORS[((i - 1) % #GLOW_COLORS) + 1] end
+            g.tex:SetColorTexture(c[1] or 0.3, c[2] or 0.6, c[3] or 1, 0.9)
             local top = f:GetTop()
             if top and uh and slidOff then
                 g:ClearAllPoints()

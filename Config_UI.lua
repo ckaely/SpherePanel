@@ -450,6 +450,22 @@ local function BuildModulePage(page, m)
         y = y - 50
     end
 
+    -- Bordure (mode individuel / comportement 2) : auto, = texte, = fond, ou perso
+    local app = SP.GetModuleAppearanceConfig and SP:GetModuleAppearanceConfig(m.name)
+    if app then
+        app.glowMode = app.glowMode or "auto"
+        app.glowColor = app.glowColor or { r = 0.29, g = 0.64, b = 1 }
+        y = SectionHeader(root, y, "Bordure quand réduit (mode individuel)")
+        MakeRadioRow(root, 16, y, { { "auto", "Auto" }, { "text", "= Texte" }, { "bg", "= Fond" }, { "custom", "Perso" } },
+            function() return app.glowMode end,
+            function(v) app.glowMode = v end)
+        y = y - 26
+        local sw = root:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        sw:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y - 2); sw:SetText("|cFFAAAAAACouleur perso :|r")
+        MakeColorSwatch(root, 120, y - 4, app.glowColor, false, function() app.glowMode = "custom" end)
+        y = y - 32
+    end
+
     local afterCond = BuildConditions(root, m, y)
     local bottom = afterCond
     if SPECIFIC[m.name] then bottom = SPECIFIC[m.name](root, afterCond, page) or afterCond end
@@ -806,6 +822,11 @@ local function CreateOptions()
     local nav = CreateFrame("Frame", nil, f)
     nav:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -34); nav:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 8); nav:SetWidth(150)
     local navbg = nav:CreateTexture(nil, "BACKGROUND"); navbg:SetAllPoints(nav); navbg:SetColorTexture(0, 0, 0, 0.3)
+    -- nav scrollable (conteneur clippé + chariot)
+    nav:SetClipsChildren(true)
+    local navInner = CreateFrame("Frame", nil, nav)
+    navInner:SetPoint("TOPLEFT", nav, "TOPLEFT", 0, 0); navInner:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
+    navInner:SetHeight(10)
     -- séparateur sous la barre de titre (respiration)
     local sep = f:CreateTexture(nil, "ARTWORK"); sep:SetHeight(1)
     sep:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -27); sep:SetPoint("TOPRIGHT", f, "TOPRIGHT", 0, -27)
@@ -831,7 +852,7 @@ local function CreateOptions()
     local y = -4
     for _, e in ipairs(entries) do
         local key, label = e[1], e[2]
-        local b = CreateFrame("Button", nil, nav); b:SetSize(144, 22); b:SetPoint("TOPLEFT", nav, "TOPLEFT", 3, y)
+        local b = CreateFrame("Button", nil, navInner); b:SetSize(136, 22); b:SetPoint("TOPLEFT", navInner, "TOPLEFT", 3, y)
         b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetPoint("LEFT", b, "LEFT", 8, 0); b.fs:SetText(label)
         local hl = b:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(b); hl:SetColorTexture(1, 1, 1, 0.08)
         b:SetScript("OnClick", function() f:ShowSection(key) end)
@@ -841,6 +862,50 @@ local function CreateOptions()
         if e[3] then BuildModulePage(page, e[3]) end
         y = y - 25
     end
+    navInner:SetHeight(-y + 6)
+
+    -- ===== chariot de défilement de la nav =====
+    local track = CreateFrame("Frame", nil, nav); track:SetWidth(5)
+    track:SetPoint("TOPRIGHT", nav, "TOPRIGHT", -1, -3); track:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -1, 3)
+    local tbg = track:CreateTexture(nil, "BACKGROUND"); tbg:SetAllPoints(track); tbg:SetColorTexture(1, 1, 1, 0.06)
+    local thumb = CreateFrame("Button", nil, track); thumb:SetWidth(5); thumb:SetPoint("TOP", track, "TOP", 0, 0)
+    local thtex = thumb:CreateTexture(nil, "ARTWORK"); thtex:SetAllPoints(thumb); thtex:SetColorTexture(0.29, 0.64, 1, 0.7)
+    nav._scroll = 0
+    local function applyScroll(s)
+        local vis = nav:GetHeight() or 1
+        local content = navInner:GetHeight()
+        local maxS = math.max(0, content - vis)
+        nav._scroll = math.min(maxS, math.max(0, s or 0))
+        navInner:ClearAllPoints()
+        navInner:SetPoint("TOPLEFT", nav, "TOPLEFT", 0, nav._scroll)
+        navInner:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, nav._scroll)
+        -- chariot
+        if content <= vis + 1 then track:Hide(); return end
+        track:Show()
+        local trackH = track:GetHeight() or 1
+        local th = math.max(24, trackH * vis / content)
+        thumb:SetHeight(th)
+        local frac = (maxS > 0) and (nav._scroll / maxS) or 0
+        thumb:ClearAllPoints(); thumb:SetPoint("TOP", track, "TOP", 0, -frac * (trackH - th))
+    end
+    nav:EnableMouseWheel(true)
+    nav:SetScript("OnMouseWheel", function(_, d) applyScroll((nav._scroll or 0) - d * 40) end)
+    thumb:RegisterForDrag("LeftButton")
+    thumb:SetScript("OnMouseDown", function(s)
+        local sc = nav:GetEffectiveScale(); local _, cy = GetCursorPosition()
+        s._grabOff = (s:GetTop() or 0) - cy / sc; s._drag = true
+    end)
+    thumb:SetScript("OnMouseUp", function(s) s._drag = false end)
+    thumb:SetScript("OnUpdate", function(s)
+        if not s._drag then return end
+        local sc = nav:GetEffectiveScale(); local _, cy = GetCursorPosition(); cy = cy / sc
+        local trackTop, trackH, th = track:GetTop() or 0, track:GetHeight() or 1, s:GetHeight() or 1
+        local off = math.max(0, math.min(trackH - th, trackTop - (cy + s._grabOff)))
+        local frac = off / math.max(1, trackH - th)
+        applyScroll(frac * math.max(0, navInner:GetHeight() - (nav:GetHeight() or 1)))
+    end)
+    f._navApplyScroll = applyScroll
+    C_Timer.After(0, function() applyScroll(0) end)
 
     -- pages fixes
     do
