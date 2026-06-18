@@ -45,6 +45,71 @@ local BOTTOM_PAIRS = {
     { "SHIRTSLOT", "TABARDSLOT" },           -- chemise / tabard
 }
 
+-- ============================================================
+-- Recommandation pour un slot VIDE : scan des sacs + score Pawn.
+-- ------------------------------------------------------------
+local BAGS_SCAN = { 0, 1, 2, 3, 4, 5 }
+local SLOT_NAMES = {
+    [1] = "Tête", [2] = "Cou", [3] = "Épaules", [4] = "Chemise", [5] = "Torse",
+    [6] = "Ceinture", [7] = "Jambes", [8] = "Pieds", [9] = "Poignets", [10] = "Mains",
+    [11] = "Bague", [12] = "Bague", [13] = "Bijou", [14] = "Bijou", [15] = "Cape",
+    [16] = "Main droite", [17] = "Main gauche", [19] = "Tabard",
+}
+
+-- Un item d'equipLoc donné peut-il aller dans ce slotId d'inventaire ?
+local function SlotAcceptsEquipLoc(slotId, equipLoc)
+    if not equipLoc or equipLoc == "" then return false end
+    if EQUIP_SLOT[equipLoc] == slotId then return true end
+    local multi = MULTI_SLOT[equipLoc]
+    if multi then for _, s in ipairs(multi) do if s == slotId then return true end end end
+    return false
+end
+
+-- Score Pawn d'un lien (max sur les échelles visibles) ; nil si Pawn absent/non prêt.
+local function PawnScore(link)
+    if not _G.PawnGetItemData then return nil end
+    local ok, data = pcall(_G.PawnGetItemData, link)
+    if not ok or not data or not data.Values then return nil end
+    local best
+    for _, v in ipairs(data.Values) do
+        local val = v and v[2]
+        if type(val) == "number" and (not best or val > best) then best = val end
+    end
+    return best
+end
+
+-- Renvoie une liste triée {link,bag,slot,ilvl,quality,icon,score} des candidats sac.
+local function ScanSlotCandidates(slotId)
+    local out = {}
+    if not (C_Container and C_Container.GetContainerNumSlots) then return out end
+    for _, bag in ipairs(BAGS_SCAN) do
+        local n = C_Container.GetContainerNumSlots(bag) or 0
+        for slot = 1, n do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            local link = info and info.hyperlink
+            if link then
+                local _, _, _, equipLoc = C_Item.GetItemInfoInstant(link)
+                if SlotAcceptsEquipLoc(slotId, equipLoc) and (not IsEquippableItem or IsEquippableItem(link)) then
+                    out[#out + 1] = {
+                        link = link, bag = bag, slot = slot,
+                        ilvl = GetDetailedItemLevelInfo(link) or 0,
+                        quality = info.quality or 1,
+                        icon = info.iconFileID,
+                        score = PawnScore(link),
+                    }
+                end
+            end
+        end
+    end
+    table.sort(out, function(a, b)
+        local sa, sb = a.score, b.score
+        if sa and sb and sa ~= sb then return sa > sb end
+        if (sa ~= nil) ~= (sb ~= nil) then return sa ~= nil end   -- items scorés Pawn d'abord
+        return (a.ilvl or 0) > (b.ilvl or 0)
+    end)
+    return out
+end
+
 local ENCH_TYPE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemEnchantmentPermanent
 local GEM_TYPE  = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.GemSocket
 local UP_PAT
@@ -275,9 +340,14 @@ local function MakeSlotButton(self, parent)
                 HandleModifiedItemClick(link)
             end
         else
-            if InCombatLockdown() then return end
-            if CursorHasItem() then EquipCursorItem(s.slotId); SP:PlayItemSound("drop")
-            else PickupInventoryItem(s.slotId); SP:PlayItemSound("pickup") end
+            if CursorHasItem() then
+                if not InCombatLockdown() then EquipCursorItem(s.slotId); SP:PlayItemSound("drop") end
+            elseif not GetInventoryItemLink("player", s.slotId) then
+                -- slot VIDE : propose les meilleurs items du sac (glow Pawn)
+                self:OpenSlotRecommend(s.slotId)
+            elseif not InCombatLockdown() then
+                PickupInventoryItem(s.slotId); SP:PlayItemSound("pickup")
+            end
         end
     end)
     self.slotBtns[#self.slotBtns + 1] = slot
@@ -552,6 +622,86 @@ function M:OpenIconPicker(set)
     refresh()
     pick:ClearAllPoints(); pick:SetPoint("TOPRIGHT", self.equipMgr, "TOPLEFT", -4, 0)
     pick:Show()
+end
+
+function M:_RecoRow(i)
+    local p = self.recoPanel
+    local r = p.rows[i]
+    if not r then
+        r = CreateFrame("Frame", nil, p); r:SetSize(176, 22)
+        r.stripe = r:CreateTexture(nil, "BACKGROUND"); r.stripe:SetAllPoints(r)
+        r.btn = CreateFrame("Button", nil, r); r.btn:SetSize(18, 18); r.btn:SetPoint("LEFT", r, "LEFT", 3, 0)
+        r.btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        r.icon = r.btn:CreateTexture(nil, "ARTWORK"); r.icon:SetAllPoints(r.btn); r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        r.glow = r.btn:CreateTexture(nil, "OVERLAY"); r.glow:SetPoint("TOPLEFT", r.btn, "TOPLEFT", -3, 3); r.glow:SetPoint("BOTTOMRIGHT", r.btn, "BOTTOMRIGHT", 3, -3)
+        r.glow:SetColorTexture(1, 0.82, 0.2, 0.6); r.glow:SetBlendMode("ADD"); r.glow:Hide()
+        r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); r.name:SetPoint("LEFT", r.btn, "RIGHT", 5, 0); r.name:SetPoint("RIGHT", r, "RIGHT", -34, 0); r.name:SetJustifyH("LEFT"); r.name:SetWordWrap(false)
+        r.ilvl = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); r.ilvl:SetPoint("RIGHT", r, "RIGHT", -4, 0); r.ilvl:SetJustifyH("RIGHT")
+        r.btn:SetScript("OnEnter", function(s) if s.link then SP:AnchorTooltipOutsidePanel(GameTooltip, s); GameTooltip:SetHyperlink(s.link); GameTooltip:Show() end end)
+        r.btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        p.rows[i] = r
+    end
+    return r
+end
+
+-- Panneau latéral : meilleurs items du sac pour un slot VIDE, glow sur la
+-- suggestion forte (score Pawn). S'ouvre côté opposé au gestionnaire de sets.
+function M:OpenSlotRecommend(slotId)
+    local p = self.recoPanel
+    if not p then
+        p = CreateFrame("Frame", nil, self.body)
+        p:SetFrameStrata("DIALOG")
+        p:SetFrameLevel((self.body:GetFrameLevel() or 1) + 12)
+        p:SetSize(186, 226)
+        p.bg = p:CreateTexture(nil, "BACKGROUND"); p.bg:SetAllPoints(p); p.bg:SetColorTexture(0.04, 0.05, 0.08, 0.96)
+        p.edge = p:CreateTexture(nil, "OVERLAY"); p.edge:SetPoint("TOPRIGHT"); p.edge:SetPoint("BOTTOMRIGHT"); p.edge:SetWidth(2); p.edge:SetColorTexture(1, 0.82, 0.2, 0.8)
+        p.title = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); p.title:SetPoint("TOPLEFT", p, "TOPLEFT", 8, -7); p.title:SetPoint("RIGHT", p, "RIGHT", -24, 0); p.title:SetJustifyH("LEFT"); p.title:SetWordWrap(false)
+        p.closeB = MakePanelButton(p, "X", 18, 16); p.closeB:SetPoint("TOPRIGHT", p, "TOPRIGHT", -4, -5); p.closeB:SetScript("OnClick", function() p:Hide() end)
+        p.rows = {}
+        p.empty = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); p.empty:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -30); p.empty:SetPoint("RIGHT", p, "RIGHT", -8, 0); p.empty:SetJustifyH("LEFT")
+        p:EnableMouseWheel(true)
+        self.recoPanel = p
+    end
+    p.slotId = slotId
+    p.title:SetText("Meilleurs : " .. (SLOT_NAMES[slotId] or ("slot " .. tostring(slotId))))
+    local cands = ScanSlotCandidates(slotId)
+    local VIS = 9
+    p.scroll = math.min(math.max(0, #cands - VIS), math.max(0, p.scroll or 0))
+    for i = 1, VIS do
+        local idx = (p.scroll or 0) + i
+        local cand = cands[idx]
+        local r = self:_RecoRow(i)
+        r:ClearAllPoints(); r:SetPoint("TOPLEFT", p, "TOPLEFT", 5, -28 - (i - 1) * 22); r:SetPoint("RIGHT", p, "RIGHT", -5, 0)
+        if cand then
+            r.stripe:SetColorTexture(0, 0, 0, (i % 2 == 0) and 0.22 or 0.10)
+            r.icon:SetTexture(cand.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            r.btn.link = cand.link
+            local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[cand.quality]
+            local nm = cand.link:match("%[(.-)%]") or "?"
+            r.name:SetText((qc and ("|cff%02x%02x%02x"):format(qc.r * 255, qc.g * 255, qc.b * 255) or "") .. nm .. "|r")
+            r.ilvl:SetText(tostring(cand.ilvl or 0))
+            r.ilvl:SetTextColor(qc and qc.r or 1, qc and qc.g or 0.82, qc and qc.b or 0)
+            -- glow = suggestion forte : 1ère ligne ET classée par Pawn
+            r.glow:SetShown(idx == 1 and cand.score ~= nil)
+            r.btn:SetScript("OnClick", function()
+                if not InCombatLockdown() and C_Container and C_Container.UseContainerItem then
+                    C_Container.UseContainerItem(cand.bag, cand.slot); SP:PlayItemSound("drop"); p:Hide()
+                end
+            end)
+            r:Show()
+        else
+            r:Hide()
+        end
+    end
+    p.empty:SetShown(#cands == 0)
+    if #cands == 0 then p.empty:SetText("Aucun objet équipable pour ce slot dans le sac.") end
+    p:SetScript("OnMouseWheel", function(_, d)
+        p.scroll = math.min(math.max(0, #cands - VIS), math.max(0, (p.scroll or 0) - d))
+        self:OpenSlotRecommend(slotId)
+    end)
+    -- côté opposé au gestionnaire de sets (qui s'ouvre à droite) → à gauche du module
+    p:ClearAllPoints(); p:SetPoint("TOPRIGHT", self.body, "TOPLEFT", -4, 0)
+    p:Show()
 end
 
 function M:RefreshEquipManager()
