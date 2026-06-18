@@ -85,6 +85,7 @@ SP.defaults = {
         DamageMeter    = { enabled = true,  collapsed = false, height = 150 },
         Raid           = { enabled = true,  collapsed = false, height = 180,
             hideBlizzard = true, separateBy = "group", showFlags = true,
+            showHP = true, barStyle = "square", showBorder = false, borderThickness = 1, bgAlpha = 0.58,
             barTexture = "bar_serenity.tga", fontFace = "Inter-Regular.ttf", fontSize = 11, fontFlags = "OUTLINE" },
         Auras          = { enabled = true,  collapsed = false, height = 90, tab = "all", iconSize = 26 },
         Bags           = { enabled = true,  collapsed = true,  height = 240,

@@ -961,9 +961,32 @@ local function RaidOptions(page, y)
         end,
         RaidBarChoicePreview)
     y = y - 40
+    y = SectionHeader(page, y, "Barres de vie")
+    MakeCheck(page, "Afficher le % de vie", 16, y,
+        function() return cfg.showHP ~= false end,
+        function(v) cfg.showHP = v and true or false; apply() end)
+    y = y - 30
+    local cl = page:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    cl:SetPoint("TOPLEFT", page, "TOPLEFT", 16, y - 6); cl:SetText("|cFFAAAAAAForme :|r")
+    MakeRadioRow(page, 80, y, { { "square", "Carré" }, { "rounded", "Arrondi" }, { "capsule", "Capsule" } },
+        function() return cfg.barStyle or "square" end,
+        function(v) cfg.barStyle = v; apply() end)
+    y = y - 30
+    MakeCheck(page, "Bordure", 16, y,
+        function() return cfg.showBorder == true end,
+        function(v) cfg.showBorder = v and true or false; apply() end)
+    y = y - 30
+    MakeSlider(page, "Épaisseur bordure", 16, y, 1, 4, 1,
+        function() return cfg.borderThickness or 1 end,
+        function(v) cfg.borderThickness = v; apply() end, function(v) return v .. " px" end)
+    y = y - 48
+    MakeSlider(page, "Transparence du fond", 16, y, 0, 1, 0.05,
+        function() return cfg.bgAlpha or 0.58 end,
+        function(v) cfg.bgAlpha = v; apply() end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
+    y = y - 50
     local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     note:SetPoint("TOPLEFT", page, "TOPLEFT", 16, y)
-    note:SetText("|cFF888888Clic gauche = cibler. Clic droit = menu unite. Les en-tetes affichent le groupe ou le role.|r")
+    note:SetText("|cFF888888Mort = tete de mort, hors ligne = prise debranchee. Clic gauche = cibler, clic droit = menu.|r")
     return y - 34
 end
 

@@ -186,6 +186,54 @@ local function RestoreBlizzardRaid()
     end
 end
 
+-- % de vie SANS arithmétique Lua sur les secrets (AP-01) : round-trip via FontString
+-- C-side (SetFormattedText accepte la valeur taintée) puis tonumber sur la string propre.
+local function SafeHPPercent(scratch, unit)
+    if not scratch then return nil end
+    local hp, mx
+    pcall(function() scratch:SetFormattedText("%d", UnitHealth(unit) or 0); hp = tonumber(scratch:GetText()) end)
+    pcall(function() scratch:SetFormattedText("%d", UnitHealthMax(unit) or 1); mx = tonumber(scratch:GetText()) end)
+    if hp and mx and mx > 0 then return math.floor(hp / mx * 100 + 0.5) end
+    return nil
+end
+
+-- Icônes Blizzard natives d'état d'unité (à confirmer en jeu — fallback gracieux si absentes).
+local SKULL_TEX     = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8"  -- tête de mort raid
+local OFFLINE_TEX   = "Interface\\CharacterFrame\\Disconnect-Icon"          -- prise débranchée
+local MASK_DIR   = "Interface\\AddOns\\SpherePanel\\Media\\"
+local STYLE_MASK = { rounded = MASK_DIR .. "bar_round_mask", capsule = MASK_DIR .. "bar_capsule_mask" }
+
+-- Applique fond (alpha), bordure (ON/OFF + épaisseur) et forme (masque arrondi/capsule).
+local function ApplyBarLook(b, cfg)
+    b.bg:SetColorTexture(0, 0, 0, cfg.bgAlpha or 0.58)
+    local edges = { b.borderT, b.borderB, b.borderL, b.borderR }
+    if cfg.showBorder == true then
+        local th = cfg.borderThickness or 1
+        for _, t in ipairs(edges) do t:Show(); t:SetColorTexture(0.72, 0.74, 0.80, 0.55) end
+        b.borderT:ClearAllPoints(); b.borderT:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0); b.borderT:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0); b.borderT:SetHeight(th)
+        b.borderB:ClearAllPoints(); b.borderB:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0); b.borderB:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0); b.borderB:SetHeight(th)
+        b.borderL:ClearAllPoints(); b.borderL:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0); b.borderL:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0); b.borderL:SetWidth(th)
+        b.borderR:ClearAllPoints(); b.borderR:SetPoint("TOPRIGHT", b, "TOPRIGHT", 0, 0); b.borderR:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, 0); b.borderR:SetWidth(th)
+    else
+        for _, t in ipairs(edges) do t:Hide() end
+    end
+    -- forme : masque appliqué une seule fois par changement de style (évite les doublons)
+    local style = cfg.barStyle or "square"
+    if b._appliedStyle ~= style then
+        b._appliedStyle = style
+        b.fill = b.status:GetStatusBarTexture() or b.fill
+        local targets = { b.bg, b.fill, b.shine, b.borderT, b.borderB, b.borderL, b.borderR }
+        local maskFile = STYLE_MASK[style]
+        if maskFile then
+            if not b._mask then b._mask = b:CreateMaskTexture(); b._mask:SetAllPoints(b) end
+            b._mask:SetTexture(maskFile, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+            for _, tx in ipairs(targets) do if tx and tx.AddMaskTexture then pcall(tx.AddMaskTexture, tx, b._mask) end end
+        elseif b._mask then
+            for _, tx in ipairs(targets) do if tx and tx.RemoveMaskTexture then pcall(tx.RemoveMaskTexture, tx, b._mask) end end
+        end
+    end
+end
+
 local function CreateBar(self, i)
     local b = CreateFrame("Button", "SpherePanelRaidUnit" .. i, self.body, "SecureUnitButtonTemplate")
     b:RegisterForClicks("AnyUp")
@@ -220,6 +268,16 @@ local function CreateBar(self, i)
     b.hp = b.textLayer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     b.hp:SetPoint("RIGHT", b.textLayer, "RIGHT", -4, 0)
     b.hp:SetJustifyH("RIGHT")
+    -- icône d'état (mort / hors ligne), prioritaire, à gauche du %
+    b.statusIcon = b.textLayer:CreateTexture(nil, "OVERLAY")
+    b.statusIcon:SetSize(15, 15)
+    b.statusIcon:SetPoint("RIGHT", b.hp, "LEFT", -3, 0)
+    b.statusIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    b.statusIcon:Hide()
+    -- bordure optionnelle (4 arêtes fines, masquables comme la barre)
+    b.borderT = b:CreateTexture(nil, "OVERLAY"); b.borderB = b:CreateTexture(nil, "OVERLAY")
+    b.borderL = b:CreateTexture(nil, "OVERLAY"); b.borderR = b:CreateTexture(nil, "OVERLAY")
+    for _, t in ipairs({ b.borderT, b.borderB, b.borderL, b.borderR }) do t:Hide() end
     b:SetScript("OnEnter", function(s)
         if s.unit and UnitExists(s.unit) then
             GameTooltip:SetOwner(s, "ANCHOR_RIGHT")
@@ -260,41 +318,49 @@ local function UpdateBar(self, b)
     local name, realm = UnitName(unit), select(2, UnitFullName(unit))
     local _, class = UnitClass(unit)
     local c = (class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]) or { r = 0.55, g = 0.60, b = 0.65 }
-    local pctText = ""
-    local okPct = pcall(function()
-        local maxHp = math.max(1, UnitHealthMax(unit) or 1)
-        local hp = UnitHealth(unit) or 0
-        local pct = math.max(0, math.min(1, hp / maxHp))
-        pctText = ("%d%%"):format(pct * 100)
-    end)
+    local connected = UnitIsConnected(unit)
+    local dead = UnitIsDeadOrGhost(unit)
+    local pct = SafeHPPercent(self._scratch, unit)
     b.status:SetStatusBarTexture(TexturePath(cfg))
-    b.status:SetStatusBarColor(c.r, c.g, c.b, UnitIsConnected(unit) and 0.92 or 0.38)
+    b.status:SetStatusBarColor(c.r, c.g, c.b, connected and 0.92 or 0.38)
     local okBar = pcall(function()
         b.status:SetMinMaxValues(0, UnitHealthMax(unit) or 1)
         b.status:SetValue(UnitHealth(unit) or 0)
     end)
     if not okBar then
-        b.status:SetMinMaxValues(0, 1)
-        b.status:SetValue(1)
-        b.status:SetStatusBarColor(c.r, c.g, c.b, UnitIsConnected(unit) and 0.55 or 0.28)
+        b.status:SetMinMaxValues(0, 1); b.status:SetValue(1)
+        b.status:SetStatusBarColor(c.r, c.g, c.b, connected and 0.55 or 0.28)
     end
+    ApplyBarLook(b, cfg)
     b.role:SetText(ROLE_ICON[UnitRole(unit)] or "")
     b.flag:SetShown(cfg.showFlags ~= false)
     if cfg.showFlags ~= false then b.flag:SetTexture(FlagForUnit(unit)) end
-    if UnitIsDeadOrGhost(unit) then
-        b.name:SetText("|cFFAAAAAA" .. (name or unit) .. " mort|r")
-    elseif not UnitIsConnected(unit) then
-        b.name:SetText("|cFF777777" .. (name or unit) .. " hors ligne|r")
+    -- état prioritaire : mort/fantôme > hors ligne > normal (icône, plus de suffixe texte)
+    if dead then
+        b.statusIcon:SetTexture(SKULL_TEX); b.statusIcon:Show()
+        b.name:SetText("|cFFB0B0B0" .. (name or unit) .. "|r")
+        b.status:SetAlpha(0.55)
+    elseif not connected then
+        b.statusIcon:SetTexture(OFFLINE_TEX); b.statusIcon:Show()
+        b.name:SetText("|cFF888888" .. (name or unit) .. "|r")
+        b.status:SetAlpha(0.45)
     else
+        b.statusIcon:Hide()
         b.name:SetText(name or unit)
+        b.status:SetAlpha(1)
     end
-    b.hp:SetText(okPct and pctText or "")
+    -- % de vie (optionnel) ; masqué si mort ou état HP indispo
+    if cfg.showHP == false or dead or not pct then b.hp:SetText("")
+    else b.hp:SetText(pct .. "%") end
     b:Show()
 end
 
 function M:Init(body)
     self.body = body
     self.bars, self.seps, self.unitToBar = {}, {}, {}
+    -- FontString jetable (frame cachée) pour extraire le % HP sans toucher aux secrets
+    self._scratchFrame = CreateFrame("Frame"); self._scratchFrame:Hide()
+    self._scratch = self._scratchFrame:CreateFontString(nil, "BACKGROUND", "GameFontNormal")
     self.emptyText = body:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     self.emptyText:SetPoint("TOP", body, "TOP", 0, -8)
     self.emptyText:SetText("Hors groupe")
