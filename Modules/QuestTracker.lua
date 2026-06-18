@@ -9,12 +9,15 @@ local M = {
     name          = "QuestTracker",
     label         = "Quêtes",
     defaultHeight = 300,
+    headerHeight  = 38,
 }
 
 local QUEST_EVENTS = {
     "QUEST_LOG_UPDATE", "QUEST_WATCH_LIST_CHANGED", "QUEST_ACCEPTED",
     "QUEST_REMOVED", "QUEST_TURNED_IN", "UNIT_QUEST_LOG_CHANGED",
     "SUPER_TRACKING_CHANGED", "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD",
+    "TRACKED_ACHIEVEMENT_UPDATE", "TRACKED_ACHIEVEMENT_LIST_CHANGED",
+    "ACHIEVEMENT_EARNED", "CRITERIA_UPDATE", "CONTENT_TRACKING_UPDATE",
 }
 
 local TOOLBAR_H = 20
@@ -31,21 +34,22 @@ local FILTERS = {
     { key = "pvp",        tip = "JcJ",               tex = "Interface\\Icons\\Achievement_PVP_A_A" },
     { key = "account",    tip = "Compte / Bataillon", tex = "Interface\\FriendsFrame\\UI-Toast-FriendOnlineIcon" },
     { key = "worldquest", tip = "Quêtes de monde",   tex = "Interface\\Icons\\INV_Misc_Map_01" },
+    { key = "achievement", tip = "Hauts faits",       tex = "Interface\\Icons\\Achievement_General" },
 }
 
 -- Couleurs de titre par catégorie (hex sans |cFF).
 local CAT_COLOR = {
     classic = "FFD200", daily = "3FC7EB", weekly = "A335EE", campaign = "E6A02C",
-    dungeon = "FF8000", raid = "FF4040", pvp = "FFD200", account = "FFD200", worldquest = "33CCFF",
+    dungeon = "FF8000", raid = "FF4040", pvp = "FFD200", account = "FFD200", worldquest = "33CCFF", achievement = "B389FF",
 }
 local PVP_ICON     = "|TInterface\\Icons\\Achievement_PVP_A_A:13:13|t "
 local ACCOUNT_ICON = "|TInterface\\FriendsFrame\\UI-Toast-FriendOnlineIcon:13:13|t "
 
 -- ordre + libellé des sections (séparateurs visuels)
-local CAT_ORDER = { "campaign", "worldquest", "weekly", "daily", "dungeon", "raid", "pvp", "account", "classic" }
+local CAT_ORDER = { "campaign", "worldquest", "achievement", "weekly", "daily", "dungeon", "raid", "pvp", "account", "classic" }
 local CAT_LABEL = {
     campaign = "Campagne", worldquest = "Expéditions", weekly = "Hebdomadaire", daily = "Journalières",
-    dungeon = "Donjon", raid = "Raid", pvp = "JcJ", account = "Compte", classic = "Quêtes",
+    dungeon = "Donjon", raid = "Raid", pvp = "JcJ", account = "Compte", classic = "Quêtes", achievement = "Hauts faits",
 }
 
 local function safeBool(fn, ...)
@@ -91,6 +95,15 @@ local function ApplyIcon(tex, item)
     tex:SetTexture(item.tex or "Interface\\Icons\\INV_Misc_QuestionMark")
 end
 
+local function EnsureFilters(self)
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.filters = cfg.filters or {}
+    for _, item in ipairs(FILTERS) do
+        if cfg.filters[item.key] == nil then cfg.filters[item.key] = true end
+    end
+    return cfg.filters
+end
+
 -- ------------------------------------------------------------
 -- Lignes de quête (pool)
 -- ------------------------------------------------------------
@@ -124,7 +137,8 @@ local function CreateEntry(self)
     row.title:SetScript("OnClick", function(_, button) self:OnTitleClick(row, button) end)
     row.title:SetScript("OnEnter", function() row.hl:Show() end)
     row.title:SetScript("OnLeave", function()
-        if self._pinnedHL ~= row.questID then row.hl:Hide() end
+        local pinKey = row.achievementID and ("a" .. tostring(row.achievementID)) or row.questID
+        if self._pinnedHL ~= pinKey then row.hl:Hide() end
     end)
 
     row.objs = {}
@@ -135,6 +149,7 @@ local function GetObjLine(row, idx)
     local fs = row.objs[idx]
     if not fs then
         fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        fs._spFontRole = "secondary"
         fs:SetJustifyH("LEFT")
         fs:SetWordWrap(true)
         row.objs[idx] = fs
@@ -144,6 +159,7 @@ end
 
 local function RenderRow(self, row, qid, cat, isPvp, isAccount)
     row.questID = qid
+    row.achievementID = nil
 
     local title
     local okt, t = pcall(C_QuestLog.GetTitleForQuestID, qid)
@@ -237,6 +253,85 @@ local function RenderRow(self, row, qid, cat, isPvp, isAccount)
     return y
 end
 
+local function RenderAchievementRow(self, row, achievementID)
+    row.questID = nil
+    row.achievementID = achievementID
+
+    local id, name, points, completed, month, day, year, description, flags, icon, rewardText
+    if GetAchievementInfo then
+        local ok
+        ok, id, name, points, completed, month, day, year, description, flags, icon, rewardText =
+            pcall(GetAchievementInfo, achievementID)
+        if not ok then id, name, points, completed, description, icon = nil, nil, nil, nil, nil, nil end
+    end
+    name = name or ("Haut fait " .. tostring(achievementID))
+    local color = completed and "40FF40" or CAT_COLOR.achievement
+    local pts = (type(points) == "number" and points > 0) and (" |cFFFFD200(" .. points .. ")|r") or ""
+    row.title.text:SetText("|T" .. (icon or "Interface\\Icons\\Achievement_General") .. ":13:13|t |cFF" .. color .. name .. "|r" .. pts)
+
+    if row.watch.hasIcon then
+        pcall(row.watch.icon.SetAtlas, row.watch.icon, "common-icon-redx", true)
+        row.watch.icon:Show()
+        row.watch.icon:SetDesaturated(false)
+        row.watch.icon:SetAlpha(0.85)
+        row.watch.text:SetText("")
+    else
+        row.watch.icon:Hide()
+        row.watch.text:SetText("|cFFFF5555x|r")
+    end
+    if row.hl then
+        row.hl:SetColorTexture(0.55, 0.25, 1, 0.12)
+        row.hl:SetShown(self._pinnedHL == ("a" .. tostring(achievementID)))
+    end
+
+    local y, oi = 15, 0
+    if type(description) == "string" and description ~= "" then
+        oi = oi + 1
+        local fs = GetObjLine(row, oi)
+        fs:SetText("|cFFBBBBBB- " .. description .. "|r")
+        fs:ClearAllPoints()
+        fs:SetPoint("TOPLEFT", row, "TOPLEFT", 20, -y)
+        fs:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        fs:Show()
+        local sh = fs:GetStringHeight()
+        y = y + ((type(sh) == "number" and sh > 8) and sh or 11) + 2
+    end
+
+    local numCriteria = 0
+    if GetAchievementNumCriteria then
+        local ok, n = pcall(GetAchievementNumCriteria, achievementID)
+        if ok and type(n) == "number" then numCriteria = n end
+    end
+    for i = 1, math.min(numCriteria, 8) do
+        local cName, cType, cDone, qty, reqQty, charName, cFlags, assetID, qtyText
+        local ok = false
+        if GetAchievementCriteriaInfo then
+            ok, cName, cType, cDone, qty, reqQty, charName, cFlags, assetID, qtyText =
+                pcall(GetAchievementCriteriaInfo, achievementID, i)
+        end
+        if ok and type(cName) == "string" and cName ~= "" then
+            oi = oi + 1
+            local fs = GetObjLine(row, oi)
+            local progress = ""
+            if type(qtyText) == "string" and qtyText ~= "" then
+                progress = " " .. qtyText
+            elseif type(reqQty) == "number" and reqQty > 1 and type(qty) == "number" then
+                progress = (" %d/%d"):format(qty, reqQty)
+            end
+            fs:SetText((cDone and "|cFF40FF40- " or "|cFFCCCCCC- ") .. cName .. progress .. "|r")
+            fs:ClearAllPoints()
+            fs:SetPoint("TOPLEFT", row, "TOPLEFT", 20, -y)
+            fs:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+            fs:Show()
+            local sh = fs:GetStringHeight()
+            y = y + ((type(sh) == "number" and sh > 8) and sh or 11) + 2
+        end
+    end
+    for j = oi + 1, #row.objs do if row.objs[j] then row.objs[j]:Hide() end end
+    row:SetHeight(math.max(15, y))
+    return math.max(15, y)
+end
+
 -- ============================================================
 -- Interface module
 -- ============================================================
@@ -244,6 +339,7 @@ function M:Init(body)
     self.body = body
     self._pool = {}
     self._usedCount = 0
+    EnsureFilters(self)
 
     -- Toolbar de filtres : DANS LE BANDEAU (header), à gauche du cadenas
     local HFBTN = 15
@@ -251,7 +347,11 @@ function M:Init(body)
     self.toolbar:SetHeight(HFBTN)
     self.toolbar:SetWidth(#FILTERS * (HFBTN + 1))
     if self.header then
-        self.toolbar:SetPoint("RIGHT", self.lock or self.header, self.lock and "LEFT" or "RIGHT", -6, 0)
+        if self.labelFS then
+            self.labelFS:ClearAllPoints()
+            self.labelFS:SetPoint("TOPLEFT", self.header, "TOPLEFT", 8, -3)
+        end
+        self.toolbar:SetPoint("BOTTOMLEFT", self.header, "BOTTOMLEFT", 8, 3)
         self.toolbar:SetFrameLevel(self.header:GetFrameLevel() + 3)
     else
         self.toolbar:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
@@ -272,7 +372,7 @@ function M:Init(body)
         end)
         b:SetScript("OnEnter", function(s)
             SP:AnchorTooltipOutsidePanel(GameTooltip, s)
-            local f = SP:GetModuleConfig(self.name).filters
+            local f = EnsureFilters(self)
             GameTooltip:SetText(s.tip .. (f[s.fkey] and " |cFF40FF40(affiché)|r" or " |cFFFF5555(masqué)|r"))
             GameTooltip:Show()
         end)
@@ -284,7 +384,9 @@ function M:Init(body)
     -- compteur (suffixe) déplacé à gauche, après le label, pour libérer le bandeau droit
     if self.suffixFS and self.labelFS then
         self.suffixFS:ClearAllPoints()
-        self.suffixFS:SetPoint("LEFT", self.labelFS, "RIGHT", 8, 0)
+        self.suffixFS:SetPoint("TOPLEFT", self.labelFS, "TOPRIGHT", 10, -1)
+        self.suffixFS:SetPoint("TOPRIGHT", self.lock or self.header, "TOPLEFT", -6, -1)
+        self.suffixFS:SetJustifyH("LEFT")
     end
 
     -- Conteneur de la liste : tout en haut du corps (la toolbar a quitté le corps)
@@ -303,7 +405,7 @@ function M:Init(body)
 
     self.emptyText = self.list:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     self.emptyText:SetPoint("TOP", self.list, "TOP", 0, -8)
-    self.emptyText:SetText("Aucune quête suivie")
+    self.emptyText:SetText("Aucune quete ou haut fait suivi")
     self.emptyText:Hide()
 
     self.ev = CreateFrame("Frame")
@@ -319,6 +421,7 @@ end
 
 function M:Enable()
     self._enabled = true
+    EnsureFilters(self)
     self:PrewarmPool(30)
     self:HideBlizzard()
     for _, e in ipairs(QUEST_EVENTS) do pcall(self.ev.RegisterEvent, self.ev, e) end
@@ -341,7 +444,7 @@ function M:OnResize(w, h) self:RequestRefresh() end
 -- Filtres
 -- ------------------------------------------------------------
 function M:ToggleFilter(key)
-    local f = SP:GetModuleConfig(self.name).filters
+    local f = EnsureFilters(self)
     f[key] = not f[key]
     self._isolated = nil   -- un toggle manuel sort du mode isolé
     self:UpdateFilterVisuals()
@@ -350,7 +453,7 @@ end
 
 -- Clic droit : n'afficher QUE cette catégorie ; reclic = restaure l'état précédent.
 function M:IsolateFilter(key)
-    local f = SP:GetModuleConfig(self.name).filters
+    local f = EnsureFilters(self)
     if self._isolated == key then
         if self._savedFilters then for k, v in pairs(self._savedFilters) do f[k] = v end end
         self._isolated, self._savedFilters = nil, nil
@@ -367,7 +470,7 @@ function M:IsolateFilter(key)
 end
 
 function M:UpdateFilterVisuals()
-    local f = SP:GetModuleConfig(self.name).filters
+    local f = EnsureFilters(self)
     for key, b in pairs(self.filterBtns) do
         local active = f[key]
         b.icon:SetDesaturated(not active)
@@ -484,15 +587,49 @@ function M:GetTrackedQuestIDs()
 end
 
 -- Compteur bandeau : quêtes AFFICHÉES (suivies) / total du journal.
+function M:GetTrackedAchievementIDs()
+    local ids, seen = {}, {}
+    local function add(id)
+        id = tonumber(id)
+        if id and id > 0 and not seen[id] then
+            seen[id] = true
+            ids[#ids + 1] = id
+        end
+    end
+    if C_ContentTracking and C_ContentTracking.GetTrackedIDs and Enum and Enum.ContentTrackingType and Enum.ContentTrackingType.Achievement then
+        local ok, tracked = pcall(C_ContentTracking.GetTrackedIDs, Enum.ContentTrackingType.Achievement)
+        if ok and type(tracked) == "table" then
+            for _, id in ipairs(tracked) do add(id) end
+        end
+    end
+    if #ids == 0 and type(GetTrackedAchievements) == "function" then
+        local results = { pcall(GetTrackedAchievements) }
+        local ok = table.remove(results, 1)
+        if ok then
+            if type(results[1]) == "table" then
+                for _, id in ipairs(results[1]) do add(id) end
+            else
+                for _, id in ipairs(results) do add(id) end
+            end
+        end
+    end
+    return ids
+end
+
 function M:UpdateCounter()
     local shown = #self:GetTrackedQuestIDs()
+    local achievements = #self:GetTrackedAchievementIDs()
     local total = 0
     local n = C_QuestLog.GetNumQuestLogEntries() or 0
     for i = 1, n do
         local info = C_QuestLog.GetInfo(i)
         if info and not info.isHeader then total = total + 1 end
     end
-    SP:SetModuleHeaderText(self, ("%d / %d"):format(shown, total))
+    if achievements > 0 then
+        SP:SetModuleHeaderText(self, ("%d / %d  HF:%d"):format(shown, total, achievements))
+    else
+        SP:SetModuleHeaderText(self, ("%d / %d"):format(shown, total))
+    end
 end
 
 -- ============================================================
@@ -511,8 +648,9 @@ function M:Refresh()
     self:ReleaseAll()
     self:UpdateCounter()
 
-    local filters = SP:GetModuleConfig(self.name).filters
+    local filters = EnsureFilters(self)
     local ids = self:GetTrackedQuestIDs()
+    local achievements = self:GetTrackedAchievementIDs()
     self._sepUsed = 0
 
     -- regroupe par catégorie
@@ -522,6 +660,12 @@ function M:Refresh()
         if filters[cat] ~= false then
             buckets[cat] = buckets[cat] or {}
             table.insert(buckets[cat], { qid = qid, pvp = isPvp, acc = isAccount })
+        end
+    end
+    if filters.achievement ~= false then
+        for _, achievementID in ipairs(achievements) do
+            buckets.achievement = buckets.achievement or {}
+            table.insert(buckets.achievement, { achievementID = achievementID })
         end
     end
 
@@ -560,7 +704,12 @@ function M:Refresh()
                 row:ClearAllPoints()
                 row:SetPoint("TOPLEFT",  self.list, "TOPLEFT",  2, -(y - self.scroll))
                 row:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", -2, -(y - self.scroll))
-                local ok, h = pcall(RenderRow, self, row, e.qid, cat, e.pvp, e.acc)
+                local ok, h
+                if cat == "achievement" then
+                    ok, h = pcall(RenderAchievementRow, self, row, e.achievementID)
+                else
+                    ok, h = pcall(RenderRow, self, row, e.qid, cat, e.pvp, e.acc)
+                end
                 if not ok or type(h) ~= "number" then h = 15 end
                 row:Show()
                 y = y + h + 4
@@ -581,6 +730,20 @@ end
 -- Actions
 -- ============================================================
 function M:OnTitleClick(row, button)
+    local achievementID = row.achievementID
+    if achievementID then
+        if button == "RightButton" then
+            local key = "a" .. tostring(achievementID)
+            self._pinnedHL = (self._pinnedHL == key) and nil or key
+            self:RequestRefresh()
+            return
+        end
+        if AchievementFrame_LoadUI then pcall(AchievementFrame_LoadUI) end
+        if ToggleAchievementFrame and (not AchievementFrame or not AchievementFrame:IsShown()) then pcall(ToggleAchievementFrame) end
+        if AchievementFrame_SelectAchievement then pcall(AchievementFrame_SelectAchievement, achievementID) end
+        return
+    end
+
     local qid = row.questID
     if not qid then return end
     if button == "RightButton" then
@@ -601,6 +764,18 @@ function M:OnTitleClick(row, button)
 end
 
 function M:OnWatchClick(row)
+    local achievementID = row.achievementID
+    if achievementID then
+        if C_ContentTracking and C_ContentTracking.StopTracking and Enum and Enum.ContentTrackingType and Enum.ContentTrackingType.Achievement then
+            local ok = pcall(C_ContentTracking.StopTracking, Enum.ContentTrackingType.Achievement, achievementID, Enum.ContentTrackingStopType and Enum.ContentTrackingStopType.Manual or 1)
+            if not ok then pcall(C_ContentTracking.StopTracking, Enum.ContentTrackingType.Achievement, achievementID) end
+        elseif type(RemoveTrackedAchievement) == "function" then
+            pcall(RemoveTrackedAchievement, achievementID)
+        end
+        self:RequestRefresh()
+        return
+    end
+
     local qid = row.questID
     if not qid then return end
     local watched = false

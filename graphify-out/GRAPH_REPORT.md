@@ -1,16 +1,16 @@
-# Graph Report - SpherePanel  (2026-06-17)
+# Graph Report - SpherePanel  (2026-06-18)
 
 ## Corpus Check
-- 30 files · ~46,902 words
+- 30 files · ~123,350 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 427 nodes · 518 edges · 30 communities (24 shown, 6 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.8)
+- 528 nodes · 693 edges · 35 communities (27 shown, 8 thin omitted)
+- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 2 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `bf6dc6eb`
+- Built from commit: `ba1ad41c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -20,7 +20,6 @@
 - [[_COMMUNITY_Community 2|Community 2]]
 - [[_COMMUNITY_Community 3|Community 3]]
 - [[_COMMUNITY_Community 4|Community 4]]
-- [[_COMMUNITY_Community 5|Community 5]]
 - [[_COMMUNITY_Community 6|Community 6]]
 - [[_COMMUNITY_Community 7|Community 7]]
 - [[_COMMUNITY_Community 8|Community 8]]
@@ -40,27 +39,34 @@
 - [[_COMMUNITY_Community 24|Community 24]]
 - [[_COMMUNITY_Community 27|Community 27]]
 - [[_COMMUNITY_Community 28|Community 28]]
+- [[_COMMUNITY_Community 30|Community 30]]
+- [[_COMMUNITY_Community 31|Community 31]]
+- [[_COMMUNITY_Community 32|Community 32]]
+- [[_COMMUNITY_Community 33|Community 33]]
+- [[_COMMUNITY_Community 34|Community 34]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `MakeCheck()` - 11 edges
-2. `MakeSlider()` - 8 edges
-3. `M:Refresh()` - 7 edges
-4. `BuildModulePage()` - 6 edges
-5. `BuildApparence()` - 6 edges
-6. `CreateOptions()` - 6 edges
-7. `M:Refresh()` - 5 edges
-8. `AS()` - 5 edges
-9. `hasAS()` - 5 edges
-10. `M:Refresh()` - 5 edges
+1. `MakeCheck()` - 13 edges
+2. `BuildModulePage()` - 9 edges
+3. `M:Rebuild()` - 9 edges
+4. `MakeSlider()` - 8 edges
+5. `BuildApparence()` - 7 edges
+6. `M:Refresh()` - 7 edges
+7. `EnsureFilters()` - 7 edges
+8. `refresh()` - 6 edges
+9. `BuildGeneral()` - 6 edges
+10. `CreateOptions()` - 6 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `BagsOptions()` --calls--> `Apply()`  [INFERRED]
+  Config_UI.lua → Modules/SquareMap.lua
+- `RaidOptions()` --calls--> `Apply()`  [INFERRED]
   Config_UI.lua → Modules/SquareMap.lua
 
 ## Import Cycles
 - None detected.
 
-## Communities (30 total, 6 thin omitted)
+## Communities (35 total, 8 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.09
@@ -68,23 +74,19 @@ Nodes (8): ApplyIcon(), Blacklisted(), GrabIcon(), HasClick(), M:BuildCustomMenu
 
 ### Community 1 - "Community 1"
 Cohesion: 0.10
-Nodes (10): ApplyIcon(), Classify(), CreateEntry(), GetObjLine(), M:AcquireEntry(), M:Init(), M:PrewarmPool(), M:Refresh() (+2 more)
+Nodes (16): ApplyIcon(), Classify(), CreateEntry(), EnsureFilters(), GetObjLine(), M:AcquireEntry(), M:Enable(), M:Init() (+8 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.06
-Nodes (5): clamp(), copyColor(), SP:ApplyModuleAppearance(), SP:GetModuleAppearanceConfig(), SP:ResetModuleAppearance()
+Nodes (6): ApplyFontsRecursive(), clamp(), copyColor(), SP:ApplyModuleAppearance(), SP:GetModuleAppearanceConfig(), SP:ResetModuleAppearance()
 
 ### Community 3 - "Community 3"
-Cohesion: 0.08
-Nodes (18): BagCfg(), ClassKey(), CreateCurrencyRow(), CreateHeader(), CreateSlot(), CreateSub(), Ct(), GroupLabel() (+10 more)
+Cohesion: 0.06
+Nodes (19): BagCfg(), ClassKey(), CreateCurrencyRow(), CreateHeader(), CreateSlot(), CreateSub(), Ct(), GroupLabel() (+11 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.24
-Nodes (18): AurasOptions(), BagsOptions(), BuildApparence(), BuildComportement(), BuildConditions(), BuildGeneral(), BuildModulePage(), CharacterOptions() (+10 more)
-
-### Community 5 - "Community 5"
-Cohesion: 0.09
-Nodes (8): IsTradeChannel(), LinkifyURLs(), M:AddMessage(), M:Init(), M:PrimaryKey(), M:RefreshSocial(), NormType(), socialClassColor()
+Cohesion: 0.18
+Nodes (27): AurasOptions(), BagsOptions(), BuildApparence(), BuildComportement(), BuildConditions(), BuildGeneral(), BuildModulePage(), CharacterOptions() (+19 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.11
@@ -115,8 +117,12 @@ Cohesion: 0.23
 Nodes (5): Apply(), M:Enable(), M:OnResize(), SaveMapState(), TargetSide()
 
 ### Community 13 - "Community 13"
-Cohesion: 0.31
-Nodes (6): BuildUnitList(), CreateBar(), M:Init(), M:Prewarm(), M:Rebuild(), UpdateBar()
+Cohesion: 0.18
+Nodes (21): BuildUnits(), CleanRealm(), CreateBar(), CreateSeparator(), FlagForUnit(), GroupIndex(), HideBlizzardRaid(), M:AcquireSep() (+13 more)
+
+### Community 15 - "Community 15"
+Cohesion: 0.13
+Nodes (18): Clamp(), FormatClock(), FormatRemaining(), GetRow(), LowerText(), M:CollectProgram(), M:CollectZoneEvents(), M:Refresh() (+10 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.28
@@ -131,30 +137,38 @@ Cohesion: 0.18
 Nodes (3): fmtTime(), M:Refresh(), M:RenderMythicPlus()
 
 ### Community 27 - "Community 27"
-Cohesion: 0.10
-Nodes (10): altClassHex(), altRatingHex(), GetAltChars(), M:_Cell(), M:RefreshAlts(), M:RefreshGear(), M:RefreshStats(), MakeSlotButton() (+2 more)
+Cohesion: 0.08
+Nodes (21): altClassHex(), altRatingHex(), AuditSlot(), DeleteEquipSet(), GetAltChars(), GetEquipmentSets(), M:_Cell(), M:CreateEquipManager() (+13 more)
 
 ### Community 28 - "Community 28"
 Cohesion: 0.18
 Nodes (5): AS(), hasAS(), M:RefreshAlertes(), M:RefreshPerf(), M:RefreshTop()
 
+### Community 30 - "Community 30"
+Cohesion: 0.67
+Nodes (3): CleanName(), M:ReplyFromToast(), M:ShowInstantPopup()
+
+### Community 31 - "Community 31"
+Cohesion: 0.67
+Nodes (3): IsTradeChannel(), M:DirectColor(), M:PrimaryKey()
+
 ## Knowledge Gaps
-- **6 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `BagsOptions()` connect `Community 4` to `Community 12`?**
-  _High betweenness centrality (0.003) - this node is a cross-community bridge._
 - **Why does `Apply()` connect `Community 12` to `Community 4`?**
   _High betweenness centrality (0.002) - this node is a cross-community bridge._
+- **Why does `BagsOptions()` connect `Community 4` to `Community 12`?**
+  _High betweenness centrality (0.001) - this node is a cross-community bridge._
+- **Why does `RaidOptions()` connect `Community 4` to `Community 12`?**
+  _High betweenness centrality (0.001) - this node is a cross-community bridge._
 - **Should `Community 0` be split into smaller, more focused modules?**
   _Cohesion score 0.09230769230769231 - nodes in this community are weakly interconnected._
 - **Should `Community 1` be split into smaller, more focused modules?**
-  _Cohesion score 0.09538461538461539 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.10098522167487685 - nodes in this community are weakly interconnected._
 - **Should `Community 2` be split into smaller, more focused modules?**
-  _Cohesion score 0.06386554621848739 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05641025641025641 - nodes in this community are weakly interconnected._
 - **Should `Community 3` be split into smaller, more focused modules?**
-  _Cohesion score 0.0846774193548387 - nodes in this community are weakly interconnected._
-- **Should `Community 5` be split into smaller, more focused modules?**
-  _Cohesion score 0.08923076923076922 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05813953488372093 - nodes in this community are weakly interconnected._

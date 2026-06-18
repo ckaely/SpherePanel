@@ -53,6 +53,39 @@ do
     if s then UP_PAT = s:gsub("%%d", "%%s"):format("(.+)", "(%d+)", "(%d+)") end
 end
 
+local function ShortEnchantText(text)
+    local short = tostring(text or ""):gsub("|A:.-|a", ""):gsub("|T.-|t", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    for _ = 1, 3 do short = short:gsub("^%s*[\194-\244][\128-\191]*%s*", "") end
+    local afterColon = short:match(".*[:：]%s*(.+)$")
+    if afterColon then short = afterColon end
+    short = short:gsub("^Enchantement%s+d['’][^%-–—:]+%s*[%-%–%—:]%s*", "")
+    short = short:gsub("^Enchantement%s+de%s+[^%-–—:]+%s*[%-%–%—:]%s*", "")
+    short = short:gsub("^Enchantement%s+du%s+[^%-–—:]+%s*[%-%–%—:]%s*", "")
+    short = short:gsub("^Enchantement%s+des%s+[^%-–—:]+%s*[%-%–%—:]%s*", "")
+    short = short:gsub("^Enchantement%s+pour%s+[^%-–—:]+%s*[%-%–%—:]%s*", "")
+    short = short:gsub("^Enchantement%s+[^%-–—:]+%s*[%-%–%—:]%s*", "")
+    return short:gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function MakePanelButton(parent, text, w, h)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(w or 54, h or 18)
+    b.bg = b:CreateTexture(nil, "BACKGROUND")
+    b.bg:SetAllPoints(b)
+    b.bg:SetColorTexture(0.10, 0.12, 0.18, 0.82)
+    b.line = b:CreateTexture(nil, "OVERLAY")
+    b.line:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 1, 0)
+    b.line:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -1, 0)
+    b.line:SetHeight(1)
+    b.line:SetColorTexture(0.29, 0.64, 1, 0.65)
+    b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    b.fs:SetAllPoints(b)
+    b.fs:SetText(text or "")
+    b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    b.SetText = function(self, v) self.fs:SetText(v or "") end
+    return b
+end
+
 -- ============================================================
 -- Audit d'un emplacement (iLvl, upgrade, enchant, gemmes) — méthode tooltip structurée.
 local function AuditSlot(slotId)
@@ -78,12 +111,14 @@ local function AuditSlot(slotId)
             if ENCH_TYPE and line.type == ENCH_TYPE then
                 a.enchanted = true
                 a.enchantText = lt
+                a.enchantAtlas = lt and lt:match("|A:([^:|]+)")
+                a.enchantIcon = lt and lt:match("|T([^:|]+)")
                 -- nom court : retire le préfixe "Enchanté : " et un éventuel atlas
-                local short = lt:gsub("|A:.-|a", "")
+                local short = lt:gsub("|A:.-|a", ""):gsub("|T.-|t", "")
                 -- garde UNIQUEMENT le nom : retire tout préfixe "Xxx : " (Enchantement d'arme/de cape/Enchanté…)
                 local afterColon = short:match(".*[:：]%s*(.+)$")
                 if afterColon then short = afterColon end
-                a.enchShort = short:gsub("^%s+", ""):gsub("%s+$", "")
+                a.enchShort = ShortEnchantText(lt)
             end
             if GEM_TYPE and line.type == GEM_TYPE then
                 a.sockets = a.sockets + 1
@@ -157,7 +192,7 @@ function M:Init(body)
     self.sumBot:SetPoint("TOPLEFT", self.sumTop, "BOTTOMLEFT", 0, -2)
     self.sumBot:SetPoint("RIGHT", self.sumFrame, "RIGHT", -6, 0); self.sumBot:SetJustifyH("LEFT")
 
-    self.charBtn = CreateFrame("Button", nil, self.sumFrame, "UIPanelButtonTemplate")
+    self.charBtn = MakePanelButton(self.sumFrame, "Blizz", 54, 18)
     self.charBtn:SetSize(54, 18); self.charBtn:SetPoint("RIGHT", self.sumFrame, "RIGHT", -3, 0)
     self.charBtn:SetText("Blizz")
     self.charBtn:SetScript("OnClick", function() if ToggleCharacter then pcall(ToggleCharacter, "PaperDollFrame") end end)
@@ -165,6 +200,8 @@ function M:Init(body)
         SP:AnchorTooltipOutsidePanel(GameTooltip, s); GameTooltip:SetText("Feuille Blizzard (transmo, titres)"); GameTooltip:Show()
     end)
     self.charBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    self:CreateEquipManager()
 
     -- ===== conteneur STATS =====
     self.stats = CreateFrame("Frame", nil, body)
@@ -251,17 +288,35 @@ function M:_Cell(key, side)
         c.slot = MakeSlotButton(self, c.frame)
         c.name = c.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); c.name:SetWordWrap(false)
         c.ench = c.frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); c.ench:SetWordWrap(false)
+        c.ench._spFontRole = "secondary"
+        c.enchIcon = c.frame:CreateTexture(nil, "OVERLAY")
+        c.enchIcon:SetSize(12, 12)
+        c.enchIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        c.enchIcon:Hide()
+        c.gemTex = {}
+        for i = 1, 3 do
+            local gt = c.frame:CreateTexture(nil, "OVERLAY")
+            gt:SetSize(10, 10)
+            gt:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            gt:Hide()
+            c.gemTex[i] = gt
+        end
         if side == "R" then
             c.slot:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0)
             c.name:SetPoint("TOPRIGHT", c.slot, "TOPLEFT", -5, -1);  c.name:SetPoint("LEFT", c.frame, "LEFT", 2, 0); c.name:SetJustifyH("RIGHT")
-            c.ench:SetPoint("BOTTOMRIGHT", c.slot, "BOTTOMLEFT", -5, 1); c.ench:SetPoint("LEFT", c.frame, "LEFT", 2, 0); c.ench:SetJustifyH("RIGHT")
+            c.enchIcon:SetPoint("BOTTOMRIGHT", c.slot, "BOTTOMLEFT", -5, 1)
+            c.ench:SetPoint("BOTTOMRIGHT", c.enchIcon, "BOTTOMLEFT", -3, 0); c.ench:SetPoint("LEFT", c.frame, "LEFT", 34, 0); c.ench:SetJustifyH("RIGHT")
+            for i, gt in ipairs(c.gemTex) do gt:SetPoint("BOTTOMLEFT", c.frame, "BOTTOMLEFT", 2 + (i - 1) * 12, 3) end
         elseif side == "L" then
             c.slot:SetPoint("LEFT", c.frame, "LEFT", 2, 0)
             c.name:SetPoint("TOPLEFT", c.slot, "TOPRIGHT", 5, -1);  c.name:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0); c.name:SetJustifyH("LEFT")
-            c.ench:SetPoint("BOTTOMLEFT", c.slot, "BOTTOMRIGHT", 5, 1); c.ench:SetPoint("RIGHT", c.frame, "RIGHT", -2, 0); c.ench:SetJustifyH("LEFT")
+            c.enchIcon:SetPoint("BOTTOMLEFT", c.slot, "BOTTOMRIGHT", 5, 1)
+            c.ench:SetPoint("BOTTOMLEFT", c.enchIcon, "BOTTOMRIGHT", 3, 0); c.ench:SetPoint("RIGHT", c.frame, "RIGHT", -34, 0); c.ench:SetJustifyH("LEFT")
+            for i, gt in ipairs(c.gemTex) do gt:SetPoint("BOTTOMRIGHT", c.frame, "BOTTOMRIGHT", -2 - (i - 1) * 12, 3) end
         else
             c.slot:SetPoint("CENTER", c.frame, "CENTER", 0, 0)
-            c.name:Hide(); c.ench:Hide()
+            c.name:Hide(); c.ench:Hide(); c.enchIcon:Hide()
+            for _, gt in ipairs(c.gemTex) do gt:Hide() end
         end
         self.cells[key] = c
     end
@@ -301,14 +356,165 @@ function M:SetTab(tab)
     self.gear:SetShown(tab == "gear")
     self.stats:SetShown(tab == "stats")
     if self.alts then self.alts:SetShown(tab == "alts") end
+    if self.equipMgr then self.equipMgr:SetShown((self.equipOpen == true) and tab == "gear") end
+    if self.equipTab then self.equipTab:SetShown(tab == "gear") end
     self:Refresh()
+end
+
+local function GetEquipmentSets()
+    local out = {}
+    if C_EquipmentSet and C_EquipmentSet.GetEquipmentSetIDs then
+        local ids = C_EquipmentSet.GetEquipmentSetIDs() or {}
+        for _, id in ipairs(ids) do
+            local ok, name, icon, _, isEquipped = pcall(C_EquipmentSet.GetEquipmentSetInfo, id)
+            if ok and name and name ~= "" then out[#out + 1] = { id = id, name = name, icon = icon, equipped = isEquipped } end
+        end
+    elseif GetNumEquipmentSets and GetEquipmentSetInfo then
+        for i = 1, GetNumEquipmentSets() do
+            local name, icon, _, isEquipped = GetEquipmentSetInfo(i)
+            if name and name ~= "" then out[#out + 1] = { id = i, name = name, icon = icon, equipped = isEquipped } end
+        end
+    end
+    table.sort(out, function(a, b) return (a.name or "") < (b.name or "") end)
+    return out
+end
+
+local function UseEquipSet(set)
+    if InCombatLockdown and InCombatLockdown() then return false, "combat" end
+    if C_EquipmentSet and C_EquipmentSet.UseEquipmentSet and set.id then
+        local ok = pcall(C_EquipmentSet.UseEquipmentSet, set.id)
+        if ok then return true end
+    end
+    if UseEquipmentSet and set.name then
+        local ok = pcall(UseEquipmentSet, set.name)
+        if ok then return true end
+    end
+    return false
+end
+
+local function SaveEquipSet(set)
+    if InCombatLockdown and InCombatLockdown() then return false, "combat" end
+    if C_EquipmentSet and C_EquipmentSet.SaveEquipmentSet and set.id then
+        local ok = pcall(C_EquipmentSet.SaveEquipmentSet, set.id)
+        if ok then return true end
+    end
+    if SaveEquipmentSet and set.name then
+        local ok = pcall(SaveEquipmentSet, set.name, set.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        if ok then return true end
+    end
+    return false
+end
+
+local function DeleteEquipSet(set)
+    if InCombatLockdown and InCombatLockdown() then return false, "combat" end
+    if C_EquipmentSet and C_EquipmentSet.DeleteEquipmentSet and set.id then
+        local ok = pcall(C_EquipmentSet.DeleteEquipmentSet, set.id)
+        if ok then return true end
+    end
+    if DeleteEquipmentSet and set.name then
+        local ok = pcall(DeleteEquipmentSet, set.name)
+        if ok then return true end
+    end
+    return false
+end
+
+function M:CreateEquipSet(name)
+    name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" or (InCombatLockdown and InCombatLockdown()) then return end
+    if C_EquipmentSet and C_EquipmentSet.CreateEquipmentSet then
+        pcall(C_EquipmentSet.CreateEquipmentSet, name, "Interface\\Icons\\INV_Misc_QuestionMark")
+    elseif SaveEquipmentSet then
+        pcall(SaveEquipmentSet, name, "Interface\\Icons\\INV_Misc_QuestionMark")
+    end
+    C_Timer.After(0.2, function() if self.RefreshEquipManager then self:RefreshEquipManager() end end)
+end
+
+function M:CreateEquipManager()
+    if self.equipMgr then return end
+    local tab = MakePanelButton(self.body, "Sets", 34, 58)
+    tab:SetPoint("RIGHT", self.body, "RIGHT", 0, 0)
+    tab:SetFrameLevel((self.body:GetFrameLevel() or 1) + 8)
+    tab:SetScript("OnClick", function() self.equipOpen = not self.equipOpen; self:SetTab("gear") end)
+    self.equipTab = tab
+
+    local p = CreateFrame("Frame", nil, self.body)
+    p:SetSize(198, 236)
+    p:SetPoint("TOPLEFT", self.body, "TOPRIGHT", 4, 0)
+    p:SetFrameStrata("DIALOG")
+    p:SetFrameLevel((self.body:GetFrameLevel() or 1) + 10)
+    p.bg = p:CreateTexture(nil, "BACKGROUND"); p.bg:SetAllPoints(p); p.bg:SetColorTexture(0.04, 0.05, 0.08, 0.94)
+    p.line = p:CreateTexture(nil, "OVERLAY"); p.line:SetPoint("TOPLEFT"); p.line:SetPoint("BOTTOMLEFT"); p.line:SetWidth(2); p.line:SetColorTexture(0.29, 0.64, 1, 0.75)
+    p.title = p:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    p.title:SetPoint("TOPLEFT", p, "TOPLEFT", 8, -8); p.title:SetText("Gestionnaire d'equipement")
+    p.nameBox = CreateFrame("EditBox", nil, p, "InputBoxTemplate")
+    p.nameBox:SetSize(110, 18); p.nameBox:SetPoint("TOPLEFT", p, "TOPLEFT", 10, -30)
+    p.nameBox:SetAutoFocus(false)
+    p.nameBox:SetScript("OnEnterPressed", function(s) self:CreateEquipSet(s:GetText()); s:SetText(""); s:ClearFocus() end)
+    p.newBtn = MakePanelButton(p, "+", 24, 18); p.newBtn:SetPoint("LEFT", p.nameBox, "RIGHT", 8, 0)
+    p.newBtn:SetScript("OnClick", function() self:CreateEquipSet(p.nameBox:GetText()); p.nameBox:SetText("") end)
+    p.openBtn = MakePanelButton(p, "Blizz", 44, 18); p.openBtn:SetPoint("LEFT", p.newBtn, "RIGHT", 6, 0)
+    p.openBtn:SetScript("OnClick", function()
+        if ToggleCharacter then pcall(ToggleCharacter, "PaperDollFrame") end
+        if ToggleEquipmentManager then pcall(ToggleEquipmentManager) end
+    end)
+    p.rows = {}
+    p:Hide()
+    self.equipMgr = p
+end
+
+function M:_EquipRow(i)
+    local p = self.equipMgr
+    local r = p.rows[i]
+    if not r then
+        r = CreateFrame("Frame", nil, p); r:SetSize(184, 25)
+        r.bg = r:CreateTexture(nil, "BACKGROUND"); r.bg:SetAllPoints(r)
+        r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(18, 18); r.icon:SetPoint("LEFT", r, "LEFT", 3, 0)
+        r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); r.name:SetPoint("LEFT", r.icon, "RIGHT", 5, 0); r.name:SetPoint("RIGHT", r, "RIGHT", -58, 0); r.name:SetJustifyH("LEFT"); r.name:SetWordWrap(false)
+        r.use = MakePanelButton(r, "Use", 32, 17); r.use:SetPoint("RIGHT", r, "RIGHT", -48, 0)
+        r.save = MakePanelButton(r, "S", 18, 17); r.save:SetPoint("LEFT", r.use, "RIGHT", 3, 0)
+        r.del = MakePanelButton(r, "X", 18, 17); r.del:SetPoint("LEFT", r.save, "RIGHT", 3, 0)
+        p.rows[i] = r
+    end
+    return r
+end
+
+function M:RefreshEquipManager()
+    if not self.equipMgr then return end
+    local sets = GetEquipmentSets()
+    local y = 56
+    for i, set in ipairs(sets) do
+        local r = self:_EquipRow(i)
+        r:SetPoint("TOPLEFT", self.equipMgr, "TOPLEFT", 7, -y)
+        r.bg:SetColorTexture(set.equipped and 0.10 or 1, set.equipped and 0.30 or 1, set.equipped and 0.18 or 1, set.equipped and 0.55 or ((i % 2 == 0) and 0.06 or 0.03))
+        r.icon:SetTexture(set.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        r.name:SetText((set.equipped and "|cFF40FF40" or "|cFFFFFFFF") .. (set.name or "?") .. "|r")
+        r.use:SetScript("OnClick", function() UseEquipSet(set); C_Timer.After(0.4, function() self:RefreshEquipManager() end) end)
+        r.save:SetScript("OnClick", function() SaveEquipSet(set); C_Timer.After(0.4, function() self:RefreshEquipManager() end) end)
+        r.del:SetScript("OnClick", function() DeleteEquipSet(set); C_Timer.After(0.4, function() self:RefreshEquipManager() end) end)
+        r:Show()
+        y = y + 27
+    end
+    for i = #sets + 1, #self.equipMgr.rows do self.equipMgr.rows[i]:Hide() end
+    if #sets == 0 then
+        if not self.equipMgr.empty then
+            self.equipMgr.empty = self.equipMgr:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            self.equipMgr.empty:SetPoint("TOPLEFT", self.equipMgr, "TOPLEFT", 10, -60)
+            self.equipMgr.empty:SetPoint("RIGHT", self.equipMgr, "RIGHT", -10, 0)
+            self.equipMgr.empty:SetJustifyH("LEFT")
+        end
+        self.equipMgr.empty:SetText("Aucun set. Entre un nom puis clique + pour sauvegarder l'equipement actuel.")
+        self.equipMgr.empty:Show()
+    elseif self.equipMgr.empty then
+        self.equipMgr.empty:Hide()
+    end
 end
 
 function M:Enable()
     self._enabled = true
     if self._placeholder then self._placeholder:Hide() end
     for _, e in ipairs({ "PLAYER_EQUIPMENT_CHANGED", "UNIT_INVENTORY_CHANGED", "COMBAT_RATING_UPDATE",
-                         "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "CURSOR_CHANGED", "ITEM_LOCK_CHANGED" }) do
+                         "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "CURSOR_CHANGED", "ITEM_LOCK_CHANGED",
+                         "EQUIPMENT_SETS_CHANGED", "EQUIPMENT_SWAP_FINISHED" }) do
         pcall(self.ev.RegisterEvent, self.ev, e)
     end
     self:ApplyKeyOverride()
@@ -373,6 +579,7 @@ end
 function M:Refresh()
     if not self._enabled then return end
     self:UpdateTitle()
+    self:RefreshEquipManager()
     if self.tab == "stats" then self:RefreshStats()
     elseif self.tab == "alts" then self:RefreshAlts()
     else self:RefreshGear() end
@@ -483,6 +690,27 @@ function M:RefreshGear()
         local a = AuditSlot(slotId)
         local canEnch = CANENCH[key]
         local function setCol(fs, txt) if fs then if side == "B" then fs:Hide() else fs:Show(); fs:SetText(txt or "") end end end
+        local function setEnchantIcon(audit)
+            if not c.enchIcon then return end
+            if side == "B" or not (audit and audit.enchanted) then c.enchIcon:Hide(); return end
+            if audit.enchantAtlas and c.enchIcon.SetAtlas and pcall(c.enchIcon.SetAtlas, c.enchIcon, audit.enchantAtlas, true) then
+                c.enchIcon:Show()
+            else
+                c.enchIcon:SetTexture(audit.enchantIcon or "Interface\\ItemSocketingFrame\\UI-EmptySocket-Prismatic")
+                c.enchIcon:Show()
+            end
+        end
+        local function setGemIcons(audit)
+            for i, gt in ipairs(c.gemTex or {}) do
+                local icon = audit and audit.gemIcons and audit.gemIcons[i]
+                if side ~= "B" and icon then
+                    gt:SetTexture(icon)
+                    gt:Show()
+                else
+                    gt:Hide()
+                end
+            end
+        end
         if a.has then
             tot.items = tot.items + 1
             c.slot.icon:SetTexture(a.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -507,6 +735,8 @@ function M:RefreshGear()
             elseif canEnch then enchTxt = "|cFFFF4040|A:common-icon-redx:11:11:0:0|a Manque|r"
             else enchTxt = "" end
             setCol(c.ench, enchTxt)
+            setEnchantIcon(a)
+            setGemIcons(a)
             if slotOK then tot.opt = tot.opt + 1 end
         else
             c.slot.icon:SetTexture("Interface\\PaperDoll\\UI-Backpack-EmptySlot")
@@ -515,6 +745,8 @@ function M:RefreshGear()
             c.slot.ilvlFS:SetText("")
             setCol(c.name, "|cFF888888" .. (LABEL[key] or "") .. "|r")
             setCol(c.ench, "|cFF666666vide|r")
+            setEnchantIcon(nil)
+            setGemIcons(nil)
         end
     end
 

@@ -164,6 +164,7 @@ end
 local function CreateHeader(self, i)
     local h = CreateFrame("Button", nil, self.list)
     h:SetHeight(HDR_H)
+    h:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     h.arrow = h:CreateFontString(nil, "OVERLAY", "GameFontNormal"); h.arrow:SetPoint("LEFT", h, "LEFT", 2, 0)
     h.fs = h:CreateFontString(nil, "OVERLAY", "GameFontNormal"); h.fs:SetPoint("LEFT", h.arrow, "RIGHT", 4, 0)
     local hl = h:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(h); hl:SetColorTexture(1, 1, 1, 0.08)
@@ -184,6 +185,7 @@ local function CreateCurrencyRow(self, i)
     r.icon:SetPoint("LEFT", r, "LEFT", 4, 0)
     r.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     r.fs = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    r.fs._spFontRole = "secondary"
     r.fs:SetPoint("LEFT", r.icon, "RIGHT", 5, 0)
     r.fs:SetPoint("RIGHT", r, "RIGHT", -4, 0)
     r.fs:SetJustifyH("LEFT")
@@ -204,13 +206,50 @@ end
 function M:Init(body)
     self.body = body
     self.slots, self.headers, self.subs, self.currencyRows = {}, {}, {}, {}
+    self.histRows = {}
+    self.histDateCollapsed = {}
+    self.tabBtns = {}
+
+    self.tabBar = CreateFrame("Frame", nil, body)
+    self.tabBar:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
+    self.tabBar:SetPoint("TOPRIGHT", body, "TOPRIGHT", -2, -2)
+    self.tabBar:SetHeight(18)
+    self.tabBar:EnableMouseWheel(true)
+    self.tabBar:SetScript("OnMouseWheel", function(_, delta)
+        local cfg = SP:GetModuleConfig(self.name)
+        self:SetBagTab(((cfg and cfg.activeTab) == "history") and "bags" or "history")
+    end)
+    for i, d in ipairs({ { "bags", "Sac" }, { "history", "Historique" } }) do
+        local b = CreateFrame("Button", nil, self.tabBar)
+        b:SetSize(i == 1 and 42 or 78, 16)
+        b:SetPoint("LEFT", self.tabBar, "LEFT", (i == 1) and 0 or 46, 0)
+        b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAllPoints(b)
+        b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetAllPoints(b); b.fs:SetText(d[2])
+        b.tab = d[1]
+        b:SetScript("OnClick", function(s) self:SetBagTab(s.tab) end)
+        self.tabBtns[d[1]] = b
+    end
+
     self.list = CreateFrame("Frame", nil, body)
-    self.list:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
+    self.list:SetPoint("TOPLEFT", self.tabBar, "BOTTOMLEFT", 0, -2)
     self.list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -2, 2)
     self.list:SetClipsChildren(true)
 
+    self.history = CreateFrame("Frame", nil, body)
+    self.history:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, 0)
+    self.history:SetPoint("BOTTOMRIGHT", self.list, "BOTTOMRIGHT", 0, 0)
+    self.history:SetClipsChildren(true)
+    self.history:EnableMouseWheel(true)
+    self.history:SetScript("OnMouseWheel", function(_, delta)
+        local visible = self.history:GetHeight() or 1
+        local maxS = math.max(0, (self._histContentH or 0) - visible)
+        self.histScroll = math.min(maxS, math.max(0, (self.histScroll or 0) - delta * 28))
+        self:RefreshHistory()
+    end)
+    self.history:Hide()
+
     self.ev = CreateFrame("Frame")
-    self.ev:SetScript("OnEvent", function(_, e)
+    self.ev:SetScript("OnEvent", function(_, e, ...)
         if e == "PLAYER_REGEN_ENABLED" then
             if self._dirty then self:RequestRefresh() end
         elseif e == "MERCHANT_SHOW" then
@@ -220,7 +259,12 @@ function M:Init(body)
         elseif e == "BANKFRAME_OPENED" or e == "MAIL_SHOW" or e == "AUCTION_HOUSE_SHOW" or e == "TRADE_SHOW" then
             local cfg = SP:GetModuleConfig(self.name)
             if not cfg or cfg.autoOpenAtNpc ~= false then self:OpenBags(e) end
+        elseif e == "CHAT_MSG_MONEY" or e == "CHAT_MSG_CURRENCY" then
+            self:LogHistory("money", ...)
+        elseif e == "GET_ITEM_INFO_RECEIVED" then
+            if self.history and self.history:IsShown() then self:RefreshHistory() end
         else
+            self:ScanInventoryHistory(e)
             self:RequestRefresh()
         end
     end)
@@ -248,10 +292,15 @@ function M:Enable()
         "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "PLAYER_REGEN_ENABLED",
         "CURRENCY_DISPLAY_UPDATE", "PLAYER_MONEY", "PLAYER_ENTERING_WORLD",
         "MERCHANT_SHOW", "BANKFRAME_OPENED", "MAIL_SHOW", "AUCTION_HOUSE_SHOW", "TRADE_SHOW",
+        "CHAT_MSG_MONEY", "CHAT_MSG_CURRENCY", "GET_ITEM_INFO_RECEIVED",
     }) do
         pcall(self.ev.RegisterEvent, self.ev, e)
     end
     self:InstallBagHooks()
+    -- NE PAS snapshot ici : les sacs peuvent ne pas être encore peuplés (course possible
+    -- au login/reload). On laisse le garde-fou de ScanInventoryHistory poser la base au
+    -- premier évènement réel (PLAYER_ENTERING_WORLD/BAG_UPDATE_DELAYED), sans logguer.
+    self:SetBagTab((SP:GetModuleConfig(self.name) or {}).activeTab or "bags")
     if not InCombatLockdown() then
         ClearOverrideBindings(self.toggle)
         SetOverrideBindingClick(self.toggle, true, "B", "SpherePanelBagToggle")
@@ -270,10 +319,212 @@ function M:Disable()
     for _, h in ipairs(self.headers) do h:Hide() end
     for _, s in ipairs(self.subs) do s:Hide() end
     for _, r in ipairs(self.currencyRows) do r:Hide() end
+    for _, r in ipairs(self.histRows or {}) do r:Hide() end
     SP:SetModuleHeaderText(self, "")
 end
 
 function M:OnResize(w, h) self:RequestRefresh() end
+
+function M:SetBagTab(tab)
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.activeTab = (tab == "history") and "history" or "bags"
+    if self.list then self.list:SetShown(cfg.activeTab ~= "history") end
+    if self.history then self.history:SetShown(cfg.activeTab == "history") end
+    for k, b in pairs(self.tabBtns or {}) do
+        b.bg:SetColorTexture(0.30, 0.55, 0.95, (k == cfg.activeTab) and 0.32 or 0.10)
+    end
+    if cfg.activeTab == "history" then self:RefreshHistory() else self:RequestRefresh() end
+end
+
+function M:HistoryColor(kind)
+    if kind == "loot" then return 0.40, 0.90, 0.40
+    elseif kind == "sold" then return 0.62, 0.62, 0.62
+    elseif kind == "money" then return 1.00, 0.82, 0.00
+    elseif kind == "removed" then return 1.00, 0.35, 0.25
+    else return 0.90, 0.85, 0.45 end
+end
+
+function M:CategoryColor(key)
+    local cfg = SP:GetModuleConfig(self.name)
+    for _, c in ipairs((cfg and cfg.categories) or {}) do
+        if c.key == key and c.color then return c.color[1] or 1, c.color[2] or 1, c.color[3] or 1 end
+    end
+    return nil
+end
+
+function M:LogHistory(kind, text, itemID, count)
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.history = cfg.history or {}
+    local label = text
+    local cat
+    if itemID then
+        if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, itemID) end
+        local name, link, quality = GetItemInfo(itemID)
+        label = (link or name or ("item:" .. tostring(itemID))) .. ((count and count > 1) and (" x" .. count) or "")
+        if kind == "sold" then cat = "junk"
+        else cat = ClassKey({ itemID = itemID, quality = quality or 1 }) end
+    end
+    cfg.history[#cfg.history + 1] = { t = time(), kind = kind or "misc", text = label or "?", itemID = itemID, count = count, cat = cat }
+    while #cfg.history > 250 do table.remove(cfg.history, 1) end
+    if self.history and self.history:IsShown() then self:RefreshHistory() end
+end
+
+function M:SnapshotHistoryCounts()
+    self._histCounts = {}
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then return end
+    for _, bag in ipairs(BAGS) do
+        local n = C_Container.GetContainerNumSlots(bag) or 0
+        for slot = 1, n do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            if info and info.itemID then
+                self._histCounts[info.itemID] = (self._histCounts[info.itemID] or 0) + (info.stackCount or 1)
+            end
+        end
+    end
+end
+
+function M:ScanInventoryHistory(reason)
+    if not self._histCounts then self:SnapshotHistoryCounts(); return end
+    local old = self._histCounts
+    local now = {}
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then return end
+    for _, bag in ipairs(BAGS) do
+        local n = C_Container.GetContainerNumSlots(bag) or 0
+        for slot = 1, n do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            if info and info.itemID then now[info.itemID] = (now[info.itemID] or 0) + (info.stackCount or 1) end
+        end
+    end
+    for itemID, qty in pairs(now) do
+        local prev = old[itemID] or 0
+        if qty > prev then self:LogHistory("loot", nil, itemID, qty - prev) end
+    end
+    for itemID, prev in pairs(old) do
+        local qty = now[itemID] or 0
+        if qty < prev then
+            local kind = (MerchantFrame and MerchantFrame:IsShown()) and "sold" or "removed"
+            self:LogHistory(kind, nil, itemID, prev - qty)
+        end
+    end
+    self._histCounts = now
+end
+
+function M:_AcquireHistoryRow(i)
+    local r = self.histRows[i]
+    if not r then
+        r = CreateFrame("Button", nil, self.history)
+        r:SetHeight(18)
+        r.bg = r:CreateTexture(nil, "BACKGROUND")
+        r.bg:SetAllPoints(r)
+        r.arrow = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        r.arrow:SetPoint("LEFT", r, "LEFT", 3, 0); r.arrow:SetWidth(12); r.arrow:SetJustifyH("LEFT")
+        r.time = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        r.time._spFontRole = "secondary"
+        r.time:SetPoint("LEFT", r, "LEFT", 2, 0); r.time:SetWidth(36); r.time:SetJustifyH("LEFT")
+        r.icon = r:CreateTexture(nil, "ARTWORK")
+        r.icon:SetSize(14, 14)
+        r.icon:SetPoint("LEFT", r.time, "RIGHT", 4, 0)
+        r.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        r.text = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        r.text:SetPoint("LEFT", r.icon, "RIGHT", 5, 0); r.text:SetPoint("RIGHT", r, "RIGHT", -2, 0)
+        r.text:SetJustifyH("LEFT"); r.text:SetWordWrap(false)
+        r:SetScript("OnClick", function(s)
+            if s.dateKey then
+                self.histDateCollapsed[s.dateKey] = not self.histDateCollapsed[s.dateKey]
+                self:RefreshHistory()
+            end
+        end)
+        self.histRows[i] = r
+    end
+    return r
+end
+
+function M:ResolveHistoryEntry(e)
+    if not e then return "?", nil, nil end
+    if e.itemID then
+        if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, e.itemID) end
+        local name, link, quality, _, _, _, _, _, _, icon = GetItemInfo(e.itemID)
+        icon = icon or (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(e.itemID))
+        local label = (link or name or ("item:" .. tostring(e.itemID))) .. ((e.count and e.count > 1) and (" x" .. e.count) or "")
+        return label, icon, quality
+    end
+    return e.text or "?", nil, nil
+end
+
+-- Regroupe l'historique (le plus récent en premier) sous un séparateur par jour.
+function M:_BuildHistoryRows()
+    local cfg = SP:GetModuleConfig(self.name)
+    local hist = cfg.history or {}
+    self.histDateCollapsed = self.histDateCollapsed or {}
+    local rows, lastKey = {}, nil
+    for i = #hist, 1, -1 do
+        local e = hist[i]
+        local t = e.t or time()
+        local dkey = date("%Y%m%d", t)
+        if dkey ~= lastKey then
+            rows[#rows + 1] = { sep = true, key = dkey, label = date("%d/%m/%Y", t) }
+            lastKey = dkey
+        end
+        if not self.histDateCollapsed[dkey] then rows[#rows + 1] = { e = e } end
+    end
+    return rows
+end
+
+function M:RefreshHistory()
+    if not self.history then return end
+    local rows = self:_BuildHistoryRows()
+    local visible = self.history:GetHeight() or 1
+    self.histScroll = math.min(math.max(0, (#rows * 18 + 2) - visible), math.max(0, self.histScroll or 0))
+    local y = 2
+    for ri, row in ipairs(rows) do
+        local r = self:_AcquireHistoryRow(ri)
+        r:ClearAllPoints()
+        r:SetPoint("TOPLEFT", self.history, "TOPLEFT", 0, -(y - (self.histScroll or 0)))
+        r:SetPoint("TOPRIGHT", self.history, "TOPRIGHT", 0, -(y - (self.histScroll or 0)))
+        r.text:ClearAllPoints()
+        if row.sep then
+            r.dateKey = row.key
+            r:EnableMouse(true)
+            r.bg:SetColorTexture(0.35, 0.55, 0.95, 0.16)
+            r.time:Hide(); r.icon:Hide()
+            r.arrow:Show(); r.arrow:SetText(self.histDateCollapsed[row.key] and "|cFFFFFFFF+|r" or "|cFFFFFFFF-|r")
+            r.text:SetPoint("LEFT", r.arrow, "RIGHT", 3, 0); r.text:SetPoint("RIGHT", r, "RIGHT", -2, 0)
+            r.text:SetText(row.label)
+            r.text:SetTextColor(0.85, 0.88, 1.0)
+        else
+            local e = row.e
+            r.dateKey = nil
+            r:EnableMouse(false)
+            r.arrow:Hide()
+            local cr, cg, cb
+            if e.cat then cr, cg, cb = self:CategoryColor(e.cat) end
+            if not cr then cr, cg, cb = self:HistoryColor(e.kind) end
+            local text, icon = self:ResolveHistoryEntry(e)
+            r.bg:SetColorTexture(0, 0, 0, (ri % 2 == 0) and 0.28 or 0.12)
+            r.time:Show(); r.time:SetText(date("%H:%M", e.t or time()))
+            if icon then r.icon:SetTexture(icon); r.icon:Show() else r.icon:Hide() end
+            r.text:SetPoint("LEFT", r.icon, "RIGHT", 5, 0); r.text:SetPoint("RIGHT", r, "RIGHT", -2, 0)
+            r.text:SetText(text)
+            r.text:SetTextColor(cr, cg, cb)
+        end
+        r:Show()
+        y = y + 18
+    end
+    for i = #rows + 1, #self.histRows do self.histRows[i]:Hide() end
+    self._histContentH = y
+    local maxS = math.max(0, y - visible)
+    if (self.histScroll or 0) > maxS then self.histScroll = maxS end
+    if #rows == 0 then
+        local r = self:_AcquireHistoryRow(1)
+        r.dateKey = nil; r:EnableMouse(false)
+        r.bg:SetColorTexture(0, 0, 0, 0.14)
+        r.time:Hide(); r.arrow:Hide(); r.icon:Hide()
+        r.text:ClearAllPoints(); r.text:SetPoint("LEFT", r, "LEFT", 4, 0); r.text:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+        r.text:SetText("Aucun historique")
+        r.text:SetTextColor(0.7, 0.7, 0.7)
+        r:ClearAllPoints(); r:SetPoint("TOPLEFT", self.history, "TOPLEFT", 4, -4); r:SetPoint("TOPRIGHT", self.history, "TOPRIGHT", -4, -4); r:Show()
+    end
+end
 
 function M:CollapseOthers(collapse)
     -- DEC-026 : la réduction de bandeau a été retirée (plus de bouton ▶/▼). Réduire les
@@ -416,6 +667,9 @@ function M:_AcquireCurrencyRow(i) local r = self.currencyRows[i] or CreateCurren
 
 function M:_CollectCurrencies()
     local rows = {}
+    local cfg = SP:GetModuleConfig(self.name)
+    local tracked = (cfg and cfg.trackedCurrencies) or {}
+    local hidden = (cfg and cfg.hiddenCurrencies) or {}
     local money = GetMoney and GetMoney() or 0
     rows[#rows + 1] = {
         icon = "Interface\\MoneyFrame\\UI-GoldIcon",
@@ -426,9 +680,9 @@ function M:_CollectCurrencies()
         local n = C_CurrencyInfo.GetCurrencyListSize() or 0
         for i = 1, n do
             local ok, info = pcall(C_CurrencyInfo.GetCurrencyListInfo, i)
-            if ok and info and not info.isHeader and (info.isShowInBackpack or info.isWatched) then
-                local okLink, link = pcall(C_CurrencyInfo.GetCurrencyListLink, i)
-                local id = okLink and link and tonumber(link:match("Hcurrency:(%d+)")) or nil
+            local okLink, link = pcall(C_CurrencyInfo.GetCurrencyListLink, i)
+            local id = okLink and link and tonumber(link:match("Hcurrency:(%d+)")) or nil
+            if ok and info and not info.isHeader and id and not hidden[id] and (info.isShowInBackpack or info.isWatched or tracked[id]) then
                 local qty = info.quantity or 0
                 local maxQ = info.maxQuantity or 0
                 local text = ("%s  |cFFFFFFFF%d|r"):format(info.name or "?", qty)
@@ -445,12 +699,111 @@ function M:_CollectCurrencies()
     return rows
 end
 
+function M:_CurrencyChoices()
+    local rows = {}
+    if not (C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize and C_CurrencyInfo.GetCurrencyListInfo) then return rows end
+    local n = C_CurrencyInfo.GetCurrencyListSize() or 0
+    for i = 1, n do
+        local ok, info = pcall(C_CurrencyInfo.GetCurrencyListInfo, i)
+        if ok and info and not info.isHeader then
+            local okLink, link = pcall(C_CurrencyInfo.GetCurrencyListLink, i)
+            local id = okLink and link and tonumber(link:match("Hcurrency:(%d+)")) or nil
+            if id and info.name and info.name ~= "" then
+                rows[#rows + 1] = { id = id, name = info.name, icon = info.iconFileID or "Interface\\Icons\\INV_Misc_QuestionMark", quantity = info.quantity or 0, watched = info.isShowInBackpack or info.isWatched }
+            end
+        end
+    end
+    table.sort(rows, function(a, b) return (a.name or "") < (b.name or "") end)
+    return rows
+end
+
+function M:ToggleCurrencyPicker(anchor)
+    if self.currencyPicker and self.currencyPicker:IsShown() then self.currencyPicker:Hide(); return end
+    local f = self.currencyPicker
+    if not f then
+        f = CreateFrame("Frame", "SpherePanelCurrencyPicker", UIParent)
+        f:SetSize(260, 286)
+        f:SetFrameStrata("DIALOG")
+        f.bg = f:CreateTexture(nil, "BACKGROUND"); f.bg:SetAllPoints(f); f.bg:SetColorTexture(0.02, 0.025, 0.035, 0.96)
+        f.line = f:CreateTexture(nil, "OVERLAY"); f.line:SetPoint("BOTTOMLEFT"); f.line:SetPoint("BOTTOMRIGHT"); f.line:SetHeight(1); f.line:SetColorTexture(0.29, 0.64, 1, 0.7)
+        f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -8)
+        f.title:SetText("Monnaies a afficher")
+        f.close = CreateFrame("Button", nil, f)
+        f.close:SetSize(18, 18); f.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", -6, -6)
+        f.close.fs = f.close:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); f.close.fs:SetAllPoints(f.close); f.close.fs:SetText("x")
+        f.close:SetScript("OnClick", function() f:Hide() end)
+        f.rows = {}
+        f.scroll = 0
+        f.visibleRows = 10
+        f:EnableMouseWheel(true)
+        f:SetScript("OnMouseWheel", function(_, delta)
+            f.scroll = math.max(0, math.min(math.max(0, #(f.choices or {}) - f.visibleRows), (f.scroll or 0) - delta))
+            self:RefreshCurrencyPicker()
+        end)
+        self.currencyPicker = f
+    end
+    f:ClearAllPoints()
+    if anchor then f:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -8, 0) else f:SetPoint("CENTER", UIParent, "CENTER", 0, 0) end
+    f.choices = self:_CurrencyChoices()
+    f.scroll = 0
+    f:Show()
+    self:RefreshCurrencyPicker()
+end
+
+function M:RefreshCurrencyPicker()
+    local f = self.currencyPicker
+    if not f or not f:IsShown() then return end
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.trackedCurrencies = cfg.trackedCurrencies or {}
+    cfg.hiddenCurrencies = cfg.hiddenCurrencies or {}
+    local choices = f.choices or {}
+    for i = 1, f.visibleRows do
+        local row = f.rows[i]
+        if not row then
+            row = CreateFrame("Frame", nil, f)
+            row:SetSize(240, 22)
+            row:SetPoint("TOPLEFT", f, "TOPLEFT", 10, -34 - (i - 1) * 24)
+            row.bg = row:CreateTexture(nil, "BACKGROUND"); row.bg:SetAllPoints(row)
+            row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+            row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row, "LEFT", -2, 0)
+            row.icon = row:CreateTexture(nil, "ARTWORK"); row.icon:SetSize(16, 16); row.icon:SetPoint("LEFT", row.check, "RIGHT", 2, 0); row.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+            row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            row.text:SetPoint("LEFT", row.icon, "RIGHT", 6, 0); row.text:SetPoint("RIGHT", row, "RIGHT", -4, 0); row.text:SetJustifyH("LEFT")
+            f.rows[i] = row
+        end
+        local choice = choices[(f.scroll or 0) + i]
+        if choice then
+            row.choice = choice
+            row.bg:SetColorTexture(1, 1, 1, (i % 2 == 0) and 0.05 or 0.02)
+            row.icon:SetTexture(choice.icon)
+            row.text:SetText(("%s  |cFF888888%d|r"):format(choice.name, choice.quantity or 0))
+            row.check:SetChecked((choice.watched or cfg.trackedCurrencies[choice.id]) and not cfg.hiddenCurrencies[choice.id])
+            row.check:SetScript("OnClick", function(s)
+                if s:GetChecked() then
+                    cfg.trackedCurrencies[choice.id] = true
+                    cfg.hiddenCurrencies[choice.id] = nil
+                else
+                    cfg.trackedCurrencies[choice.id] = nil
+                    cfg.hiddenCurrencies[choice.id] = true
+                end
+                self:RequestRefresh()
+            end)
+            row:Show()
+        else
+            row.choice = nil
+            row:Hide()
+        end
+    end
+end
+
 function M:Refresh()
     if not self._enabled or not self.body or not C_Container then return end
     if InCombatLockdown() then self._dirty = true; return end
     self._dirty = false
 
     local cfg = SP:GetModuleConfig(self.name)
+    if cfg.activeTab == "history" then self:RefreshHistory(); return end
     local mode = cfg.displayMode or "categorized"
     if mode ~= "onebag" and mode ~= "split" then mode = "categorized" end
     local cats = cfg.categories or {}
@@ -557,7 +910,9 @@ function M:Refresh()
             hdr:ClearAllPoints()
             hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
             hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
-            hdr:SetScript("OnClick", nil)
+            hdr:SetScript("OnClick", function(_, button)
+                if button == "RightButton" then self:ToggleCurrencyPicker(hdr) end
+            end)
             hdr:Show()
             y = y + HDR_H + 1
 

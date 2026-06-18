@@ -47,6 +47,18 @@ local KEYDEF = {
     M = { write = "TRADE",   isTrade = true },
 }
 
+local INSTANT_POPUP_TYPES = {
+    WHISPER = true, BN_WHISPER = true,
+    PARTY = true, RAID = true, INSTANCE_CHAT = true,
+    GUILD = true, OFFICER = true,
+}
+
+local REPLY_WRITE_TYPE = {
+    WHISPER = "WHISPER", BN_WHISPER = "WHISPER",
+    PARTY = "PARTY", RAID = "RAID", INSTANCE_CHAT = "INSTANCE_CHAT",
+    GUILD = "GUILD", OFFICER = "OFFICER",
+}
+
 local function NormType(suffix)
     suffix = suffix:gsub("_LEADER$", "")
     if suffix == "WHISPER_INFORM" or suffix == "BN_WHISPER" or suffix == "BN_WHISPER_INFORM" then return "WHISPER" end
@@ -65,6 +77,11 @@ local function LinkifyURLs(text)
     return text
 end
 
+local function CleanName(author)
+    if not author or author == "" then return "" end
+    return (Ambiguate and Ambiguate(author, "none")) or author
+end
+
 -- ============================================================
 function M:Init(body)
     self.body = body
@@ -77,35 +94,69 @@ function M:Init(body)
     self._idc = 0
     self.tab = "chat"
     self.socialRows = {}
+    self.chatTabBtns = {}
+    self._socialCounts = { friends = 0, guild = 0 }
+    self.toasts = {}
+    self.activeToasts = {}
+    self.toastHost = CreateFrame("Frame", "SpherePanelChatToastHost", UIParent)
+    self.toastHost:SetSize(620, 260)
+    self.toastHost:SetPoint("CENTER", UIParent, "CENTER", 0, 110)
+    self.toastHost:SetFrameStrata("FULLSCREEN_DIALOG")
+    self.toastHost:Hide()
 
-    -- onglets [Chat | Social] sur le bandeau (molette = switch)
+    -- Mode Chat + social compact dans le bandeau.
     if self.header then
         if self.suffixFS then self.suffixFS:Hide() end
         self.tabBtns = {}
-        local anchor, prev = self.lock or self.header, nil
-        for _, d in ipairs({ { "social", "Social" }, { "chat", "Chat" } }) do
-            local b = CreateFrame("Button", nil, self.header); b:SetSize(42, 16)
-            if prev then b:SetPoint("RIGHT", prev, "LEFT", -3, 0) else b:SetPoint("RIGHT", anchor, "LEFT", -6, 0) end
-            b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetAllPoints(b); b.fs:SetText(d[2])
-            b.hl = b:CreateTexture(nil, "BACKGROUND"); b.hl:SetAllPoints(b); b.hl:SetColorTexture(0.30, 0.55, 0.95, 0.30); b.hl:Hide()
-            b.tab = d[1]; b:SetScript("OnClick", function(s) self:SetTab(s.tab) end)
-            self.tabBtns[d[1]] = b; prev = b
-        end
+        local anchor = self.lock or self.header
+        self.socialBtn = CreateFrame("Button", nil, self.header)
+        self.socialBtn:SetSize(54, 16)
+        self.socialBtn:SetPoint("RIGHT", anchor, "LEFT", -6, 0)
+        self.socialBtn.bg = self.socialBtn:CreateTexture(nil, "BACKGROUND"); self.socialBtn.bg:SetAllPoints(self.socialBtn); self.socialBtn.bg:SetColorTexture(0.30, 0.55, 0.95, 0.12)
+        self.socialBtn.icon = self.socialBtn:CreateTexture(nil, "ARTWORK"); self.socialBtn.icon:SetSize(13, 13); self.socialBtn.icon:SetPoint("LEFT", self.socialBtn, "LEFT", 3, 0)
+        self.socialBtn.icon:SetTexture("Interface\\FriendsFrame\\UI-Toast-FriendOnlineIcon")
+        self.socialBtn.fs = self.socialBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        self.socialBtn.fs:SetPoint("LEFT", self.socialBtn.icon, "RIGHT", 2, 0)
+        self.socialBtn.fs:SetPoint("RIGHT", self.socialBtn, "RIGHT", -2, 0)
+        self.socialBtn:SetScript("OnClick", function() self:SetTab(self.tab == "social" and "chat" or "social") end)
+        self.tabBtns.social = self.socialBtn
+
+        self.chatModeBtn = CreateFrame("Button", nil, self.header)
+        self.chatModeBtn:SetSize(42, 16)
+        self.chatModeBtn:SetPoint("RIGHT", self.socialBtn, "LEFT", -3, 0)
+        self.chatModeBtn.bg = self.chatModeBtn:CreateTexture(nil, "BACKGROUND"); self.chatModeBtn.bg:SetAllPoints(self.chatModeBtn); self.chatModeBtn.bg:SetColorTexture(0.30, 0.55, 0.95, 0.12)
+        self.chatModeBtn.fs = self.chatModeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); self.chatModeBtn.fs:SetAllPoints(self.chatModeBtn); self.chatModeBtn.fs:SetText("Chat")
+        self.chatModeBtn:SetScript("OnClick", function() self:SetTab("chat") end)
+        self.tabBtns.chat = self.chatModeBtn
+
         self.header:EnableMouseWheel(true)
-        self.header:SetScript("OnMouseWheel", function() self:SetTab(self.tab == "social" and "chat" or "social") end)
+        self.header:SetScript("OnMouseWheel", function(_, d) self:CycleChannel(d) end)
     end
+
+    self.chatTabBar = CreateFrame("Frame", nil, self.header or body)
+    if self.header and self.labelFS then
+        self.chatTabBar:SetPoint("LEFT", self.labelFS, "RIGHT", 10, 0)
+        self.chatTabBar:SetPoint("RIGHT", self.chatModeBtn or (self.lock or self.header), "LEFT", -8, 0)
+    else
+        self.chatTabBar:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -2)
+        self.chatTabBar:SetPoint("TOPRIGHT", body, "TOPRIGHT", -4, -2)
+    end
+    self.chatTabBar:SetHeight(18)
+    self.chatTabBar:EnableMouseWheel(true)
+    self.chatTabBar:SetScript("OnMouseWheel", function(_, d) self:CycleChannel(d) end)
 
     self.bar = CreateFrame("Frame", nil, body)
     self.bar:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -2)
     self.bar:SetPoint("TOPRIGHT", body, "TOPRIGHT", -4, -2)
     self.bar:SetHeight(16)
+    self.bar:Hide()
     self.bar:EnableMouseWheel(true)
     self.bar:SetScript("OnMouseWheel", function(_, d) self:CycleChannel(d) end)  -- molette = canal suivant/précédent
     self.viewLabel = self.bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.viewLabel:SetPoint("RIGHT", self.bar, "RIGHT", 0, 0)
 
     self.smf = CreateFrame("ScrollingMessageFrame", nil, body)
-    self.smf:SetPoint("TOPLEFT", self.bar, "BOTTOMLEFT", 0, -2)
+    self.smf:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -4)
     self.smf:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -4, 22)
     self.smf:SetJustifyH("LEFT")
     self.smf:SetFading(false)
@@ -148,8 +199,23 @@ function M:Init(body)
     self.eb:SetHeight(18)
     self.eb:SetAutoFocus(false)
     self.eb:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
-    self.eb:SetScript("OnEnterPressed", function(s) self:Send(s:GetText()); s:SetText(""); s:ClearFocus() end)
-    self.eb:SetScript("OnEscapePressed", function(s) s:SetText(""); s:ClearFocus() end)
+    self.eb:SetScript("OnEnterPressed", function(s)
+        self:Send(s:GetText())
+        s:SetText("")
+        s:ClearFocus()
+        self._forceReveal = false
+    end)
+    self.eb:SetScript("OnEscapePressed", function(s)
+        s:SetText("")
+        s:ClearFocus()
+        self._forceReveal = false
+    end)
+    self.eb:SetScript("OnEditFocusGained", function()
+        self._forceReveal = true
+    end)
+    self.eb:SetScript("OnEditFocusLost", function()
+        self._forceReveal = false
+    end)
 
     self.copyBox = CreateFrame("EditBox", nil, body)
     self.copyBox:SetPoint("TOPLEFT", self.smf, "TOPLEFT", 0, 0)
@@ -173,7 +239,7 @@ function M:Init(body)
         if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and self._enabled then
             SP:RevealModule(self, 6)
         end
-        self:AddMessage(typeKey, msg, author, channelName, guid)
+        self:AddMessage(typeKey, msg, author, channelName, guid, event)
     end)
 
     -- conteneur SOCIAL (ex-module Social) : liste amis / BNet / guilde
@@ -190,7 +256,10 @@ function M:Init(body)
         self:RefreshSocial()
     end)
     self.sev = CreateFrame("Frame")
-    self.sev:SetScript("OnEvent", function() if self.tab == "social" then self:RefreshSocial() end end)
+    self.sev:SetScript("OnEvent", function()
+        self:RefreshSocialCounts()
+        if self.tab == "social" then self:RefreshSocial() end
+    end)
 
     self:ApplyConfig()
     self:SetTab(self.tab or "chat")
@@ -211,11 +280,160 @@ function M:EnsureChannels()
     end
 end
 
+function M:BlizzardChatFrames()
+    local frames = {}
+    local n = NUM_CHAT_WINDOWS or 10
+    for i = 1, n do
+        frames[#frames + 1] = _G["ChatFrame" .. i]
+        frames[#frames + 1] = _G["ChatFrame" .. i .. "Tab"]
+        frames[#frames + 1] = _G["ChatFrame" .. i .. "EditBox"]
+    end
+    frames[#frames + 1] = ChatFrameMenuButton
+    frames[#frames + 1] = ChatFrameChannelButton
+    frames[#frames + 1] = ChatFrameToggleVoiceDeafenButton
+    frames[#frames + 1] = ChatFrameToggleVoiceMuteButton
+    frames[#frames + 1] = QuickJoinToastButton
+    return frames
+end
+
+function M:ShouldHideBlizzardChat()
+    local cfg = SP:GetModuleConfig(self.name)
+    return self._enabled and cfg and cfg.hideBlizzardChat ~= false
+end
+
+function M:SetBlizzardChatHidden(hidden)
+    hidden = hidden and true or false
+    self._hiddenBlizzard = self._hiddenBlizzard or {}
+    for _, f in ipairs(self:BlizzardChatFrames()) do
+        if f and f.Hide and f.Show then
+            if hidden then
+                if self._hiddenBlizzard[f] == nil then self._hiddenBlizzard[f] = f:IsShown() and true or false end
+                pcall(f.Hide, f)
+            elseif self._hiddenBlizzard[f] then
+                pcall(f.Show, f)
+            end
+        end
+    end
+    if not hidden then self._hiddenBlizzard = {} end
+end
+
+function M:ApplyBlizzardChatVisibility()
+    self:SetBlizzardChatHidden(self:ShouldHideBlizzardChat())
+end
+
+function M:ShouldReplaceBlizzardInput()
+    local cfg = SP:GetModuleConfig(self.name)
+    return self._enabled and cfg and cfg.replaceBlizzardInput ~= false
+end
+
+function M:IsBlizzardChatEditBox(frame)
+    if not frame then return false end
+    local n = NUM_CHAT_WINDOWS or 10
+    for i = 1, n do
+        if frame == _G["ChatFrame" .. i .. "EditBox"] then return true end
+    end
+    return frame == _G.ACTIVE_CHAT_EDIT_BOX
+end
+
+function M:InstallChatHooks()
+    self._chatHookedFrames = self._chatHookedFrames or {}
+
+    local function onShowOrFocus(frame)
+        if self:IsBlizzardChatEditBox(frame) and self:ShouldReplaceBlizzardInput() then
+            self:OpenInput(nil, frame)
+        elseif self:ShouldHideBlizzardChat() and frame and frame.Hide then
+            pcall(frame.Hide, frame)
+        end
+    end
+
+    for _, f in ipairs(self:BlizzardChatFrames()) do
+        if f and f.HookScript and not self._chatHookedFrames[f] then
+            self._chatHookedFrames[f] = true
+            pcall(f.HookScript, f, "OnShow", onShowOrFocus)
+            if self:IsBlizzardChatEditBox(f) then
+                pcall(f.HookScript, f, "OnEditFocusGained", onShowOrFocus)
+            end
+        end
+    end
+
+    if hooksecurefunc then
+        if ChatFrame_OpenChat and not self._chatOpenHookInstalled then
+            local ok = pcall(hooksecurefunc, "ChatFrame_OpenChat", function(text)
+                if self:ShouldReplaceBlizzardInput() then self:OpenInput(text or "", _G.ACTIVE_CHAT_EDIT_BOX or ChatFrame1EditBox) end
+            end)
+            if ok then self._chatOpenHookInstalled = true end
+        end
+        if ChatEdit_ActivateChat and not self._chatActivateHookInstalled then
+            local ok = pcall(hooksecurefunc, "ChatEdit_ActivateChat", function(editBox)
+                if self:ShouldReplaceBlizzardInput() then self:OpenInput(nil, editBox) end
+            end)
+            if ok then self._chatActivateHookInstalled = true end
+        end
+    end
+end
+
+function M:OpenInput(text, sourceEditBox)
+    if self._openingInput then return end
+    self._openingInput = true
+    local cfg = SP:GetModuleConfig(self.name)
+    if not cfg then self._openingInput = false; return end
+    if not cfg.enabled then self._openingInput = false; return end
+    local blizzEdit = sourceEditBox or _G.ACTIVE_CHAT_EDIT_BOX or ChatFrame1EditBox
+    if blizzEdit and blizzEdit.GetAttribute then
+        self:AdoptBlizzardChatType(blizzEdit)
+        if (not text or text == "") and blizzEdit.GetText then text = blizzEdit:GetText() end
+        if blizzEdit.ClearFocus then pcall(blizzEdit.ClearFocus, blizzEdit) end
+        if blizzEdit.Hide then pcall(blizzEdit.Hide, blizzEdit) end
+    end
+    local now = GetTime and GetTime() or 0
+    if SP.panel then SP.panel._panelActive = now; SP.panel:Show() end
+    if cfg.panel == 2 and SP.panel2 then SP.panel2._panelActive = now; SP.panel2:Show() end
+    cfg.collapsed = false
+    self._forceReveal = true
+    SP:UpdateCollapseVisual(self)
+    SP:RebuildLayout()
+    self:SetTab("chat")
+    self:ApplyBlizzardChatVisibility()
+    if self.eb then
+        self.eb:Show()
+        self.eb:SetText(text or "")
+        self.eb:SetCursorPosition((text and #text) or 0)
+        self.eb:SetFocus()
+    end
+    self._openingInput = false
+end
+
+function M:AdoptBlizzardChatType(editBox)
+    if not editBox or not editBox.GetAttribute then return end
+    local t = editBox:GetAttribute("chatType")
+    if not t or t == "" then return end
+    if t == "WHISPER" then
+        self.writeType = "WHISPER"
+        self._lastWhisper = editBox:GetAttribute("tellTarget") or (ChatEdit_GetLastTellTarget and ChatEdit_GetLastTellTarget())
+    elseif t == "CHANNEL" then
+        self.writeType = "CUSTOM"
+        self.writeChannel = editBox:GetAttribute("channelTarget")
+    elseif t == "PARTY" or t == "RAID" or t == "INSTANCE_CHAT" or t == "GUILD" or t == "YELL" or t == "EMOTE" or t == "SAY" then
+        self.writeType = t
+        self.writeChannel = nil
+    end
+end
+
 function M:Enable()
     self._enabled = true
     if self._placeholder then self._placeholder:Hide() end
     self:EnsureChannels()
     self:ApplyConfig()
+    self:InstallChatHooks()
+    self:ApplyBlizzardChatVisibility()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0.5, function()
+            if self._enabled then
+                self:InstallChatHooks()
+                self:ApplyBlizzardChatVisibility()
+            end
+        end)
+    end
     for _, e in ipairs(CHAT_EVENTS) do pcall(self.ev.RegisterEvent, self.ev, e) end
     -- onglet Social : events + rafraîchissement périodique
     if self.sev then
@@ -227,9 +445,11 @@ function M:Enable()
         self._socialTicker = C_Timer.NewTicker(30, function()
             if C_FriendList and C_FriendList.ShowFriends then pcall(C_FriendList.ShowFriends) end
             if C_GuildInfo and C_GuildInfo.GuildRoster then pcall(C_GuildInfo.GuildRoster) end
+            self:RefreshSocialCounts()
             if self.tab == "social" then self:RefreshSocial() end
         end)
     end
+    self:RefreshSocialCounts()
 end
 
 function M:Disable()
@@ -237,9 +457,26 @@ function M:Disable()
     if self.ev then self.ev:UnregisterAllEvents() end
     if self.sev then self.sev:UnregisterAllEvents() end
     if self._socialTicker then self._socialTicker:Cancel(); self._socialTicker = nil end
+    if self.toastHost then self.toastHost:Hide() end
+    for _, f in ipairs(self.toasts or {}) do f:Hide(); f._fading = false end
+    if self.activeToasts then wipe(self.activeToasts) end
+    self:SetBlizzardChatHidden(false)
 end
 
 function M:OnResize(w, h) end
+
+function M:OnCollapseChanged(collapsed)
+    if collapsed then
+        if self.chatTabBar then self.chatTabBar:Hide() end
+        if self.bar then self.bar:Hide() end
+        if self.smf then self.smf:Hide() end
+        if self.eb then self.eb:Hide(); self.eb:ClearFocus() end
+        if self.copyBox then self.copyBox:Hide() end
+        if self.social then self.social:Hide() end
+    else
+        self:SetTab(self.tab or "chat")
+    end
+end
 
 function M:ChannelByKey(key)
     for _, ch in ipairs(SP:GetModuleConfig(self.name).channels or {}) do
@@ -247,12 +484,178 @@ function M:ChannelByKey(key)
     end
 end
 
+function M:EnsureChatTabs()
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.chatTabs = cfg.chatTabs or {}
+    if #cfg.chatTabs == 0 then
+        cfg.chatTabs[1] = { id = "main", label = "Tout", channels = { "A" } }
+    end
+    for i, tab in ipairs(cfg.chatTabs) do
+        tab.id = tab.id or ("tab" .. i)
+        tab.label = tab.label or ("Chat " .. i)
+        tab.channels = tab.channels or { "A" }
+        if tab.showUnread == nil then tab.showUnread = true end
+        tab.unread = tonumber(tab.unread) or 0
+    end
+    cfg.activeChatTab = cfg.activeChatTab or cfg.chatTabs[1].id
+end
+
+function M:ChatTabContainsMessage(tab, key)
+    if not tab then return false end
+    return self:TabHasChannel(tab, "A") or self:TabHasChannel(tab, key)
+end
+
+function M:IncrementUnreadFor(key)
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    for _, tab in ipairs(cfg.chatTabs or {}) do
+        if self:ChatTabContainsMessage(tab, key) then
+            if tab.id ~= cfg.activeChatTab or self.tab == "social" or cfg.collapsed then
+                if tab.showUnread ~= false then tab.unread = (tonumber(tab.unread) or 0) + 1 end
+            end
+        end
+    end
+    self:RefreshChatTabButtons()
+end
+
+function M:GetActiveChatTab()
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    for _, tab in ipairs(cfg.chatTabs or {}) do
+        if tab.id == cfg.activeChatTab then return tab end
+    end
+    cfg.activeChatTab = cfg.chatTabs[1] and cfg.chatTabs[1].id or "main"
+    return cfg.chatTabs[1]
+end
+
+function M:TabHasChannel(tab, key)
+    if not tab or not tab.channels then return false end
+    for _, k in ipairs(tab.channels) do if k == key then return true end end
+    return false
+end
+
+function M:ToggleChannelInActiveTab(key)
+    if not key then return end
+    local tab = self:GetActiveChatTab()
+    if not tab then return end
+    tab.channels = tab.channels or {}
+    if key == "A" then
+        tab.channels = { "A" }
+    else
+        for i = #tab.channels, 1, -1 do
+            if tab.channels[i] == "A" then
+                table.remove(tab.channels, i)
+            elseif tab.channels[i] == key then
+                table.remove(tab.channels, i)
+                if #tab.channels == 0 then tab.channels[1] = "A" end
+                self:SetView(tab.id)
+                return
+            end
+        end
+        tab.channels[#tab.channels + 1] = key
+    end
+    self:SetView(tab.id)
+end
+
+function M:CreateChatTab()
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    local n = #(cfg.chatTabs or {}) + 1
+    local id = "tab" .. tostring(time()) .. tostring(n)
+    cfg.chatTabs[#cfg.chatTabs + 1] = { id = id, label = "Chat " .. n, channels = { "A" } }
+    cfg.activeChatTab = id
+    self:ApplyConfig()
+end
+
+function M:DeleteChatTab(id)
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    if #cfg.chatTabs <= 1 then return end
+    for i = #cfg.chatTabs, 1, -1 do
+        if cfg.chatTabs[i].id == id then table.remove(cfg.chatTabs, i); break end
+    end
+    cfg.activeChatTab = cfg.chatTabs[1] and cfg.chatTabs[1].id or "main"
+    self:ApplyConfig()
+end
+
+function M:RefreshChatTabButtons()
+    if not self.chatTabBar then return end
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    if cfg and cfg.collapsed then
+        self.chatTabBar:Hide()
+        for _, b in ipairs(self.chatTabBtns) do b:Hide() end
+        if self.chatTabAdd then self.chatTabAdd:Hide() end
+        return
+    end
+    self.chatTabBar:SetShown(self.tab ~= "social")
+    for _, b in ipairs(self.chatTabBtns) do b:Hide() end
+    local x, maxW = 0, self.chatTabBar:GetWidth() or 0
+    for i, tab in ipairs(cfg.chatTabs or {}) do
+        local b = self.chatTabBtns[i]
+        if not b then
+            b = CreateFrame("Button", nil, self.chatTabBar)
+            b:SetHeight(16)
+            b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAllPoints(b)
+            b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetAllPoints(b)
+            b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            self.chatTabBtns[i] = b
+        end
+        local label = tab.label or tab.id
+        local unread = tonumber(tab.unread) or 0
+        local active = tab.id == cfg.activeChatTab
+        local display = label
+        if not active then
+            display = (label:sub(1, 1) or "?")
+            if unread > 0 and tab.showUnread ~= false then display = display .. " " .. tostring(unread) end
+        elseif unread > 0 and tab.showUnread ~= false then
+            display = label .. " " .. tostring(unread)
+        end
+        b.fs:SetText(display)
+        local w = active and math.max(42, math.min(100, (b.fs:GetStringWidth() or #display * 7) + 18)) or math.max(22, math.min(42, (b.fs:GetStringWidth() or #display * 7) + 14))
+        if maxW > 0 and x + w > maxW - 22 then b:Hide(); break end
+        b:SetWidth(w)
+        b:ClearAllPoints(); b:SetPoint("LEFT", self.chatTabBar, "LEFT", x, 0)
+        b.bg:SetColorTexture(0.30, 0.55, 0.95, active and 0.35 or ((unread > 0) and 0.22 or 0.10))
+        b.tabId = tab.id
+        b:SetScript("OnClick", function(s, mouse)
+            if mouse == "RightButton" then self:DeleteChatTab(s.tabId)
+            else self:SetView(s.tabId) end
+        end)
+        b:SetScript("OnEnter", function()
+            GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
+            GameTooltip:SetText(label)
+            if unread > 0 then GameTooltip:AddLine(tostring(unread) .. " message(s) non lu(s)", 1, 0.82, 0) end
+            GameTooltip:AddLine("Clic gauche : afficher. Clic droit : supprimer.", 0.7, 0.7, 0.7)
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        b:Show()
+        x = x + w + 3
+    end
+    if not self.chatTabAdd then
+        self.chatTabAdd = CreateFrame("Button", nil, self.chatTabBar)
+        self.chatTabAdd:SetSize(18, 16)
+        self.chatTabAdd.bg = self.chatTabAdd:CreateTexture(nil, "BACKGROUND"); self.chatTabAdd.bg:SetAllPoints(self.chatTabAdd); self.chatTabAdd.bg:SetColorTexture(1, 1, 1, 0.12)
+        self.chatTabAdd.fs = self.chatTabAdd:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); self.chatTabAdd.fs:SetAllPoints(self.chatTabAdd); self.chatTabAdd.fs:SetText("+")
+        self.chatTabAdd:SetScript("OnClick", function() self:CreateChatTab() end)
+    end
+    self.chatTabAdd:ClearAllPoints()
+    self.chatTabAdd:SetPoint("LEFT", self.chatTabBar, "LEFT", x, 0)
+    self.chatTabAdd:SetShown(maxW <= 0 or x + 20 <= maxW)
+end
+
 -- ------------------------------------------------------------
 -- Application config : police, couleurs, boutons + séparateurs, buffers
 -- ------------------------------------------------------------
 function M:ApplyConfig()
     local cfg = SP:GetModuleConfig(self.name)
-    pcall(function() self.smf:SetFont(cfg.font or STANDARD_TEXT_FONT, cfg.fontSize or 12, "") end)
+    self:EnsureChatTabs()
+    pcall(function()
+        local face, size, flags = SP:GetEffectiveModuleFont(self.name)
+        self.smf:SetFont(face or cfg.font or STANDARD_TEXT_FONT, size or cfg.fontSize or 12, flags or "")
+    end)
+    if self.ApplyBlizzardChatVisibility then self:ApplyBlizzardChatVisibility() end
 
     self.colorOf = {}
     for _, ch in ipairs(cfg.channels or {}) do
@@ -263,6 +666,8 @@ function M:ApplyConfig()
 
     for _, b in ipairs(self.btns) do b:Hide() end
     for _, s in ipairs(self.seps) do s:Hide() end
+    if self.bar then self.bar:Hide() end
+    self:RefreshChatTabButtons()
 
     local x, i = 0, 0
     for _, ch in ipairs(cfg.channels or {}) do
@@ -291,7 +696,7 @@ function M:ApplyConfig()
             b.fs:SetTextColor(ch.r or 1, ch.g or 1, ch.b or 1)
             b.key = ch.key
             b:SetScript("OnClick", function(s, mouse)
-                if mouse == "RightButton" then self:SetView(s.key) else self:SetWrite(s.key) end
+                if mouse == "RightButton" then self:ToggleChannelInActiveTab(s.key) else self:SetWrite(s.key) end
             end)
             b:SetScript("OnEnter", function(s)
                 GameTooltip:SetOwner(s, "ANCHOR_BOTTOM")
@@ -303,8 +708,234 @@ function M:ApplyConfig()
         end
     end
     self._btnUsed = i
-    if not self.colorOf[self.viewFilter] then self.viewFilter = "A" end
-    self:SetView(self.viewFilter)
+    self:SetView(cfg.activeChatTab)
+    self:RefreshSocialCounts()
+end
+
+-- ------------------------------------------------------------
+-- Popups instantanes
+-- ------------------------------------------------------------
+function M:DirectColor(typeKey, channelName, pk)
+    if typeKey == "WHISPER" or typeKey == "BN_WHISPER" then return { 1.0, 0.45, 1.0 } end
+    if typeKey == "GUILD" or typeKey == "OFFICER" then return { 0.25, 1.0, 0.35 } end
+    if typeKey == "PARTY" or typeKey == "RAID" or typeKey == "INSTANCE_CHAT" then return { 0.40, 0.70, 1.0 } end
+    local cfg = SP:GetModuleConfig(self.name)
+    for _, ch in ipairs((cfg and cfg.channels) or {}) do
+        local def = KEYDEF[ch.key]
+        if (ch.types and ch.types[typeKey])
+            or (def and def.types and def.types[typeKey])
+            or (def and def.isTrade and typeKey == "CHANNEL" and IsTradeChannel(channelName))
+            or (ch.channelName and typeKey == "CHANNEL" and type(channelName) == "string" and channelName:lower():find(ch.channelName:lower(), 1, true)) then
+            return { ch.r or 1, ch.g or 1, ch.b or 1 }
+        end
+    end
+    return self.colorOf[pk] or self.colorOf.A or { 1, 1, 1 }
+end
+
+function M:CreateToast()
+    local template = BackdropTemplateMixin and "BackdropTemplate" or nil
+    local f = CreateFrame("Button", nil, self.toastHost, template)
+    f:SetSize(360, 56)
+    f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    f:EnableMouse(true)
+    if f.SetBackdrop then
+        f:SetBackdrop({
+            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = false, edgeSize = 14,
+            insets = { left = 4, right = 4, top = 4, bottom = 4 },
+        })
+    end
+
+    f.shadow = f:CreateTexture(nil, "BACKGROUND")
+    f.shadow:SetPoint("TOPLEFT", f, "TOPLEFT", -18, 18)
+    f.shadow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 18, -18)
+    f.shadow:SetColorTexture(0, 0, 0, 0.32)
+
+    f.blur = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    f.blur:SetPoint("TOPLEFT", f, "TOPLEFT", -9, 9)
+    f.blur:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 9, -9)
+    f.blur:SetBlendMode("ADD")
+
+    f.glow = f:CreateTexture(nil, "BORDER")
+    f.glow:SetPoint("TOPLEFT", f, "TOPLEFT", -4, 4)
+    f.glow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 4, -4)
+    f.glow:SetBlendMode("ADD")
+
+    f.line = f:CreateTexture(nil, "ARTWORK")
+    f.line:SetPoint("LEFT", f, "LEFT", 10, 0)
+    f.line:SetSize(3, 30)
+
+    f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 22, -9)
+    f.title:SetJustifyH("LEFT")
+    f.title:SetWordWrap(false)
+
+    f.msg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    f.msg:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -1)
+    f.msg:SetJustifyH("LEFT")
+    f.msg:SetWordWrap(false)
+
+    f.fadeIn = f:CreateAnimationGroup()
+    local aIn = f.fadeIn:CreateAnimation("Alpha")
+    aIn:SetFromAlpha(0)
+    aIn:SetToAlpha(1)
+    aIn:SetDuration(0.16)
+    local move = f.fadeIn:CreateAnimation("Translation")
+    move:SetOffset(0, -8)
+    move:SetDuration(0.16)
+
+    f.fadeOut = f:CreateAnimationGroup()
+    local aOut = f.fadeOut:CreateAnimation("Alpha")
+    aOut:SetFromAlpha(1)
+    aOut:SetToAlpha(0)
+    aOut:SetDuration(0.34)
+    f.fadeOut:SetScript("OnFinished", function()
+        f:Hide()
+        self:RemoveToast(f)
+    end)
+
+    f:SetScript("OnEnter", function(s)
+        s._toastToken = (s._toastToken or 0) + 1
+        local token = s._toastToken
+        if C_Timer and C_Timer.After then
+            C_Timer.After(1, function()
+                if s:IsShown() and s._toastToken == token then self:FadeToast(s) end
+            end)
+        end
+    end)
+    f:SetScript("OnClick", function(s)
+        self:ReplyFromToast(s)
+        self:FadeToast(s)
+    end)
+    f:Hide()
+    return f
+end
+
+function M:StyleToast(f, color, theme)
+    local r, g, b = color[1] or 1, color[2] or 1, color[3] or 1
+    if theme == "shadow" then
+        if f.SetBackdropColor then f:SetBackdropColor(0.015, 0.018, 0.026, 0.88) end
+        if f.SetBackdropBorderColor then f:SetBackdropBorderColor(r, g, b, 0.70) end
+        f.shadow:SetColorTexture(0, 0, 0, 0.52)
+        f.blur:SetColorTexture(r, g, b, 0.10)
+        f.glow:SetColorTexture(r, g, b, 0.20)
+        f.title:SetTextColor(r, g, b, 1)
+        f.msg:SetTextColor(0.94, 0.96, 1, 1)
+    else
+        if f.SetBackdropColor then f:SetBackdropColor(0.94, 0.96, 1.0, 0.22) end
+        if f.SetBackdropBorderColor then f:SetBackdropBorderColor(r, g, b, 0.78) end
+        f.shadow:SetColorTexture(0, 0, 0, 0.24)
+        f.blur:SetColorTexture(1, 1, 1, 0.15)
+        f.glow:SetColorTexture(r, g, b, 0.24)
+        f.title:SetTextColor(r, g, b, 1)
+        f.msg:SetTextColor(1, 1, 1, 1)
+    end
+    f.line:SetColorTexture(r, g, b, 0.95)
+end
+
+function M:AcquireToast()
+    for _, f in ipairs(self.toasts) do
+        if not f:IsShown() then return f end
+    end
+    local f = self:CreateToast()
+    self.toasts[#self.toasts + 1] = f
+    return f
+end
+
+function M:RemoveToast(frame)
+    for i = #self.activeToasts, 1, -1 do
+        if self.activeToasts[i] == frame then table.remove(self.activeToasts, i) end
+    end
+    self:LayoutToasts()
+    if #self.activeToasts == 0 and self.toastHost then self.toastHost:Hide() end
+end
+
+function M:LayoutToasts()
+    if not self.toastHost then return end
+    for i, f in ipairs(self.activeToasts or {}) do
+        f:ClearAllPoints()
+        f:SetPoint("TOP", self.toastHost, "TOP", 0, -((i - 1) * 62))
+    end
+end
+
+function M:FadeToast(frame)
+    if not frame or frame._fading then return end
+    frame._fading = true
+    frame._toastToken = (frame._toastToken or 0) + 1
+    if frame.fadeIn and frame.fadeIn:IsPlaying() then frame.fadeIn:Stop() end
+    if frame.fadeOut then frame.fadeOut:Play() else frame:Hide(); self:RemoveToast(frame) end
+end
+
+function M:ReplyFromToast(frame)
+    if not frame then return end
+    if frame.replyType == "WHISPER" and frame.replyTo and frame.replyTo ~= "" then
+        self.writeType, self.writeChannel = "WHISPER", nil
+        self._lastWhisper = frame.replyTo
+        self:OpenInput("", nil)
+        if self.viewLabel then
+            self.viewLabel:SetText("|cFF40FF40-> " .. CleanName(frame.replyTo) .. "|r")
+        end
+    else
+        local replyType = frame.replyType or "SAY"
+        self.writeType = replyType
+        self.writeChannel = nil
+        self:OpenInput("", nil)
+        self.writeType = replyType
+    end
+end
+
+function M:ShowInstantPopup(typeKey, msg, author, pk, channelName, rawEvent)
+    local cfg = SP:GetModuleConfig(self.name)
+    if not cfg or cfg.instantPopups == false then return end
+    if rawEvent and rawEvent:find("_INFORM", 1, true) then return end
+    if not INSTANT_POPUP_TYPES[typeKey] then return end
+    local who = CleanName(author)
+    if who == "" or who == (UnitName and UnitName("player")) then return end
+
+    local f = self:AcquireToast()
+    f._fading = false
+    f._toastToken = (f._toastToken or 0) + 1
+    f.replyTo = author
+    f.replyType = REPLY_WRITE_TYPE[typeKey] or "SAY"
+    if f.replyType == "WHISPER" then self._lastWhisper = author end
+
+    local color = self:DirectColor(typeKey, channelName, pk)
+    self:StyleToast(f, color, cfg.popupTheme or "light")
+    f.title:SetText(who)
+    local popupMsg = msg
+    if #popupMsg > 150 then popupMsg = popupMsg:sub(1, 147) .. "..." end
+    f.msg:SetText(popupMsg)
+
+    local w = math.max(f.title:GetStringWidth() or 0, f.msg:GetStringWidth() or 0) + 46
+    w = math.min(560, math.max(220, w))
+    f:SetWidth(w)
+    f.title:SetWidth(w - 44)
+    f.msg:SetWidth(w - 44)
+    f:SetHeight(56)
+    if f.fadeOut and f.fadeOut:IsPlaying() then f.fadeOut:Stop() end
+    f:SetAlpha(0)
+    f:Show()
+    self.toastHost:Show()
+
+    for i = #self.activeToasts, 1, -1 do
+        if self.activeToasts[i] == f then table.remove(self.activeToasts, i) end
+    end
+    table.insert(self.activeToasts, 1, f)
+    while #self.activeToasts > 4 do
+        local old = table.remove(self.activeToasts)
+        self:FadeToast(old)
+    end
+    self:LayoutToasts()
+    if f.fadeIn then f.fadeIn:Play() else f:SetAlpha(1) end
+
+    local token = f._toastToken
+    local duration = cfg.popupDuration or 7
+    if C_Timer and C_Timer.After then
+        C_Timer.After(duration, function()
+            if f:IsShown() and f._toastToken == token then self:FadeToast(f) end
+        end)
+    end
 end
 
 -- ------------------------------------------------------------
@@ -349,7 +980,7 @@ function M:Push(key, entry)
     if #b > CAP then table.remove(b, 1) end
 end
 
-function M:AddMessage(typeKey, msg, author, channelName, guid)
+function M:AddMessage(typeKey, msg, author, channelName, guid, rawEvent)
     if type(msg) ~= "string" then return end
     self._idc = self._idc + 1
     local id = self._idc
@@ -361,24 +992,46 @@ function M:AddMessage(typeKey, msg, author, channelName, guid)
     local ts = ("|cff808080|HspMsg:%d|h[%s]|h|r "):format(id, date("%H:%M"))
     local name = self:BuildName(author, guid, id)
     local line = ts .. (name and (name .. ": ") or "") .. LinkifyURLs(msg)
-    local entry = { line, col[1], col[2], col[3] }
+    local entry = { line, col[1], col[2], col[3], id }
+    entry.id = id
 
     self:Push("A", entry)
     if pk ~= "A" then self:Push(pk, entry) end
-    if self.viewFilter == "A" or self.viewFilter == pk then
-        self.smf:AddMessage(entry[1], col[1], col[2], col[3])
-    end
+    self:IncrementUnreadFor(pk)
+    local tab = self:GetActiveChatTab()
+    local cfg = SP:GetModuleConfig(self.name)
+    if not (cfg and cfg.collapsed) and self.tab ~= "social" and (self:TabHasChannel(tab, "A") or self:TabHasChannel(tab, pk)) then self:SetView(tab.id) end
+    self:ShowInstantPopup(typeKey, msg, author, pk, channelName, rawEvent)
 end
 
 function M:SetView(key)
-    self.viewFilter = key
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    if key then cfg.activeChatTab = key end
+    local tab = self:GetActiveChatTab()
+    if tab then tab.unread = 0 end
+    self.viewFilter = tab and tab.id or key or "main"
     self.smf:Clear()
-    for _, e in ipairs(self.buf[key] or {}) do self.smf:AddMessage(e[1], e[2], e[3], e[4]) end
+    local merged, seen = {}, {}
+    local channels = (tab and tab.channels) or { "A" }
+    if self:TabHasChannel(tab, "A") then channels = { "A" } end
+    for _, chKey in ipairs(channels) do
+        for _, e in ipairs(self.buf[chKey] or {}) do
+            local eid = e.id or e[5] or tostring(e[1])
+            if not seen[eid] then
+                seen[eid] = true
+                merged[#merged + 1] = e
+            end
+        end
+    end
+    table.sort(merged, function(a, b) return (a.id or a[5] or 0) < (b.id or b[5] or 0) end)
+    for _, e in ipairs(merged) do self.smf:AddMessage(e[1], e[2], e[3], e[4]) end
     for i = 1, (self._btnUsed or 0) do
         local b = self.btns[i]
-        if b then b.sel:SetShown(b.key == key) end
+        if b then b.sel:SetShown(self:TabHasChannel(tab, b.key)) end
     end
-    if self.viewLabel then self.viewLabel:SetText("|cFFAAAAAAvue:|r " .. key) end
+    if self.viewLabel then self.viewLabel:SetText("|cFFAAAAAAvue:|r " .. ((tab and tab.label) or key)) end
+    self:RefreshChatTabButtons()
 end
 
 function M:SetWrite(key)
@@ -425,6 +1078,19 @@ end
 
 function M:Send(text)
     if not text or text == "" then return end
+    if text:sub(1, 1) == "/" then
+        local eb = ChatFrame1EditBox or (DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox)
+        if eb and ChatEdit_ParseText then
+            local ok = pcall(function()
+                eb:SetText(text)
+                ChatEdit_ParseText(eb, 0)
+                eb:SetText("")
+                eb:ClearFocus()
+            end)
+            self:ApplyBlizzardChatVisibility()
+            if ok then return end
+        end
+    end
     local w = self.writeType or "SAY"
     if w == "WHISPER" then
         local target = self._lastWhisper or (ChatEdit_GetLastTellTarget and ChatEdit_GetLastTellTarget())
@@ -436,6 +1102,8 @@ function M:Send(text)
         elseif IsInRaid() then ch = "RAID"
         elseif IsInGroup() then ch = "PARTY" end
         pcall(SendChatMessage, text, ch)
+    elseif w == "PARTY" or w == "RAID" or w == "INSTANCE_CHAT" or w == "YELL" or w == "EMOTE" or w == "OFFICER" then
+        pcall(SendChatMessage, text, w)
     elseif w == "GUILD" then
         pcall(SendChatMessage, text, "GUILD")
     elseif w == "TRADE" then
@@ -457,23 +1125,55 @@ end
 function M:SetTab(tab)
     self.tab = tab
     local chatOn = (tab ~= "social")
-    if self.bar then self.bar:SetShown(chatOn) end
+    local cfg = SP:GetModuleConfig(self.name)
+    if self.chatTabBar then self.chatTabBar:SetShown(chatOn and not (cfg and cfg.collapsed)) end
+    if self.bar then self.bar:Hide() end
     if self.smf then self.smf:SetShown(chatOn) end
     if self.eb then self.eb:SetShown(chatOn) end
     if self.social then self.social:SetShown(not chatOn) end
-    if self.tabBtns then for k, b in pairs(self.tabBtns) do b.hl:SetShown(k == tab) end end
+    if self.chatModeBtn and self.chatModeBtn.bg then self.chatModeBtn.bg:SetColorTexture(0.30, 0.55, 0.95, chatOn and 0.32 or 0.10) end
+    if self.socialBtn and self.socialBtn.bg then self.socialBtn.bg:SetColorTexture(0.30, 0.55, 0.95, (not chatOn) and 0.32 or 0.12) end
     if not chatOn then self:RefreshSocial() end
+    self:RefreshChatTabButtons()
+    self:RefreshSocialCounts()
 end
 
 function M:CycleChannel(delta)
-    local keys = { "A" }
-    for _, ch in ipairs(SP:GetModuleConfig(self.name).channels or {}) do
-        if ch.enabled and ch.key ~= "A" then keys[#keys + 1] = ch.key end
-    end
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    local keys = {}
+    for _, tab in ipairs(cfg.chatTabs or {}) do keys[#keys + 1] = tab.id end
+    if #keys == 0 then return end
     local idx = 1
-    for i, k in ipairs(keys) do if k == self.viewFilter then idx = i; break end end
+    for i, k in ipairs(keys) do if k == cfg.activeChatTab then idx = i; break end end
     idx = ((idx - 1 - delta) % #keys) + 1
     self:SetView(keys[idx])
+end
+
+function M:RefreshSocialCounts()
+    local friends, guild = 0, 0
+    local nBN = BNGetNumFriends and BNGetNumFriends() or 0
+    for i = 1, nBN do
+        local ok, acc = (C_BattleNet and C_BattleNet.GetFriendAccountInfo) and pcall(C_BattleNet.GetFriendAccountInfo, i)
+        local g = ok and acc and acc.gameAccountInfo
+        if g and g.isOnline and g.clientProgram == "WoW" then friends = friends + 1 end
+    end
+    local nF = (C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetNumFriends()) or 0
+    for i = 1, nF do
+        local ok, info = pcall(C_FriendList.GetFriendInfoByIndex, i)
+        if ok and info and info.connected then friends = friends + 1 end
+    end
+    if IsInGuild and IsInGuild() then
+        local total = GetNumGuildMembers and GetNumGuildMembers() or 0
+        for i = 1, total do
+            local _, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+            if online then guild = guild + 1 end
+        end
+    end
+    self._socialCounts.friends, self._socialCounts.guild = friends, guild
+    if self.socialBtn and self.socialBtn.fs then
+        self.socialBtn.fs:SetText(("|cFF66AAFF%d|r |cFF40FF40%d|r"):format(friends, guild))
+    end
 end
 
 local function socialClassColor(class)
@@ -506,10 +1206,11 @@ end
 
 function M:RefreshSocial()
     if not self.social then return end
+    self:RefreshSocialCounts()
     local entries = {}
     local nBN = BNGetNumFriends and BNGetNumFriends() or 0
     for i = 1, nBN do
-        local ok, acc = pcall(C_BattleNet.GetFriendAccountInfo, i)
+        local ok, acc = (C_BattleNet and C_BattleNet.GetFriendAccountInfo) and pcall(C_BattleNet.GetFriendAccountInfo, i)
         local g = ok and acc and acc.gameAccountInfo
         if g and g.isOnline and g.clientProgram == "WoW" and g.characterName then
             entries[#entries + 1] = { who = g.characterName .. (g.realmName and ("-" .. g.realmName) or ""),

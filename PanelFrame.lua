@@ -37,9 +37,9 @@ function SP:CreatePanel()
     tbg:SetColorTexture(0.10, 0.10, 0.15, 0.95)
     -- Orbe lumineux (signature SpherePanel)
     local orb = title:CreateTexture(nil, "OVERLAY")
-    orb:SetTexture("Interface\\Cooldown\\ping4")
-    orb:SetBlendMode("ADD"); orb:SetVertexColor(0.29, 0.64, 1)
-    orb:SetSize(16, 16); orb:SetPoint("LEFT", title, "LEFT", 6, 0)
+    orb:SetTexture(SP.LOGO_TEXTURE or "Interface\\Cooldown\\ping4")
+    orb:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    orb:SetSize(18, 18); orb:SetPoint("LEFT", title, "LEFT", 5, 0)
     p.titleOrb = orb
 
     local tlabel = title:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -300,11 +300,14 @@ function SP:_UpdateEdgeGlows(p, side, isP2)
             elseif mode == "bg" and app and app.bgColor then c = { app.bgColor.r, app.bgColor.g, app.bgColor.b }
             elseif mode == "custom" and app and app.glowColor then c = { app.glowColor.r, app.glowColor.g, app.glowColor.b }
             else c = GLOW_COLORS[((i - 1) % #GLOW_COLORS) + 1] end
-            g.tex:SetColorTexture(c[1] or 0.3, c[2] or 0.6, c[3] or 1, (app and app.glowAlpha) or SP.db.panel.glowAlpha or 0.9)
+            local useLocalGlow = app and app.glowLocal
+            local glowAlpha = (useLocalGlow and app.glowAlpha) or SP.db.panel.glowAlpha or 0.9
+            local glowThickness = (useLocalGlow and app.glowThickness) or SP.db.panel.glowThickness or 6
+            g.tex:SetColorTexture(c[1] or 0.3, c[2] or 0.6, c[3] or 1, glowAlpha)
             local top = f:GetTop()
             if top and uh and slidOff then
                 g:ClearAllPoints()
-                g:SetWidth((app and app.glowThickness) or SP.db.panel.glowThickness or 6); g:SetHeight(f:GetHeight() or 20)
+                g:SetWidth(glowThickness); g:SetHeight(f:GetHeight() or 20)
                 g:SetPoint(leftSide and "LEFT" or "RIGHT", edge, leftSide and "LEFT" or "RIGHT", 0, 0)
                 g:SetPoint("TOP", edge, "TOP", 0, -(uh - top))
                 g:Show()
@@ -494,8 +497,15 @@ function SP:CreatePanel2()
     title:SetPoint("TOPLEFT"); title:SetPoint("TOPRIGHT"); title:SetHeight(SP.UI.TITLE_H)
     title:EnableMouse(true); title:RegisterForDrag("LeftButton")
     local tbg = title:CreateTexture(nil, "ARTWORK"); tbg:SetAllPoints(title); tbg:SetColorTexture(0.10, 0.10, 0.15, 0.95)
+    local logo = title:CreateTexture(nil, "OVERLAY")
+    logo:SetTexture(SP.LOGO_TEXTURE or "Interface\\Icons\\INV_Misc_QuestionMark")
+    logo:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    logo:SetSize(18, 18)
+    logo:SetPoint("LEFT", title, "LEFT", 5, 0)
     local tl = title:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     tl:SetPoint("LEFT", title, "LEFT", 8, 0); tl:SetText("|cFF4AA3FFSphere|rPanel |cFF888888②|r")
+    tl:ClearAllPoints()
+    tl:SetPoint("LEFT", logo, "RIGHT", 4, 0)
     title:SetScript("OnDragStart", function() if not InCombatLockdown() then p:StartMoving() end end)
     title:SetScript("OnDragStop", function()
         p:StopMovingOrSizing()

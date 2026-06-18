@@ -11,6 +11,7 @@ local TEX_PLUS   = "Interface\\Buttons\\UI-PlusButton-Up"
 local TEX_MINUS  = "Interface\\Buttons\\UI-MinusButton-Up"
 local TEX_LOCK   = "Interface\\Buttons\\LockButton-Locked-Up"
 local TEX_UNLOCK = "Interface\\Buttons\\LockButton-Unlocked-Up"
+local SNP_FONT_DIR = "Interface\\AddOns\\SphereNameplates\\media\\fonts\\"
 
 -- Interface obligatoire que tout module DOIT exposer.
 local REQUIRED    = { "name", "label" }
@@ -30,6 +31,60 @@ local function copyColor(dst, src, fallback)
     dst.b = clamp(src.b ~= nil and src.b or fallback.b or 1, 0, 1)
     if src.a ~= nil or fallback.a ~= nil then dst.a = clamp(src.a ~= nil and src.a or fallback.a or 1, 0, 1) end
     return dst
+end
+
+function SP:GetEffectiveModuleFont(name)
+    local panel = SP.db and SP.db.panel or {}
+    local cfg = SP:GetModuleConfig(name) or {}
+    local face = (panel.fontGlobal and panel.fontFace) or cfg.fontFace or cfg.font or panel.fontFace
+    local size = (panel.fontGlobal and panel.fontSize) or cfg.fontSize or panel.fontSize or 11
+    local fontFlags = (panel.fontGlobal and panel.fontFlags) or cfg.fontFlags or panel.fontFlags or ""
+    if type(face) == "string" and face ~= "" and not face:find("[/\\]") then
+        face = SNP_FONT_DIR .. face
+    end
+    return face or STANDARD_TEXT_FONT, tonumber(size) or 11, fontFlags
+end
+
+function SP:GetEffectiveModuleSecondaryFont(name)
+    local panel = SP.db and SP.db.panel or {}
+    local cfg = SP:GetModuleConfig(name) or {}
+    local face = (panel.fontGlobal and panel.fontSecondaryFace) or cfg.fontSecondaryFace or panel.fontSecondaryFace or cfg.fontFace or panel.fontFace
+    local size = (panel.fontGlobal and panel.fontSecondarySize) or cfg.fontSecondarySize or panel.fontSecondarySize or math.max(8, (tonumber(panel.fontSize) or 11) - 1)
+    local fontFlags = (panel.fontGlobal and panel.fontSecondaryFlags) or cfg.fontSecondaryFlags or panel.fontSecondaryFlags or panel.fontFlags or ""
+    if type(face) == "string" and face ~= "" and not face:find("[/\\]") then
+        face = SNP_FONT_DIR .. face
+    end
+    return face or STANDARD_TEXT_FONT, tonumber(size) or 10, fontFlags
+end
+
+function SP:ApplyFontToObject(fs, moduleName, offset, flags)
+    if not fs or not fs.SetFont then return end
+    local face, size, effectiveFlags = SP:GetEffectiveModuleFont(moduleName)
+    if effectiveFlags == nil or effectiveFlags == "" then effectiveFlags = flags or "" end
+    fs:SetFont(face, math.max(6, (tonumber(size) or 11) + (offset or 0)), effectiveFlags)
+end
+
+function SP:ApplySecondaryFontToObject(fs, moduleName, offset, flags)
+    if not fs or not fs.SetFont then return end
+    local face, size, effectiveFlags = SP:GetEffectiveModuleSecondaryFont(moduleName)
+    if effectiveFlags == nil or effectiveFlags == "" then effectiveFlags = flags or "" end
+    fs:SetFont(face, math.max(6, (tonumber(size) or 10) + (offset or 0)), effectiveFlags)
+end
+
+local function ApplyFontsRecursive(frame, moduleName, depth)
+    if not frame or depth > 6 then return end
+    local regions = { frame:GetRegions() }
+    for _, r in ipairs(regions) do
+        if r and r.GetObjectType and r:GetObjectType() == "FontString" then
+            if r._spFontRole == "secondary" then
+                SP:ApplySecondaryFontToObject(r, moduleName, 0)
+            else
+                SP:ApplyFontToObject(r, moduleName, 0)
+            end
+        end
+    end
+    local children = { frame:GetChildren() }
+    for _, child in ipairs(children) do ApplyFontsRecursive(child, moduleName, depth + 1) end
 end
 
 function SP:GetModuleAppearanceConfig(name)
@@ -70,6 +125,11 @@ function SP:ApplyModuleAppearance(m)
     if m.labelFS then m.labelFS:SetTextColor(clamp(tx.r, 0, 1), clamp(tx.g, 0, 1), clamp(tx.b, 0, 1), 1) end
     if m.suffixFS then m.suffixFS:SetTextColor(clamp(tx.r, 0, 1), clamp(tx.g, 0, 1), clamp(tx.b, 0, 1), 0.82) end
     if m._placeholder then m._placeholder:SetTextColor(clamp(tx.r, 0, 1), clamp(tx.g, 0, 1), clamp(tx.b, 0, 1), 0.30) end
+    if m.frame then ApplyFontsRecursive(m.frame, m.name, 0) end
+    SP:ApplyFontToObject(m.labelFS, m.name, 1)
+    SP:ApplySecondaryFontToObject(m.suffixFS, m.name, 0)
+    SP:ApplySecondaryFontToObject(m._placeholder, m.name, 0)
+    if m.ApplyFonts then pcall(m.ApplyFonts, m) end
 end
 
 function SP:ApplyAllModuleAppearance()
@@ -213,17 +273,18 @@ end
 function SP:CreateModuleFrame(m)
     local UIc     = SP.UI
     local content = SP.panel.content
+    local headerH = m.headerHeight or UIc.HEADER_H
 
     local frame = CreateFrame("Frame", "SpherePanelModule_" .. m.name, content)
     frame:SetPoint("TOPLEFT",  content, "TOPLEFT",  0, 0)   -- repositionné par RebuildLayout
     frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
-    frame:SetHeight(UIc.HEADER_H)
+    frame:SetHeight(headerH)
 
     -- --- Header (Button : clic = collapse, drag = reorder) ---
     local header = CreateFrame("Button", nil, frame)
     header:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, 0)
     header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    header:SetHeight(UIc.HEADER_H)
+    header:SetHeight(headerH)
     header:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     header:RegisterForDrag("LeftButton")
     local hbg = header:CreateTexture(nil, "BACKGROUND")
@@ -232,7 +293,7 @@ function SP:CreateModuleFrame(m)
     local hglass = header:CreateTexture(nil, "ARTWORK")
     hglass:SetPoint("TOPLEFT", header, "TOPLEFT", 1, -1)
     hglass:SetPoint("TOPRIGHT", header, "TOPRIGHT", -1, -1)
-    hglass:SetHeight(math.max(6, UIc.HEADER_H * 0.45))
+    hglass:SetHeight(math.max(6, headerH * 0.45))
     hglass:SetColorTexture(1, 1, 1, 0.10)
     local hline = header:CreateTexture(nil, "OVERLAY")
     hline:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", 1, 0)
@@ -257,7 +318,7 @@ function SP:CreateModuleFrame(m)
 
     -- Cadenas : épingle l'affichage (exclu du futur auto-fade)
     local lock = CreateFrame("Button", nil, header)
-    lock:SetSize(UIc.HEADER_H - 4, UIc.HEADER_H - 4)
+    lock:SetSize(math.min(UIc.HEADER_H, headerH) - 4, math.min(UIc.HEADER_H, headerH) - 4)
     lock:SetPoint("RIGHT", header, "RIGHT", -3, 0)
     lock:SetFrameLevel(baseLvl + 2)
     lock:SetScript("OnClick", function() SP:TogglePin(m) end)
@@ -273,6 +334,7 @@ function SP:CreateModuleFrame(m)
     -- Suffixe dynamique du bandeau (ex : compteur de quêtes "18 / 35")
     local suffix = header:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     suffix:SetPoint("RIGHT", lock, "LEFT", -6, 0)
+    suffix._spFontRole = "secondary"
     m.suffixFS = suffix
 
     -- Clic gauche = réduire/ouvrir (sans flèche) ; clic droit = menu ; drag = reorder.
@@ -298,6 +360,7 @@ function SP:CreateModuleFrame(m)
     ph:SetPoint("CENTER")
     ph:SetText(m.label)
     ph:SetAlpha(0.30)
+    ph._spFontRole = "secondary"
     m._placeholder = ph
 
     m.frame = frame
@@ -331,6 +394,7 @@ function SP:UpdateCollapseVisual(m)
     if m.body then
         if cfg.collapsed then m.body:Hide() else m.body:Show() end
     end
+    if m.OnCollapseChanged then pcall(m.OnCollapseChanged, m, cfg.collapsed and true or false) end
 end
 
 function SP:ToggleCollapse(m)
@@ -389,8 +453,8 @@ function SP:ShowModuleMenu(m)
         root:CreateButton((cfg and cfg.pinned) and "Déverrouiller" or "Verrouiller", function()
             SP:TogglePin(m)
         end)
-        -- Fixer dans l'angle (haut/bas ; le côté gauche/droite suit celui du panneau)
-        local sub = root:CreateButton("Fixer dans l'angle")
+        -- Fixer dans l'angle du panneau (haut/bas ; le côté gauche/droite suit celui du panneau)
+        local sub = root:CreateButton("Fixer dans l'angle du panneau")
         local function setCorner(v) if cfg then cfg.corner = v; SP:RebuildLayout() end end
         sub:CreateButton(((cfg and cfg.corner == "top") and "* " or "") .. "Haut", function() setCorner("top") end)
         sub:CreateButton(((cfg and cfg.corner == "bottom") and "* " or "") .. "Bas", function() setCorner("bottom") end)
@@ -492,68 +556,76 @@ function SP:RebuildLayout()
     local UIc = SP.UI
     local p2 = SP.panel2 and SP.panel2:IsShown() and SP.panel2 or nil
     local y1, y2 = 0, 0
+    local top1, flow1, bottom1 = {}, {}, {}
+    local top2, flow2, bottom2 = {}, {}, {}
 
-    for _, m in ipairs(SP:GetOrderedModules()) do
-        local cfg = SP:GetModuleConfig(m.name)
-        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) and not cfg.corner then
-            -- panneau cible (2 si demandé ET second panneau actif, sinon 1)
-            local onP2 = (cfg.panel == 2) and p2 ~= nil
-            local content = onP2 and p2.content or panel.content
-            if m.frame:GetParent() ~= content then m.frame:SetParent(content) end
-
-            local h
-            if m.headerless then
-                h = cfg.height or m.defaultHeight or 100
-                if m.body then m.body:SetHeight(h) end
-            else
-                h = UIc.HEADER_H
-                if not cfg.collapsed then
-                    local bodyH = cfg.height or m.defaultHeight or 100
-                    if m.body then m.body:SetHeight(bodyH) end
-                    h = h + bodyH
-                end
-            end
-            local y = onP2 and y2 or y1
-            SP:AnchorModuleFrame(m, content, 0, y)
-            m.frame:SetHeight(h)
-            m.frame:Show()
-            m._layoutTop, m._layoutHeight = y, h
-            m._onPanel2 = onP2
-            if onP2 then y2 = y + h + UIc.GAP else y1 = y + h + UIc.GAP end
-        elseif m.frame then
-            m.frame:Hide()
-            m._layoutTop, m._layoutHeight = nil, nil
-        end
-    end
-
-    -- ===== modules FIXÉS DANS UN ANGLE (hors flux) : ancrés au coin de l'écran =====
-    for _, m in ipairs(SP:GetOrderedModules()) do
-        local cfg = SP:GetModuleConfig(m.name)
-        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) and cfg.corner then
-            local onP2 = (cfg.panel == 2) and p2 ~= nil
-            local content = onP2 and p2.content or panel.content
-            if m.frame:GetParent() ~= content then m.frame:SetParent(content) end
-            local h = UIc.HEADER_H
-            if m.headerless then
-                h = cfg.height or m.defaultHeight or 100
-            elseif not cfg.collapsed then
+    local function GetModuleHeight(m, cfg)
+        local h
+        if m.headerless then
+            h = cfg.height or m.defaultHeight or 100
+            if m.body then m.body:SetHeight(h) end
+        else
+            h = m.headerHeight or UIc.HEADER_H
+            if not cfg.collapsed then
                 local bodyH = cfg.height or m.defaultHeight or 100
                 if m.body then m.body:SetHeight(bodyH) end
                 h = h + bodyH
             end
-            local sideLeft = onP2 and (SP._p2side == "left") or (SP.db.panel.side == "left")
-            local w = (cfg.width and cfg.width > 0) and cfg.width or (content:GetWidth() or 280)
-            local hp = sideLeft and "LEFT" or "RIGHT"
-            local vp = (cfg.corner == "bottom") and "BOTTOM" or "TOP"
-            m.frame:ClearAllPoints()
-            m.frame:SetPoint(vp .. hp, UIParent, vp .. hp, sideLeft and 4 or -4, (vp == "BOTTOM") and 24 or -24)
-            m.frame:SetWidth(w); m.frame:SetHeight(h)
-            m.frame:SetAlpha(1); m.frame:Show()
-            m._layoutTop, m._layoutHeight = nil, nil   -- exclu du fade/slide → reste fixe dans l'angle
-            m._corner = true
-        elseif m.frame and cfg and not cfg.corner then
+        end
+        return h
+    end
+
+    local function Queue(list, m, cfg, onP2)
+        list[#list + 1] = { module = m, cfg = cfg, onP2 = onP2 }
+    end
+
+    local function Place(entry, content, y)
+        local m, cfg = entry.module, entry.cfg
+        if m.frame:GetParent() ~= content then m.frame:SetParent(content) end
+        local h = GetModuleHeight(m, cfg)
+        SP:AnchorModuleFrame(m, content, 0, y)
+        m.frame:SetHeight(h)
+        m.frame:SetAlpha(1)
+        m.frame:Show()
+        m._layoutTop, m._layoutHeight = y, h
+        m._onPanel2 = entry.onP2
+        m._corner = cfg.corner or nil
+        return y + h + UIc.GAP
+    end
+
+    local function Layout(list, content, y)
+        for _, entry in ipairs(list) do
+            y = Place(entry, content, y)
+        end
+        return y
+    end
+
+    for _, m in ipairs(SP:GetOrderedModules()) do
+        local cfg = SP:GetModuleConfig(m.name)
+        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) then
+            -- panneau cible (2 si demandé ET second panneau actif, sinon 1)
+            local onP2 = (cfg.panel == 2) and p2 ~= nil
+            if cfg.corner == "top" then
+                Queue(onP2 and top2 or top1, m, cfg, onP2)
+            elseif cfg.corner == "bottom" then
+                Queue(onP2 and bottom2 or bottom1, m, cfg, onP2)
+            else
+                Queue(onP2 and flow2 or flow1, m, cfg, onP2)
+            end
+        elseif m.frame then
+            m.frame:Hide()
+            m._layoutTop, m._layoutHeight = nil, nil
             m._corner = nil
         end
+    end
+
+    y1 = Layout(top1, panel.content, y1)
+    y1 = Layout(flow1, panel.content, y1)
+    y1 = Layout(bottom1, panel.content, y1)
+    if p2 then
+        y2 = Layout(top2, p2.content, y2)
+        y2 = Layout(flow2, p2.content, y2)
+        y2 = Layout(bottom2, p2.content, y2)
     end
 
     if y1 < 1 then y1 = 1 end

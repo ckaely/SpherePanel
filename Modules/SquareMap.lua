@@ -47,6 +47,10 @@ local function Apply(self)
     if math.abs((mm:GetScale() or 1) - 1) > 0.01 then mm:SetScale(1) end
     if math.abs((mm:GetWidth() or 0) - side) > 1 then mm:SetSize(side, side) end
     pcall(mm.SetMaskTexture, mm, SQUARE_MASK)
+    pcall(mm.SetArchBlobRingScalar, mm, 0)
+    pcall(mm.SetQuestBlobRingScalar, mm, 0)
+    pcall(mm.SetTaskBlobRingScalar, mm, 0)
+    if mm.SetHitRectInsets then pcall(mm.SetHitRectInsets, mm, 0, 0, 0, 0) end
 
     local cfg = SP:GetModuleConfig(self.name)
     local needed = side + 8
@@ -111,7 +115,9 @@ function M:CleanMinimap()
         "MinimapBorder", "MinimapBorderTop", "MinimapCompassTexture", "MinimapNorthTag",
         "MinimapZoomIn", "MinimapZoomOut", "Minimap_ZoomIn", "Minimap_ZoomOut",
         "MiniMapWorldMapButton", "MinimapZoneTextButton", "MiniMapTracking", "MinimapBackdrop",
-        "GameTimeFrame", "TimeManagerClockButton", "MiniMapMailFrame",
+        "GameTimeFrame", "TimeManagerClockButton", "MiniMapMailFrame", "MiniMapTrackingButton",
+        "QueueStatusMinimapButton", "GarrisonLandingPageMinimapButton", "ExpansionLandingPageMinimapButton",
+        "MiniMapBattlefieldFrame", "MiniMapLFGFrame", "MinimapClusterTracking",
     }) do
         if _G[nm] then self:Suppress(_G[nm]) end
     end
@@ -134,13 +140,19 @@ function M:CleanMinimap()
     for _, key in ipairs({ "ZoomIn", "ZoomOut", "ZoomHitArea" }) do
         if Minimap[key] then self:Suppress(Minimap[key]) end
     end
+    for _, key in ipairs({
+        "Border", "BorderTop", "CompassTexture", "NorthTag", "ZoneTextButton", "Tracking",
+        "TrackingFrame", "Backdrop", "ClockFrame", "MailFrame", "WorldMapButton",
+    }) do
+        if Minimap[key] then self:Suppress(Minimap[key]) end
+    end
     -- scan récursif (2 niveaux) : attrape les boutons d'addons même imbriqués
     local function scan(parent, depth)
         if not parent or not parent.GetChildren then return end
         for _, c in ipairs({ parent:GetChildren() }) do
             local n = c:GetName()
             local w = c:GetWidth() or 0
-            local keep = n and (n:match("^Minimap") or n:match("^MiniMap") or n:match("^SpherePanel"))
+            local keep = n and n:match("^SpherePanel")
             if c:IsShown() and not keep and not c._spH
                 and (c:GetObjectType() == "Button" or c:GetObjectType() == "Frame")
                 and w >= 0 and w < 80 then
@@ -163,7 +175,7 @@ function M:CleanMinimap()
                 local w = c:GetWidth() or 0
                 local n = c:GetName()
                 if w > 4 and w < 60
-                    and not (n and (n:match("^SpherePanel") or n:match("^Minimap") or n:match("^MiniMap") or n:match("^GameTooltip"))) then
+                    and not (n and (n:match("^SpherePanel") or n:match("^GameTooltip"))) then
                     local cx, cy = c:GetCenter()
                     if cx and cy and cx >= mL - 20 and cx <= mR + 20 and cy >= mB - 20 and cy <= mT + 20 then
                         self:Suppress(c)
@@ -178,7 +190,7 @@ function M:CleanMinimap()
             and (c:GetObjectType() == "Button" or c:GetObjectType() == "Frame") and c:IsShown() then
             local w = c:GetWidth() or 0
             local n = c:GetName()
-            if w > 8 and w < 56 and not (n and (n:match("^SpherePanel") or n:match("^Minimap") or n:match("^MiniMap"))) then
+            if w > 8 and w < 56 and not (n and n:match("^SpherePanel")) then
                 local okN, np = pcall(c.GetNumPoints, c)
                 if okN and np then
                     for i = 1, np do

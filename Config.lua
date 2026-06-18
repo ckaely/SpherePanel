@@ -29,6 +29,14 @@ SP.defaults = {
         fx       = true,      -- effets visuels (orbe pulsant + shimmer + intro)
         glowThickness = 6,    -- épaisseur GLOBALE des bordures de module réduit (override par module)
         glowAlpha     = 0.9,  -- transparence GLOBALE des bordures (override par module)
+        fontGlobal    = false,
+        fontFace      = "Inter-Regular.ttf",
+        fontSize      = 11,
+        fontFlags     = "",
+        fontSecondaryFace  = "Inter-Regular.ttf",
+        fontSecondarySize  = 10,
+        fontSecondaryFlags = "",
+        minimap       = { shown = true, angle = 225 },
         panel2   = { enabled = false, x = 20, y = -200, width = 280,
                      side = "auto", vpos = "top", behavior = 3 },  -- second panneau ; side: auto=opposé au principal
         bgColor  = { r = 0.05, g = 0.05, b = 0.07, a = 0.85 },  -- fond du panneau (Apparence)
@@ -54,11 +62,17 @@ SP.defaults = {
         QuestTracker   = { enabled = true,  collapsed = false, height = 300,
             filters = {  -- catégories affichées (phase 3) ; false = masquée
                 classic = true, daily = true, weekly = true, campaign = true,
-                dungeon = true, raid = true, pvp = true, account = true, worldquest = true,
+                dungeon = true, raid = true, pvp = true, account = true, worldquest = true, achievement = true,
             },
         },
         Chat           = { enabled = true,  collapsed = false, height = 200,
             font = STANDARD_TEXT_FONT, fontSize = 12, classColorNames = true,
+            hideBlizzardChat = true, replaceBlizzardInput = true,
+            instantPopups = true, popupTheme = "light", popupDuration = 7,
+            activeChatTab = "main",
+            chatTabs = {
+                { id = "main", label = "Tout", channels = { "A" } },
+            },
             channels = {  -- ordre + activation + couleur (personnalisable dans les options)
                 { key = "A", label = "A", enabled = true,  r = 1.0, g = 1.0, b = 1.0 },
                 { key = "W", label = "W", enabled = true,  r = 1.0, g = 0.5, b = 1.0 },
@@ -69,17 +83,23 @@ SP.defaults = {
             },
         },
         DamageMeter    = { enabled = true,  collapsed = false, height = 150 },
-        Raid           = { enabled = true,  collapsed = false, height = 180 },
+        Raid           = { enabled = true,  collapsed = false, height = 180,
+            hideBlizzard = true, separateBy = "group", showFlags = true,
+            barTexture = "bar_serenity.tga", fontFace = "Inter-Regular.ttf", fontSize = 11, fontFlags = "OUTLINE" },
         Auras          = { enabled = true,  collapsed = false, height = 90, tab = "all", iconSize = 26 },
         Bags           = { enabled = true,  collapsed = true,  height = 240,
             showIlvl = true, showUpgrade = true,   -- iLvl + flèche upgrade (Pawn) sur l'équipement
             known = {},   -- snapshot itemID connus (pour la section Récent)
             -- color = couleur du titre ; group/groupPrefix = sous-catégories par sous-type ; search = filtre nom
             showCurrencies = true,                 -- or + monnaies suivies/sac a dos dans le module Sac
+            trackedCurrencies = {},                 -- monnaies forcees dans le module Sac
+            hiddenCurrencies = {},                  -- monnaies suivies par Blizzard mais masquees dans le module Sac
             replaceBlizzardBags = true,            -- SpherePanel remplace l'ouverture native des sacs
             autoOpenAtNpc = true,                  -- ouvre le module chez les PNJ qui ouvrent les sacs
             autoSellJunk = true,                   -- vend automatiquement les objets gris chez un marchand
             displayMode = "categorized",           -- categorized / onebag / split
+            activeTab = "bags",
+            history = {},
             categories = {
                 { key = "recent",     label = "Récent",     enabled = true,  collapsed = false, color = { 0.40, 0.90, 0.40 } },
                 { key = "junk",       label = "Camelote",   enabled = true,  collapsed = false, color = { 0.62, 0.62, 0.62 } },
@@ -92,7 +112,7 @@ SP.defaults = {
             },
         },
         Knowledge      = { enabled = true,  collapsed = false, height = 220 },
-        Agenda         = { enabled = true,  collapsed = false, height = 120 },
+        Agenda         = { enabled = true,  collapsed = false, height = 180, activeTab = "events" },
         RaidTools      = { enabled = true,  collapsed = false, height = 96, pullSec = 10,
             conditions = { enabled = true, group = true } },  -- visible uniquement en groupe
         MythicPlus     = { enabled = true,  collapsed = false, height = 90  },

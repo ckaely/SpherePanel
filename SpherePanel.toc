@@ -5,6 +5,7 @@
 ## Version: 0.1.0
 ## SavedVariables: SPDB
 ## DefaultState: enabled
+## IconTexture: Interface\AddOns\SpherePanel\Media\SPAN.png
 ## OptionalDeps: MyusKnowledgePointsTracker, Details, Pawn, AlterEgo, AddonScope
 
 Core.lua
