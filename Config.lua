@@ -90,6 +90,8 @@ SP.defaults = {
         Auras          = { enabled = true,  collapsed = false, height = 90, tab = "all", iconSize = 26 },
         Bags           = { enabled = true,  collapsed = true,  height = 240,
             showIlvl = true, showUpgrade = true,   -- iLvl + flèche upgrade (Pawn) sur l'équipement
+            iconBorderThickness = 2,                -- épaisseur de bordure des icônes du sac
+            hoverDim = false, hoverSaturation = 0.35, -- estompage des icônes non survolées
             known = {},   -- snapshot itemID connus (pour la section Récent)
             -- color = couleur du titre ; group/groupPrefix = sous-catégories par sous-type ; search = filtre nom
             showCurrencies = true,                 -- or + monnaies suivies/sac a dos dans le module Sac

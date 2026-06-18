@@ -854,6 +854,19 @@ local function BagsOptions(root, y, opage)
         function() return cfg.autoSellJunk ~= false end, function(v) cfg.autoSellJunk = v end)
     y = y - 30
 
+    y = SectionHeader(root, y, "Apparence des icônes")
+    MakeSlider(root, "Épaisseur de bordure", 16, y, 0, 6, 1,
+        function() return cfg.iconBorderThickness or 2 end,
+        function(v) cfg.iconBorderThickness = v; apply() end, function(v) return v .. " px" end)
+    y = y - 48
+    MakeCheck(root, "Estomper les icônes hors survol", 16, y,
+        function() return cfg.hoverDim == true end, function(v) cfg.hoverDim = v and true or false; apply() end)
+    y = y - 28
+    MakeSlider(root, "Saturation hors survol", 16, y, 0.05, 1, 0.05,
+        function() return cfg.hoverSaturation or 0.35 end,
+        function(v) cfg.hoverSaturation = v end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
+    y = y - 50
+
     y = SectionHeader(root, y, "Catégories — glisser pour réordonner")
     -- en-tête de table
     local th = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")

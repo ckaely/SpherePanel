@@ -148,8 +148,9 @@ local function CreateSlot(self, i)
     b.hl = b:CreateTexture(nil, "HIGHLIGHT"); b.hl:SetAllPoints(b); b.hl:SetColorTexture(1, 1, 1, 0.2)
     b:SetScript("OnEnter", function(s)
         if s.bag and s.slot then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetBagItem, GameTooltip, s.bag, s.slot); GameTooltip:Show() end
+        self:DimOthers(s)
     end)
-    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnLeave", function() GameTooltip:Hide(); self:UndimAll() end)
     b.SplitStack = function(s, split)
         if s.bag and s.slot and C_Container and C_Container.SplitContainerItem then
             C_Container.SplitContainerItem(s.bag, s.slot, split)
@@ -305,6 +306,30 @@ function M:Init(body)
 
     self.toggle = CreateFrame("Button", "SpherePanelBagToggle", UIParent)
     self.toggle:SetScript("OnClick", function() self:ToggleBags() end)
+
+    -- Boutons dans le BANDEAU (tri natif + vue des sacs équipés)
+    if self.header then
+        local anchor = self.lock or self.header
+        local function headerBtn(atlas, fallbackIcon, tip, onClick)
+            local btn = CreateFrame("Button", nil, self.header)
+            btn:SetSize(18, 18)
+            btn.tex = btn:CreateTexture(nil, "ARTWORK"); btn.tex:SetAllPoints(btn)
+            if not pcall(function() btn.tex:SetAtlas(atlas, true) end) or not btn.tex:GetAtlas() then
+                btn.tex:SetTexture(fallbackIcon); btn.tex:SetTexCoord(0.1, 0.9, 0.1, 0.9)
+            end
+            btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+            btn:SetScript("OnClick", onClick)
+            btn:SetScript("OnEnter", function(s) SP:AnchorTooltipOutsidePanel(GameTooltip, s); GameTooltip:SetText(tip); GameTooltip:Show() end)
+            btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            return btn
+        end
+        self.bagsBtn = headerBtn("bags-button-bag-default", "Interface\\Icons\\INV_Misc_Bag_08",
+            "Sacs équipés", function() self:ToggleBagSlotsPanel() end)
+        self.bagsBtn:SetPoint("RIGHT", anchor, "LEFT", -6, 0)
+        self.sortBtn = headerBtn("bags-button-autosort-up", "Interface\\Icons\\INV_Misc_Broom_01",
+            "Trier le sac", function() self:SortBags() end)
+        self.sortBtn:SetPoint("RIGHT", self.bagsBtn, "LEFT", -3, 0)
+    end
 end
 
 -- Déduplique les catégories par clé (un deepMerge legacy peut dupliquer ex. "empty").
@@ -355,6 +380,123 @@ function M:Disable()
 end
 
 function M:OnResize(w, h) self:RequestRefresh() end
+
+-- Estompage/désaturation des icônes NON survolées (niveau réglable en config).
+function M:DimOthers(active)
+    local cfg = SP:GetModuleConfig(self.name)
+    if not cfg or cfg.hoverDim ~= true then return end
+    local lvl = cfg.hoverSaturation or 0.35
+    for _, b in ipairs(self.slots or {}) do
+        if b ~= active and b:IsShown() and b.icon then
+            b.icon:SetDesaturated(true)
+            b.icon:SetAlpha((b._baseAlpha or 1) * lvl)
+        end
+    end
+end
+
+function M:UndimAll()
+    for _, b in ipairs(self.slots or {}) do
+        if b:IsShown() and b.icon then
+            b.icon:SetDesaturated(b._baseDesat or false)
+            b.icon:SetAlpha(b._baseAlpha or 1)
+        end
+    end
+end
+
+-- Tri natif du sac (guard combat).
+function M:SortBags()
+    if InCombatLockdown() then return end
+    if C_Container and C_Container.SortBags then pcall(C_Container.SortBags)
+    elseif SortBags then pcall(SortBags) end
+end
+
+-- ===== Panneau latéral des sacs équipés (item 17) ===========================
+local BAG_NAMES = { [0] = "Sac à dos" }
+function M:_BagRow(i)
+    local p = self.bagSlotsPanel
+    local r = p.rows[i]
+    if not r then
+        r = CreateFrame("Button", nil, p); r:SetSize(160, 24)
+        r:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -28 - (i - 1) * 25)
+        r:SetPoint("RIGHT", p, "RIGHT", -6, 0)
+        r.stripe = r:CreateTexture(nil, "BACKGROUND"); r.stripe:SetAllPoints(r)
+        r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(18, 18); r.icon:SetPoint("LEFT", r, "LEFT", 3, 0); r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); r.name:SetPoint("LEFT", r.icon, "RIGHT", 5, 0); r.name:SetPoint("RIGHT", r, "RIGHT", -44, 0); r.name:SetJustifyH("LEFT"); r.name:SetWordWrap(false)
+        r.slots = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); r.slots:SetPoint("RIGHT", r, "RIGHT", -4, 0); r.slots:SetJustifyH("RIGHT")
+        r:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        p.rows[i] = r
+    end
+    return r
+end
+
+-- Active/désactive l'inclusion d'un sac dans le tri natif (option d'organisation).
+local function ToggleBagAutoSort(bagID)
+    local FLAG = Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.DisableAutoSort
+    if not (FLAG and C_Container and C_Container.SetBagSlotFlag and C_Container.GetBagSlotFlag) then return end
+    local cur = false
+    pcall(function() cur = C_Container.GetBagSlotFlag(bagID, FLAG) end)
+    pcall(C_Container.SetBagSlotFlag, bagID, FLAG, not cur)
+end
+
+function M:RefreshBagSlots()
+    local p = self.bagSlotsPanel; if not p then return end
+    local shown = 0
+    for bagID = 0, 5 do
+        local total = (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(bagID)) or 0
+        local r = self:_BagRow(bagID + 1)
+        if bagID == 0 or total > 0 then
+            shown = shown + 1
+            local icon, name
+            if bagID == 0 then
+                icon = "Interface\\Buttons\\Button-Backpack-Up"; name = BAG_NAMES[0]
+            else
+                local inv = (ContainerIDToInventoryID and ContainerIDToInventoryID(bagID))
+                icon = inv and GetInventoryItemTexture("player", inv)
+                local link = inv and GetInventoryItemLink("player", inv)
+                name = (link and link:match("%[(.-)%]")) or ("Sac " .. bagID)
+            end
+            r.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_Bag_08")
+            local free = (C_Container and C_Container.GetContainerNumFreeSlots and C_Container.GetContainerNumFreeSlots(bagID)) or 0
+            r.name:SetText(name)
+            r.slots:SetText(("%d/%d"):format(total - free, total))
+            r.stripe:SetColorTexture(0, 0, 0, (bagID % 2 == 0) and 0.22 or 0.10)
+            local thisBag = bagID
+            r:SetScript("OnClick", function() ToggleBagAutoSort(thisBag); SP:PlayItemSound("pickup") end)
+            r:SetScript("OnEnter", function(s)
+                if thisBag > 0 then
+                    local inv = ContainerIDToInventoryID and ContainerIDToInventoryID(thisBag)
+                    if inv then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", inv); GameTooltip:Show() end
+                end
+            end)
+            r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            r:Show()
+        else
+            r:Hide()
+        end
+    end
+    p.note:SetText("|cFF888888Clic = inclure/exclure du tri.|r")
+end
+
+function M:ToggleBagSlotsPanel()
+    if self.bagSlotsPanel and self.bagSlotsPanel:IsShown() then self.bagSlotsPanel:Hide(); return end
+    if not self.bagSlotsPanel then
+        local p = CreateFrame("Frame", nil, self.body)
+        p:SetFrameStrata("DIALOG"); p:SetFrameLevel((self.body:GetFrameLevel() or 1) + 15)
+        p:SetSize(172, 6 * 25 + 44)
+        p.bg = p:CreateTexture(nil, "BACKGROUND"); p.bg:SetAllPoints(p); p.bg:SetColorTexture(0.04, 0.05, 0.08, 0.96)
+        p.title = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); p.title:SetPoint("TOPLEFT", p, "TOPLEFT", 8, -7); p.title:SetText("Sacs équipés")
+        p.note = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); p.note:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 8, 6); p.note:SetPoint("RIGHT", p, "RIGHT", -6, 0); p.note:SetJustifyH("LEFT")
+        p.rows = {}
+        self.bagSlotsPanel = p
+    end
+    self:RefreshBagSlots()
+    local p = self.bagSlotsPanel
+    local onRight = (SP.db.panel.side ~= "left")
+    p:ClearAllPoints()
+    if onRight then p:SetPoint("TOPRIGHT", self.body, "TOPLEFT", -4, 6)
+    else p:SetPoint("TOPLEFT", self.body, "TOPRIGHT", 4, 6) end
+    p:Show()
+end
 
 function M:SetBagTab(tab)
     local cfg = SP:GetModuleConfig(self.name)
@@ -857,7 +999,16 @@ function M:Refresh()
         b:SetSize(size, size); b:ClearAllPoints()
         b:SetPoint("TOPLEFT", self.list, "TOPLEFT", col * (size + GAP), -(baseY + rowN * (size + GAP)))
         b.bag, b.slot = it.bag, it.slot
+        -- épaisseur de bordure configurable = inset de l'icône (la bordure = fond visible)
+        local bth = cfg.iconBorderThickness or 2
+        if b._bth ~= bth then
+            b._bth = bth
+            b.icon:ClearAllPoints()
+            b.icon:SetPoint("TOPLEFT", b, "TOPLEFT", bth, -bth)
+            b.icon:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -bth, bth)
+        end
         if not (it.info and it.info.itemID) then
+            b._baseDesat, b._baseAlpha = false, 1
             b.icon:SetTexture(nil)
             b.icon:SetDesaturated(false)
             b.icon:SetAlpha(1)
@@ -870,9 +1021,11 @@ function M:Refresh()
             return
         end
         b.icon:SetTexture(it.info.iconFileID)
-        b.icon:SetAlpha(it.info.isLocked and 0.35 or 1)   -- "en déplacement" pendant le drag
         local q = it.info.quality or 1
-        b.icon:SetDesaturated((q == 0) and greyJunk or false)
+        b._baseAlpha = it.info.isLocked and 0.35 or 1
+        b._baseDesat = (q == 0) and greyJunk or false
+        b.icon:SetAlpha(b._baseAlpha)   -- "en déplacement" pendant le drag
+        b.icon:SetDesaturated(b._baseDesat)
         local qc = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
         if qc then b.border:SetColorTexture(qc.r, qc.g, qc.b, 1) else b.border:SetColorTexture(0.3, 0.3, 0.3, 1) end
         b.ilvl:SetTextColor((qc and qc.r) or 1, (qc and qc.g) or 0.82, (qc and qc.b) or 0)
