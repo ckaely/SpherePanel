@@ -113,12 +113,14 @@ local function AuditSlot(slotId)
                 a.enchantText = lt
                 a.enchantAtlas = lt and lt:match("|A:([^:|]+)")
                 a.enchantIcon = lt and lt:match("|T([^:|]+)")
-                -- nom court : retire le préfixe "Enchanté : " et un éventuel atlas
+                -- nom court : retire le markup atlas/texture (|A:..|a, |T..|t) — sinon des
+                -- glyphes non rendus apparaissent en carrés "□□" — PUIS le préfixe "Xxx : ".
                 local short = lt:gsub("|A:.-|a", ""):gsub("|T.-|t", "")
-                -- garde UNIQUEMENT le nom : retire tout préfixe "Xxx : " (Enchantement d'arme/de cape/Enchanté…)
                 local afterColon = short:match(".*[:：]%s*(.+)$")
                 if afterColon then short = afterColon end
-                a.enchShort = ShortEnchantText(lt)
+                -- nettoie tout résidu de caractères non imprimables en tête
+                short = short:gsub("^[%s%c]+", "")
+                a.enchShort = ShortEnchantText(short)
             end
             if GEM_TYPE and line.type == GEM_TYPE then
                 a.sockets = a.sockets + 1
@@ -187,13 +189,13 @@ function M:Init(body)
     self.sumFrame.bg:SetAllPoints(self.sumFrame); self.sumFrame.bg:SetColorTexture(0.10, 0.12, 0.18, 0.6)
     self.sumTop = self.sumFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     self.sumTop:SetPoint("TOPLEFT", self.sumFrame, "TOPLEFT", 6, -3)
-    self.sumTop:SetPoint("RIGHT", self.sumFrame, "RIGHT", -60, 0); self.sumTop:SetJustifyH("LEFT")
+    self.sumTop:SetPoint("RIGHT", self.sumFrame, "RIGHT", -108, 0); self.sumTop:SetJustifyH("LEFT")
     self.sumBot = self.sumFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.sumBot:SetPoint("TOPLEFT", self.sumTop, "BOTTOMLEFT", 0, -2)
     self.sumBot:SetPoint("RIGHT", self.sumFrame, "RIGHT", -6, 0); self.sumBot:SetJustifyH("LEFT")
 
     self.charBtn = MakePanelButton(self.sumFrame, "Blizz", 54, 18)
-    self.charBtn:SetSize(54, 18); self.charBtn:SetPoint("RIGHT", self.sumFrame, "RIGHT", -3, 0)
+    self.charBtn:SetSize(54, 18); self.charBtn:SetPoint("TOPRIGHT", self.sumFrame, "TOPRIGHT", -3, -1)
     self.charBtn:SetText("Blizz")
     self.charBtn:SetScript("OnClick", function() if ToggleCharacter then pcall(ToggleCharacter, "PaperDollFrame") end end)
     self.charBtn:SetScript("OnEnter", function(s)
@@ -238,10 +240,15 @@ local function MakeSlotButton(self, parent)
     slot.glow = slot:CreateTexture(nil, "OVERLAY")
     slot.glow:SetPoint("TOPLEFT", slot, "TOPLEFT", -3, 3); slot.glow:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 3, -3)
     slot.glow:SetColorTexture(1, 0.82, 0.2, 0.55); slot.glow:SetBlendMode("ADD"); slot.glow:Hide()
-    -- iLvl directement sur l'icône (coin bas-droit)
+    -- iLvl directement sur l'icône (coin bas-droit) — compact, lisible (contour),
+    -- ne mange plus la moitié de l'icône.
     slot.ilvlFS = slot:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-    slot.ilvlFS:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 0, 1)
+    slot.ilvlFS:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 1, 0)
     slot.ilvlFS:SetDrawLayer("OVERLAY", 7)
+    do
+        local f = select(1, NumberFontNormalSmall:GetFont())
+        if f then slot.ilvlFS:SetFont(f, 10, "OUTLINE") end
+    end
     slot:SetScript("OnEnter", function(s)
         if s.slotId then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", s.slotId); GameTooltip:Show() end
     end)
@@ -431,9 +438,12 @@ end
 
 function M:CreateEquipManager()
     if self.equipMgr then return end
-    local tab = MakePanelButton(self.body, "Sets", 34, 58)
-    tab:SetPoint("RIGHT", self.body, "RIGHT", 0, 0)
-    tab:SetFrameLevel((self.body:GetFrameLevel() or 1) + 8)
+    -- Bouton bascule du gestionnaire : dans le RÉSUMÉ (à gauche de « Blizz »),
+    -- plus jamais par-dessus les items d'équipement.
+    local anchorBtn = self.charBtn
+    local tab = MakePanelButton(self.sumFrame or self.body, "Sets", 44, 18)
+    if anchorBtn then tab:SetPoint("TOPRIGHT", anchorBtn, "TOPLEFT", -4, 0)
+    else tab:SetPoint("TOPRIGHT", self.body, "TOPRIGHT", -60, -2) end
     tab:SetScript("OnClick", function() self.equipOpen = not self.equipOpen; self:SetTab("gear") end)
     self.equipTab = tab
 
@@ -468,7 +478,9 @@ function M:_EquipRow(i)
     if not r then
         r = CreateFrame("Frame", nil, p); r:SetSize(184, 25)
         r.bg = r:CreateTexture(nil, "BACKGROUND"); r.bg:SetAllPoints(r)
-        r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(18, 18); r.icon:SetPoint("LEFT", r, "LEFT", 3, 0)
+        r.iconBtn = CreateFrame("Button", nil, r); r.iconBtn:SetSize(18, 18); r.iconBtn:SetPoint("LEFT", r, "LEFT", 3, 0)
+        r.iconBtn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        r.icon = r.iconBtn:CreateTexture(nil, "ARTWORK"); r.icon:SetAllPoints(r.iconBtn); r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); r.name:SetPoint("LEFT", r.icon, "RIGHT", 5, 0); r.name:SetPoint("RIGHT", r, "RIGHT", -58, 0); r.name:SetJustifyH("LEFT"); r.name:SetWordWrap(false)
         r.use = MakePanelButton(r, "Use", 32, 17); r.use:SetPoint("RIGHT", r, "RIGHT", -48, 0)
         r.save = MakePanelButton(r, "S", 18, 17); r.save:SetPoint("LEFT", r.use, "RIGHT", 3, 0)
@@ -476,6 +488,70 @@ function M:_EquipRow(i)
         p.rows[i] = r
     end
     return r
+end
+
+-- Sélecteur d'icône pour un set : grille scrollable. Source robuste = icônes des
+-- items actuellement équipés (toujours dispo) enrichie par GetMacroIcons si présent.
+-- L'icône choisie est stockée en SPDB (cfg.setIcons[nom]) — override local, aucune
+-- API Blizzard incertaine, réversible.
+function M:OpenIconPicker(set)
+    local cfg = SP:GetModuleConfig(self.name)
+    cfg.setIcons = cfg.setIcons or {}
+    local COLS, ROWS, CSZ = 6, 7, 26
+    local pick = self.iconPicker
+    if not pick then
+        pick = CreateFrame("Frame", nil, self.equipMgr or self.body)
+        pick:SetFrameStrata("FULLSCREEN_DIALOG")
+        pick:SetSize(COLS * CSZ + 12, ROWS * CSZ + 34)
+        pick.bg = pick:CreateTexture(nil, "BACKGROUND"); pick.bg:SetAllPoints(pick); pick.bg:SetColorTexture(0.03, 0.04, 0.06, 0.98)
+        pick.edge = pick:CreateTexture(nil, "OVERLAY"); pick.edge:SetPoint("TOPLEFT"); pick.edge:SetPoint("BOTTOMLEFT"); pick.edge:SetWidth(2); pick.edge:SetColorTexture(0.29, 0.64, 1, 0.75)
+        pick.title = pick:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); pick.title:SetPoint("TOPLEFT", pick, "TOPLEFT", 8, -7); pick.title:SetText("Choisir une icone")
+        pick.closeB = MakePanelButton(pick, "X", 18, 16); pick.closeB:SetPoint("TOPRIGHT", pick, "TOPRIGHT", -4, -5)
+        pick.closeB:SetScript("OnClick", function() pick:Hide() end)
+        pick.cells = {}
+        for i = 1, COLS * ROWS do
+            local b = CreateFrame("Button", nil, pick); b:SetSize(CSZ - 2, CSZ - 2)
+            local col, row = (i - 1) % COLS, math.floor((i - 1) / COLS)
+            b:SetPoint("TOPLEFT", pick, "TOPLEFT", 6 + col * CSZ, -28 - row * CSZ)
+            b.tex = b:CreateTexture(nil, "ARTWORK"); b.tex:SetAllPoints(b); b.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+            pick.cells[i] = b
+        end
+        pick:EnableMouseWheel(true)
+        self.iconPicker = pick
+    end
+    -- liste d'icônes : équipées d'abord (pertinentes), puis macro icons (dédupliquées)
+    local icons, seen = {}, {}
+    for slotId = 1, 17 do
+        local t = GetInventoryItemTexture("player", slotId)
+        if t and not seen[t] then seen[t] = true; icons[#icons + 1] = t end
+    end
+    if GetMacroIcons then
+        local macro = {}; pcall(GetMacroIcons, macro)
+        for _, v in ipairs(macro) do if v and not seen[v] then seen[v] = true; icons[#icons + 1] = v end end
+    end
+    pick.icons, pick.scroll = icons, 0
+    local function refresh()
+        local start = (pick.scroll or 0) * COLS
+        for i, b in ipairs(pick.cells) do
+            local ico = pick.icons[start + i]
+            if ico then
+                b.tex:SetTexture(ico); b:Show()
+                b:SetScript("OnClick", function()
+                    cfg.setIcons[set.name] = ico
+                    pick:Hide(); self:RefreshEquipManager()
+                end)
+            else b:Hide() end
+        end
+    end
+    pick:SetScript("OnMouseWheel", function(_, d)
+        local maxRow = math.max(0, math.ceil(#pick.icons / COLS) - ROWS)
+        pick.scroll = math.min(maxRow, math.max(0, (pick.scroll or 0) - d))
+        refresh()
+    end)
+    refresh()
+    pick:ClearAllPoints(); pick:SetPoint("TOPRIGHT", self.equipMgr, "TOPLEFT", -4, 0)
+    pick:Show()
 end
 
 function M:RefreshEquipManager()
@@ -486,7 +562,14 @@ function M:RefreshEquipManager()
         local r = self:_EquipRow(i)
         r:SetPoint("TOPLEFT", self.equipMgr, "TOPLEFT", 7, -y)
         r.bg:SetColorTexture(set.equipped and 0.10 or 1, set.equipped and 0.30 or 1, set.equipped and 0.18 or 1, set.equipped and 0.55 or ((i % 2 == 0) and 0.06 or 0.03))
-        r.icon:SetTexture(set.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        local cfg = SP:GetModuleConfig(self.name)
+        local override = cfg and cfg.setIcons and cfg.setIcons[set.name]
+        r.icon:SetTexture(override or set.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        if r.iconBtn then
+            r.iconBtn:SetScript("OnClick", function() self:OpenIconPicker(set) end)
+            r.iconBtn:SetScript("OnEnter", function(s) SP:AnchorTooltipOutsidePanel(GameTooltip, s); GameTooltip:SetText("Clic = choisir une icone"); GameTooltip:Show() end)
+            r.iconBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end
         r.name:SetText((set.equipped and "|cFF40FF40" or "|cFFFFFFFF") .. (set.name or "?") .. "|r")
         r.use:SetScript("OnClick", function() UseEquipSet(set); C_Timer.After(0.4, function() self:RefreshEquipManager() end) end)
         r.save:SetScript("OnClick", function() SaveEquipSet(set); C_Timer.After(0.4, function() self:RefreshEquipManager() end) end)
