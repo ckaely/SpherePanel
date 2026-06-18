@@ -277,6 +277,24 @@ local function MakeModernButton(parent, text, w, h)
     return b
 end
 
+-- ===== Moteur de dropdown partagé (anti-clip + exclusion mutuelle + clic extérieur) =====
+-- Tous les menus de MakeCycle vivent au-dessus du scrollframe (strata TOOLTIP, parent
+-- UIParent) : ils ne sont plus rognés par SetClipsChildren et un seul est ouvert à la fois.
+local openCycleMenu, cycleCloser
+local function GetCycleCloser()
+    if not cycleCloser then
+        cycleCloser = CreateFrame("Button", nil, UIParent)
+        cycleCloser:SetAllPoints(UIParent)
+        cycleCloser:SetFrameStrata("FULLSCREEN_DIALOG")
+        cycleCloser:EnableMouse(true)
+        cycleCloser:Hide()
+        cycleCloser:SetScript("OnClick", function()
+            if openCycleMenu then openCycleMenu:Hide() end
+        end)
+    end
+    return cycleCloser
+end
+
 local function MakeCycle(parent, label, x, y, choices, getf, setf, applyf, previewf)
     local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     fs:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -319,8 +337,13 @@ local function MakeCycle(parent, label, x, y, choices, getf, setf, applyf, previ
     local refreshPreviewMenu
     local function ensurePreviewMenu()
         if menu then return menu end
-        menu = CreateFrame("Frame", nil, parent)
-        menu:SetFrameStrata("DIALOG")
+        -- parent UIParent (pas la page scrollable) + strata TOOLTIP : échappe au clip
+        menu = CreateFrame("Frame", nil, UIParent)
+        menu:SetFrameStrata("TOOLTIP")
+        menu:SetScript("OnHide", function()
+            if openCycleMenu == menu then openCycleMenu = nil end
+            if cycleCloser then cycleCloser:Hide() end
+        end)
         menu.visibleRows = math.min(#choices, 12)
         menu.scroll = 0
         menu:SetSize(250, menu.visibleRows * 24 + 6)
@@ -377,8 +400,16 @@ local function MakeCycle(parent, label, x, y, choices, getf, setf, applyf, previ
     end
     b:SetScript("OnClick", function()
         ensurePreviewMenu()
-        refreshPreviewMenu()
-        menu:SetShown(not menu:IsShown())
+        if openCycleMenu and openCycleMenu ~= menu then openCycleMenu:Hide() end   -- ferme l'autre
+        if menu:IsShown() then
+            menu:Hide()
+        else
+            refreshPreviewMenu()
+            GetCycleCloser():Show()
+            menu:Show()
+            menu:Raise()
+            openCycleMenu = menu
+        end
     end)
     refresh()
     return b, refresh
@@ -1448,7 +1479,15 @@ local function BuildComportement(page)
     page:SetScript("OnShow", function() page.RefreshFade() end)
 end
 
-local function BuildGeneral(page)
+local function BuildGeneral(realPage)
+    -- Général scrolle désormais comme les autres pages → plus aucun débordement.
+    local page = MakeScrollPage(realPage, 620)
+    realPage:SetScript("OnShow", function()
+        realPage._scroll = 0
+        page:ClearAllPoints()
+        page:SetPoint("TOPLEFT", realPage, "TOPLEFT", 0, 0)
+        page:SetPoint("TOPRIGHT", realPage, "TOPRIGHT", 0, 0)
+    end)
     local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText("Général")
     local y = SectionHeader(page, -34, "Panneau")
