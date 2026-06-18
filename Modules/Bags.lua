@@ -114,13 +114,78 @@ local function GroupLabel(info, cat)
     return isub or itype or "Autres"                            -- conso/artisanat/armes : sous-type
 end
 
+-- ===== Évaluateur de tokens de catégorie (logique reprise de Syndicator/Baganator) =====
+-- Recherche = tokens séparés par espace, TOUS requis (ET). Un token est soit un mot-clé
+-- (type/emplacement/qualité/liaison via classID/subClassID/invType/bindType), soit un
+-- fragment de NOM. Classification basée sur la vraie « base de données » de l'item, pas
+-- un simple substring → sorting de qualité.
+local IC = Enum and Enum.ItemClass or {}
+local CL_ARMOR, CL_WEAPON = IC.Armor or 4, IC.Weapon or 2
+local CL_CONSUM, CL_TRADE = IC.Consumable or 0, IC.Tradegoods or 7
+local CL_QUEST, CL_GEM = IC.Questitem or 12, IC.Gem or 3
+
+local function ItemMeta(info)
+    if info._meta then return info._meta end
+    local _, _, _, invType, _, classID, subClassID = C_Item.GetItemInfoInstant(info.itemID)
+    local bindType, isReagent = select(14, GetItemInfo(info.hyperlink or info.itemID))
+    local m = { classID = classID, subClassID = subClassID, invType = invType or "NONE",
+                quality = info.quality, bindType = bindType, reagent = isReagent and true or false }
+    info._meta = m
+    return m
+end
+
+local TOKEN_FN = {
+    arme = function(m) return m.classID == CL_WEAPON end, weapon = function(m) return m.classID == CL_WEAPON end,
+    armure = function(m) return m.classID == CL_ARMOR end, armor = function(m) return m.classID == CL_ARMOR end,
+    equipement = function(m) return m.classID == CL_WEAPON or m.classID == CL_ARMOR end,
+    equipment = function(m) return m.classID == CL_WEAPON or m.classID == CL_ARMOR end,
+    stuff = function(m) return m.classID == CL_WEAPON or m.classID == CL_ARMOR end,
+    consommable = function(m) return m.classID == CL_CONSUM end, consumable = function(m) return m.classID == CL_CONSUM end,
+    potion = function(m) return m.classID == CL_CONSUM and (m.subClassID == 1 or m.subClassID == 2 or m.subClassID == 3) end,
+    nourriture = function(m) return m.classID == CL_CONSUM and m.subClassID == 5 end,
+    food = function(m) return m.classID == CL_CONSUM and m.subClassID == 5 end,
+    artisanat = function(m) return m.classID == CL_TRADE or m.reagent end,
+    reagent = function(m) return m.classID == CL_TRADE or m.reagent end,
+    composant = function(m) return m.classID == CL_TRADE or m.reagent end,
+    quete = function(m) return m.classID == CL_QUEST end, quest = function(m) return m.classID == CL_QUEST end,
+    gemme = function(m) return m.classID == CL_GEM end, gem = function(m) return m.classID == CL_GEM end,
+    tete = function(m) return m.invType == "INVTYPE_HEAD" end, epaules = function(m) return m.invType == "INVTYPE_SHOULDER" end,
+    torse = function(m) return m.invType == "INVTYPE_CHEST" or m.invType == "INVTYPE_ROBE" end,
+    jambes = function(m) return m.invType == "INVTYPE_LEGS" end, pieds = function(m) return m.invType == "INVTYPE_FEET" end,
+    mains = function(m) return m.invType == "INVTYPE_HAND" end, ceinture = function(m) return m.invType == "INVTYPE_WAIST" end,
+    poignets = function(m) return m.invType == "INVTYPE_WRIST" end,
+    anneau = function(m) return m.invType == "INVTYPE_FINGER" end, ring = function(m) return m.invType == "INVTYPE_FINGER" end,
+    bijou = function(m) return m.invType == "INVTYPE_TRINKET" end, trinket = function(m) return m.invType == "INVTYPE_TRINKET" end,
+    cape = function(m) return m.invType == "INVTYPE_CLOAK" end, cloak = function(m) return m.invType == "INVTYPE_CLOAK" end,
+    commun = function(m) return m.quality == 1 end, inhabituel = function(m) return m.quality == 2 end,
+    uncommon = function(m) return m.quality == 2 end, rare = function(m) return m.quality == 3 end,
+    epique = function(m) return m.quality == 4 end, epic = function(m) return m.quality == 4 end,
+    legendaire = function(m) return m.quality == 5 end, legendary = function(m) return m.quality == 5 end,
+    camelote = function(m) return m.quality == 0 end, junk = function(m) return m.quality == 0 end,
+    boe = function(m) return m.bindType == 2 end, bop = function(m) return m.bindType == 1 end,
+}
+M.CATEGORY_KEYWORDS = TOKEN_FN   -- exposé pour l'aide du panneau de config
+
+local function MatchSearch(info, search, lowName)
+    for token in search:gmatch("%S+") do
+        local fn = TOKEN_FN[token]
+        if fn then
+            if not fn(ItemMeta(info)) then return false end
+        elseif not (lowName and lowName:find(token, 1, true)) then
+            return false
+        end
+    end
+    return true
+end
+
 function M:CategoryForItem(info, cats, enabledSet)
     if self.recentSet and self.recentSet[info.itemID] and enabledSet["recent"] then return "recent" end
+    info._meta = nil   -- meta recalculée à la demande pour cet item
     local name = info.hyperlink and (GetItemInfo(info.hyperlink))
-    if name then
-        local low = name:lower()
-        for _, c in ipairs(cats) do
-            if c.enabled and c.search and c.search ~= "" and low:find(c.search:lower(), 1, true) then return c.key end
+    local low = name and name:lower()
+    for _, c in ipairs(cats) do
+        if c.enabled and c.search and c.search ~= "" and MatchSearch(info, c.search:lower(), low) then
+            return c.key
         end
     end
     local k = ClassKey(info)

@@ -868,6 +868,11 @@ local function BagsOptions(root, y, opage)
     y = y - 50
 
     y = SectionHeader(root, y, "Catégories — glisser pour réordonner")
+    -- aide mots-clés (filtre = tokens ET, repris de Baganator/Syndicator)
+    local kw = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    kw:SetPoint("TOPLEFT", root, "TOPLEFT", 12, y); kw:SetPoint("RIGHT", root, "RIGHT", -10, 0); kw:SetJustifyH("LEFT"); kw:SetWordWrap(true)
+    kw:SetText("|cFF6E8FB8Filtre = mots-clés (ET) : arme armure equipement consommable potion artisanat quete gemme · tete epaules torse jambes pieds mains anneau bijou cape · rare epique legendaire camelote · boe bop. Sinon = fragment de nom.|r")
+    y = y - 40
     -- en-tête de table
     local th = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     th:SetPoint("TOPLEFT", root, "TOPLEFT", 12, y); th:SetText("|cFF888888glisser  ·  actif  ·  couleur  ·  nom  ·  filtre  ·  suppr|r")
