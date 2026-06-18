@@ -35,6 +35,36 @@ local function ClassKey(info)
     else return "misc" end
 end
 
+-- Patterns de butin « pour SOI » uniquement (multi-locale) — construits depuis les
+-- chaînes globales Blizzard. Sert à n'historiser QUE les objets RÉELLEMENT acquis
+-- (butin/quête/achat), jamais un objet qui entre dans le sac par déséquipement,
+-- retrait de banque, courrier ou échange (lesquels ne déclenchent pas CHAT_MSG_LOOT).
+local LOOT_SELF_PATTERNS
+local function BuildLootPatterns()
+    if LOOT_SELF_PATTERNS then return LOOT_SELF_PATTERNS end
+    LOOT_SELF_PATTERNS = {}
+    local function toPattern(fmt)
+        if not fmt then return nil end
+        local p = fmt
+        p = p:gsub("%%%d?%$?s", "\1")                                  -- %s / %1$s → lien
+        p = p:gsub("%%%d?%$?d", "\2")                                  -- %d / %2$d → quantité
+        p = p:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")             -- échappe les magiques restants
+        p = p:gsub("\1", "(.+)")
+        p = p:gsub("\2", "(%%d+)")
+        return "^" .. p
+    end
+    -- _MULTIPLE en premier (plus spécifique : capture le compteur)
+    for _, g in ipairs({ "LOOT_ITEM_SELF_MULTIPLE", "LOOT_ITEM_PUSHED_SELF_MULTIPLE" }) do
+        local pat = toPattern(_G[g])
+        if pat then LOOT_SELF_PATTERNS[#LOOT_SELF_PATTERNS + 1] = { pat = pat, hasCount = true } end
+    end
+    for _, g in ipairs({ "LOOT_ITEM_SELF", "LOOT_ITEM_PUSHED_SELF" }) do
+        local pat = toPattern(_G[g])
+        if pat then LOOT_SELF_PATTERNS[#LOOT_SELF_PATTERNS + 1] = { pat = pat, hasCount = false } end
+    end
+    return LOOT_SELF_PATTERNS
+end
+
 -- ===== iLvl + upgrade (Pawn si présent, sinon comparaison à l'équipé) =======
 local EQUIP_SLOT = {
     INVTYPE_HEAD = 1, INVTYPE_NECK = 2, INVTYPE_SHOULDER = 3, INVTYPE_CHEST = 5, INVTYPE_ROBE = 5,
@@ -259,12 +289,16 @@ function M:Init(body)
         elseif e == "BANKFRAME_OPENED" or e == "MAIL_SHOW" or e == "AUCTION_HOUSE_SHOW" or e == "TRADE_SHOW" then
             local cfg = SP:GetModuleConfig(self.name)
             if not cfg or cfg.autoOpenAtNpc ~= false then self:OpenBags(e) end
+        elseif e == "CHAT_MSG_LOOT" then
+            self:LogLootMessage(...)
         elseif e == "CHAT_MSG_MONEY" or e == "CHAT_MSG_CURRENCY" then
             self:LogHistory("money", ...)
         elseif e == "GET_ITEM_INFO_RECEIVED" then
             if self.history and self.history:IsShown() then self:RefreshHistory() end
         else
-            self:ScanInventoryHistory(e)
+            -- BAG_UPDATE_DELAYED / ITEM_LOCK_CHANGED / etc. : rafraîchit la GRILLE seulement.
+            -- L'historique n'est PLUS alimenté par diff de sac (faux positifs : déséquipement,
+            -- banque, courrier). Il se construit uniquement via CHAT_MSG_LOOT/MONEY/CURRENCY.
             self:RequestRefresh()
         end
     end)
@@ -292,14 +326,11 @@ function M:Enable()
         "BAG_UPDATE_DELAYED", "ITEM_LOCK_CHANGED", "PLAYER_REGEN_ENABLED",
         "CURRENCY_DISPLAY_UPDATE", "PLAYER_MONEY", "PLAYER_ENTERING_WORLD",
         "MERCHANT_SHOW", "BANKFRAME_OPENED", "MAIL_SHOW", "AUCTION_HOUSE_SHOW", "TRADE_SHOW",
-        "CHAT_MSG_MONEY", "CHAT_MSG_CURRENCY", "GET_ITEM_INFO_RECEIVED",
+        "CHAT_MSG_LOOT", "CHAT_MSG_MONEY", "CHAT_MSG_CURRENCY", "GET_ITEM_INFO_RECEIVED",
     }) do
         pcall(self.ev.RegisterEvent, self.ev, e)
     end
     self:InstallBagHooks()
-    -- NE PAS snapshot ici : les sacs peuvent ne pas être encore peuplés (course possible
-    -- au login/reload). On laisse le garde-fou de ScanInventoryHistory poser la base au
-    -- premier évènement réel (PLAYER_ENTERING_WORLD/BAG_UPDATE_DELAYED), sans logguer.
     self:SetBagTab((SP:GetModuleConfig(self.name) or {}).activeTab or "bags")
     if not InCombatLockdown() then
         ClearOverrideBindings(self.toggle)
@@ -369,44 +400,24 @@ function M:LogHistory(kind, text, itemID, count)
     if self.history and self.history:IsShown() then self:RefreshHistory() end
 end
 
-function M:SnapshotHistoryCounts()
-    self._histCounts = {}
-    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then return end
-    for _, bag in ipairs(BAGS) do
-        local n = C_Container.GetContainerNumSlots(bag) or 0
-        for slot = 1, n do
-            local info = C_Container.GetContainerItemInfo(bag, slot)
-            if info and info.itemID then
-                self._histCounts[info.itemID] = (self._histCounts[info.itemID] or 0) + (info.stackCount or 1)
+-- Historise un objet RÉELLEMENT acquis depuis un message CHAT_MSG_LOOT pour soi.
+-- (Le déséquipement / retrait banque / courrier ne déclenche pas cet évènement.)
+function M:LogLootMessage(msg)
+    if not msg or msg == "" then return end
+    local pats = BuildLootPatterns()
+    for _, entry in ipairs(pats) do
+        local a, b = msg:match(entry.pat)
+        local linkChunk, countStr
+        if entry.hasCount then linkChunk, countStr = a, b else linkChunk = a end
+        if linkChunk then
+            local itemID = tonumber(linkChunk:match("|Hitem:(%d+)"))
+            if itemID then
+                local count = tonumber(countStr) or 1
+                self:LogHistory("loot", nil, itemID, count)
             end
+            return
         end
     end
-end
-
-function M:ScanInventoryHistory(reason)
-    if not self._histCounts then self:SnapshotHistoryCounts(); return end
-    local old = self._histCounts
-    local now = {}
-    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then return end
-    for _, bag in ipairs(BAGS) do
-        local n = C_Container.GetContainerNumSlots(bag) or 0
-        for slot = 1, n do
-            local info = C_Container.GetContainerItemInfo(bag, slot)
-            if info and info.itemID then now[info.itemID] = (now[info.itemID] or 0) + (info.stackCount or 1) end
-        end
-    end
-    for itemID, qty in pairs(now) do
-        local prev = old[itemID] or 0
-        if qty > prev then self:LogHistory("loot", nil, itemID, qty - prev) end
-    end
-    for itemID, prev in pairs(old) do
-        local qty = now[itemID] or 0
-        if qty < prev then
-            local kind = (MerchantFrame and MerchantFrame:IsShown()) and "sold" or "removed"
-            self:LogHistory(kind, nil, itemID, prev - qty)
-        end
-    end
-    self._histCounts = now
 end
 
 function M:_AcquireHistoryRow(i)
