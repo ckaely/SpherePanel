@@ -10,6 +10,7 @@ local M = {
     name          = "Bags",
     label         = "Sac",
     defaultHeight = 240,
+    headerHeight  = 38,
     secureChildren = true,
 }
 
@@ -17,6 +18,14 @@ local BAGS = { 0, 1, 2, 3, 4, 5 }
 local GAP, HDR_H, SUB_H = 2, 18, 15
 local CURRENCY_ROW = 17
 local SUB_COLOR = { 0.45, 0.75, 0.95 }
+
+local function CompactNumber(v)
+    v = tonumber(v) or 0
+    if BreakUpLargeNumbers then return BreakUpLargeNumbers(v) end
+    if v >= 1000000 then return ("%.1fm"):format(v / 1000000):gsub("%.0m", "m") end
+    if v >= 10000 then return ("%.1fk"):format(v / 1000):gsub("%.0k", "k") end
+    return tostring(v)
+end
 
 local function BagCfg(key, default)
     local c = _G.BAGANATOR_CONFIG
@@ -211,6 +220,8 @@ local function CreateSlot(self, i)
         b.upg:SetTexture("Interface\\Buttons\\UI-MicroStream-Green")
     end
     b.hl = b:CreateTexture(nil, "HIGHLIGHT"); b.hl:SetAllPoints(b); b.hl:SetColorTexture(1, 1, 1, 0.2)
+    b:EnableMouseWheel(true)
+    b:SetScript("OnMouseWheel", function(_, delta) self:ScrollBag(delta) end)
     b:SetScript("OnEnter", function(s)
         if s.bag and s.slot then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetBagItem, GameTooltip, s.bag, s.slot); GameTooltip:Show() end
         self:DimOthers(s)
@@ -261,6 +272,8 @@ local function CreateHeader(self, i)
     local h = CreateFrame("Button", nil, self.list)
     h:SetHeight(HDR_H)
     h:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    h:EnableMouseWheel(true)
+    h:SetScript("OnMouseWheel", function(_, delta) self:ScrollBag(delta) end)
     h.arrow = h:CreateFontString(nil, "OVERLAY", "GameFontNormal"); h.arrow:SetPoint("LEFT", h, "LEFT", 2, 0)
     h.fs = h:CreateFontString(nil, "OVERLAY", "GameFontNormal"); h.fs:SetPoint("LEFT", h.arrow, "RIGHT", 4, 0)
     local hl = h:CreateTexture(nil, "HIGHLIGHT"); hl:SetAllPoints(h); hl:SetColorTexture(1, 1, 1, 0.08)
@@ -276,6 +289,9 @@ end
 local function CreateCurrencyRow(self, i)
     local r = CreateFrame("Frame", nil, self.list)
     r:SetHeight(CURRENCY_ROW)
+    r.bg = r:CreateTexture(nil, "BACKGROUND")
+    r.bg:SetAllPoints(r)
+    r.bg:SetColorTexture(0, 0, 0, 0.18)
     r.icon = r:CreateTexture(nil, "ARTWORK")
     r.icon:SetSize(14, 14)
     r.icon:SetPoint("LEFT", r, "LEFT", 4, 0)
@@ -283,10 +299,12 @@ local function CreateCurrencyRow(self, i)
     r.fs = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     r.fs._spFontRole = "secondary"
     r.fs:SetPoint("LEFT", r.icon, "RIGHT", 5, 0)
-    r.fs:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+    r.fs:SetPoint("RIGHT", r, "RIGHT", -5, 0)
     r.fs:SetJustifyH("LEFT")
     r.fs:SetWordWrap(false)
     r:EnableMouse(true)
+    r:EnableMouseWheel(true)
+    r:SetScript("OnMouseWheel", function(_, delta) self:ScrollBag(delta) end)
     r:SetScript("OnEnter", function(s)
         if s.currencyID then
             SP:AnchorTooltipOutsidePanel(GameTooltip, s)
@@ -306,14 +324,31 @@ function M:Init(body)
     self.histDateCollapsed = {}
     self.tabBtns = {}
 
-    self.tabBar = CreateFrame("Frame", nil, body)
-    self.tabBar:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
-    self.tabBar:SetPoint("TOPRIGHT", body, "TOPRIGHT", -2, -2)
+    if self.header then
+        if self.labelFS then
+            self.labelFS:ClearAllPoints()
+            self.labelFS:SetPoint("TOPLEFT", self.header, "TOPLEFT", 8, -3)
+        end
+        if self.suffixFS then
+            self.suffixFS:ClearAllPoints()
+            self.suffixFS:SetPoint("TOPRIGHT", self.lock or self.header, "TOPLEFT", -6, -3)
+            self.suffixFS:SetJustifyH("RIGHT")
+        end
+    end
+
+    local tabParent = self.header or body
+    self.tabBar = CreateFrame("Frame", nil, tabParent)
+    if self.header then
+        self.tabBar:SetPoint("BOTTOMLEFT", self.header, "BOTTOMLEFT", 8, 2)
+        self.tabBar:SetPoint("BOTTOMRIGHT", self.lock or self.header, "BOTTOMLEFT", -6, 2)
+    else
+        self.tabBar:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
+        self.tabBar:SetPoint("TOPRIGHT", body, "TOPRIGHT", -2, -2)
+    end
     self.tabBar:SetHeight(18)
     self.tabBar:EnableMouseWheel(true)
     self.tabBar:SetScript("OnMouseWheel", function(_, delta)
-        local cfg = SP:GetModuleConfig(self.name)
-        self:SetBagTab(((cfg and cfg.activeTab) == "history") and "bags" or "history")
+        self:CycleBagTab(delta)
     end)
     for i, d in ipairs({ { "bags", "Sac" }, { "history", "Historique" } }) do
         local b = CreateFrame("Button", nil, self.tabBar)
@@ -326,22 +361,24 @@ function M:Init(body)
         self.tabBtns[d[1]] = b
     end
 
+    if self.header then
+        self.header:EnableMouseWheel(true)
+        self.header:SetScript("OnMouseWheel", function(_, delta) self:CycleBagTab(delta) end)
+    end
+
     self.list = CreateFrame("Frame", nil, body)
-    self.list:SetPoint("TOPLEFT", self.tabBar, "BOTTOMLEFT", 0, -2)
+    self.list:SetPoint("TOPLEFT", body, "TOPLEFT", 2, -2)
     self.list:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -2, 2)
     self.list:SetClipsChildren(true)
+    self.list:EnableMouseWheel(true)
+    self.list:SetScript("OnMouseWheel", function(_, delta) self:ScrollBag(delta) end)
 
     self.history = CreateFrame("Frame", nil, body)
     self.history:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, 0)
     self.history:SetPoint("BOTTOMRIGHT", self.list, "BOTTOMRIGHT", 0, 0)
     self.history:SetClipsChildren(true)
     self.history:EnableMouseWheel(true)
-    self.history:SetScript("OnMouseWheel", function(_, delta)
-        local visible = self.history:GetHeight() or 1
-        local maxS = math.max(0, (self._histContentH or 0) - visible)
-        self.histScroll = math.min(maxS, math.max(0, (self.histScroll or 0) - delta * 28))
-        self:RefreshHistory()
-    end)
+    self.history:SetScript("OnMouseWheel", function(_, delta) self:ScrollBag(delta) end)
     self.history:Hide()
 
     self.ev = CreateFrame("Frame")
@@ -390,7 +427,7 @@ function M:Init(body)
         end
         self.bagsBtn = headerBtn("bags-button-bag-default", "Interface\\Icons\\INV_Misc_Bag_08",
             "Sacs équipés", function() self:ToggleBagSlotsPanel() end)
-        self.bagsBtn:SetPoint("RIGHT", anchor, "LEFT", -6, 0)
+        self.bagsBtn:SetPoint("TOPRIGHT", anchor, "TOPLEFT", -6, -2)
         self.sortBtn = headerBtn("bags-button-autosort-up", "Interface\\Icons\\INV_Misc_Broom_01",
             "Trier le sac", function() self:SortBags() end)
         self.sortBtn:SetPoint("RIGHT", self.bagsBtn, "LEFT", -3, 0)
@@ -446,6 +483,27 @@ end
 
 function M:OnResize(w, h) self:RequestRefresh() end
 
+function M:CycleBagTab(delta)
+    local cfg = SP:GetModuleConfig(self.name)
+    local nextTab = ((cfg and cfg.activeTab) == "history") and "bags" or "history"
+    self:SetBagTab(nextTab)
+end
+
+function M:ScrollBag(delta)
+    local cfg = SP:GetModuleConfig(self.name)
+    if cfg and cfg.activeTab == "history" then
+        local visible = self.history and (self.history:GetHeight() or 1) or 1
+        local maxS = math.max(0, (self._histContentH or 0) - visible)
+        self.histScroll = math.min(maxS, math.max(0, (self.histScroll or 0) - (delta or 0) * 28))
+        self:RefreshHistory()
+        return
+    end
+    local visible = self.list and (self.list:GetHeight() or 1) or 1
+    local maxS = math.max(0, (self._bagContentH or 0) - visible)
+    self.bagScroll = math.min(maxS, math.max(0, (self.bagScroll or 0) - (delta or 0) * 32))
+    self:Refresh()
+end
+
 -- Estompage/désaturation des icônes NON survolées (niveau réglable en config).
 function M:DimOthers(active)
     local cfg = SP:GetModuleConfig(self.name)
@@ -475,71 +533,112 @@ function M:SortBags()
     elseif SortBags then pcall(SortBags) end
 end
 
--- ===== Panneau latéral des sacs équipés (item 17) ===========================
+-- ===== Panneau latéral des sacs équipés : boutons natifs (changer + menu Blizzard) ====
 local BAG_NAMES = { [0] = "Sac à dos" }
+local function BagInvSlot(bagID) return ContainerIDToInventoryID and ContainerIDToInventoryID(bagID) end
+
+-- Menu contextuel natif d'un sac : assignation de filtre + nettoyage (logique Blizzard).
+local function ShowBagFilterMenu(anchor, bagID)
+    if not (MenuUtil and MenuUtil.CreateContextMenu and C_Container and C_Container.GetBagSlotFlag) then return end
+    pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
+        root:CreateTitle(BAG_FILTER_TITLE_SORTING or "Tri")
+        if ContainerFrame_CanContainerUseFilterMenu and ContainerFrame_CanContainerUseFilterMenu(bagID)
+           and ContainerFrameUtil_EnumerateBagGearFilters and BAG_FILTER_LABELS then
+            root:CreateTitle(BAG_FILTER_ASSIGN_TO or "Assigner à")
+            for _, flag in ContainerFrameUtil_EnumerateBagGearFilters() do
+                local cb = root:CreateCheckbox(BAG_FILTER_LABELS[flag],
+                    function() return C_Container.GetBagSlotFlag(bagID, flag) end,
+                    function() C_Container.SetBagSlotFlag(bagID, flag, not C_Container.GetBagSlotFlag(bagID, flag)) end)
+                if cb and cb.SetResponse and MenuResponse then cb:SetResponse(MenuResponse.Close) end
+            end
+        end
+        root:CreateTitle(BAG_FILTER_IGNORE or "Ignorer")
+        local DSORT = Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.DisableAutoSort
+        local isBackpack = (bagID == (Enum and Enum.BagIndex and Enum.BagIndex.Backpack or 0))
+        root:CreateCheckbox(BAG_FILTER_CLEANUP or "Ignorer ce sac au tri",
+            function()
+                if isBackpack and C_Container.GetBackpackAutosortDisabled then return C_Container.GetBackpackAutosortDisabled() end
+                return DSORT and C_Container.GetBagSlotFlag(bagID, DSORT)
+            end,
+            function()
+                if isBackpack and C_Container.SetBackpackAutosortDisabled then
+                    C_Container.SetBackpackAutosortDisabled(not C_Container.GetBackpackAutosortDisabled())
+                elseif DSORT then
+                    C_Container.SetBagSlotFlag(bagID, DSORT, not C_Container.GetBagSlotFlag(bagID, DSORT))
+                end
+            end)
+    end)
+end
+
 function M:_BagRow(i)
     local p = self.bagSlotsPanel
     local r = p.rows[i]
     if not r then
-        r = CreateFrame("Button", nil, p); r:SetSize(160, 24)
-        r:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -28 - (i - 1) * 25)
-        r:SetPoint("RIGHT", p, "RIGHT", -6, 0)
+        r = CreateFrame("Frame", nil, p); r:SetSize(170, 30)
         r.stripe = r:CreateTexture(nil, "BACKGROUND"); r.stripe:SetAllPoints(r)
-        r.icon = r:CreateTexture(nil, "ARTWORK"); r.icon:SetSize(18, 18); r.icon:SetPoint("LEFT", r, "LEFT", 3, 0); r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); r.name:SetPoint("LEFT", r.icon, "RIGHT", 5, 0); r.name:SetPoint("RIGHT", r, "RIGHT", -44, 0); r.name:SetJustifyH("LEFT"); r.name:SetWordWrap(false)
+        r.btn = CreateFrame("Button", nil, r); r.btn:SetSize(26, 26); r.btn:SetPoint("LEFT", r, "LEFT", 3, 0)
+        r.btn:RegisterForClicks("AnyUp"); r.btn:RegisterForDrag("LeftButton")
+        r.btn.bgs = r.btn:CreateTexture(nil, "BACKGROUND"); r.btn.bgs:SetAllPoints(r.btn); r.btn.bgs:SetColorTexture(0, 0, 0, 0.5)
+        r.icon = r.btn:CreateTexture(nil, "ARTWORK"); r.icon:SetPoint("TOPLEFT", 2, -2); r.icon:SetPoint("BOTTOMRIGHT", -2, 2); r.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        r.btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        r.name = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"); r.name:SetPoint("LEFT", r.btn, "RIGHT", 6, 0); r.name:SetPoint("RIGHT", r, "RIGHT", -44, 0); r.name:SetJustifyH("LEFT"); r.name:SetWordWrap(false)
         r.slots = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); r.slots:SetPoint("RIGHT", r, "RIGHT", -4, 0); r.slots:SetJustifyH("RIGHT")
-        r:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        r.btn:SetScript("OnClick", function(s, btn)
+            local inv = BagInvSlot(s.bagID)
+            if btn == "RightButton" then ShowBagFilterMenu(s, s.bagID)
+            elseif InCombatLockdown() then return
+            elseif IsModifiedClick and IsModifiedClick("PICKUPITEM") then if inv and PickupBagFromSlot then PickupBagFromSlot(inv) end
+            elseif inv then
+                if CursorHasItem and CursorHasItem() then if PutItemInBag then PutItemInBag(inv) end
+                elseif PickupBagFromSlot then PickupBagFromSlot(inv) end
+            end
+            C_Timer.After(0.3, function() if self.bagSlotsPanel and self.bagSlotsPanel:IsShown() then self:RefreshBagSlots() end end)
+        end)
+        r.btn:SetScript("OnDragStart", function(s) local inv = BagInvSlot(s.bagID); if inv and PickupBagFromSlot and not InCombatLockdown() then PickupBagFromSlot(inv) end end)
+        r.btn:SetScript("OnReceiveDrag", function(s) local inv = BagInvSlot(s.bagID); if inv and PutItemInBag and not InCombatLockdown() then PutItemInBag(inv) end end)
+        r.btn:SetScript("OnEnter", function(s)
+            local inv = BagInvSlot(s.bagID)
+            SP:AnchorTooltipOutsidePanel(GameTooltip, s)
+            if inv then pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", inv) else GameTooltip:SetText(BAG_NAMES[0] or "Sac à dos") end
+            GameTooltip:AddLine("|cFF888888Clic = changer · Clic droit = trier/filtrer|r")
+            GameTooltip:Show()
+        end)
+        r.btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
         p.rows[i] = r
     end
     return r
 end
 
--- Active/désactive l'inclusion d'un sac dans le tri natif (option d'organisation).
-local function ToggleBagAutoSort(bagID)
-    local FLAG = Enum and Enum.BagSlotFlags and Enum.BagSlotFlags.DisableAutoSort
-    if not (FLAG and C_Container and C_Container.SetBagSlotFlag and C_Container.GetBagSlotFlag) then return end
-    local cur = false
-    pcall(function() cur = C_Container.GetBagSlotFlag(bagID, FLAG) end)
-    pcall(C_Container.SetBagSlotFlag, bagID, FLAG, not cur)
-end
-
 function M:RefreshBagSlots()
     local p = self.bagSlotsPanel; if not p then return end
-    local shown = 0
+    local i = 0
     for bagID = 0, 5 do
-        local total = (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(bagID)) or 0
-        local r = self:_BagRow(bagID + 1)
-        if bagID == 0 or total > 0 then
-            shown = shown + 1
+        if bagID == 0 or BagInvSlot(bagID) then
+            i = i + 1
+            local total = (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(bagID)) or 0
+            local r = self:_BagRow(i)
+            r:ClearAllPoints(); r:SetPoint("TOPLEFT", p, "TOPLEFT", 6, -28 - (i - 1) * 31); r:SetPoint("RIGHT", p, "RIGHT", -6, 0)
+            r.btn.bagID = bagID
             local icon, name
             if bagID == 0 then
                 icon = "Interface\\Buttons\\Button-Backpack-Up"; name = BAG_NAMES[0]
             else
-                local inv = (ContainerIDToInventoryID and ContainerIDToInventoryID(bagID))
+                local inv = BagInvSlot(bagID)
                 icon = inv and GetInventoryItemTexture("player", inv)
                 local link = inv and GetInventoryItemLink("player", inv)
-                name = (link and link:match("%[(.-)%]")) or ("Sac " .. bagID)
+                name = (link and link:match("%[(.-)%]")) or (total > 0 and ("Sac " .. bagID) or "(emplacement vide)")
             end
-            r.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_Bag_08")
+            r.icon:SetTexture(icon or "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag")
             local free = (C_Container and C_Container.GetContainerNumFreeSlots and C_Container.GetContainerNumFreeSlots(bagID)) or 0
             r.name:SetText(name)
-            r.slots:SetText(("%d/%d"):format(total - free, total))
-            r.stripe:SetColorTexture(0, 0, 0, (bagID % 2 == 0) and 0.22 or 0.10)
-            local thisBag = bagID
-            r:SetScript("OnClick", function() ToggleBagAutoSort(thisBag); SP:PlayItemSound("pickup") end)
-            r:SetScript("OnEnter", function(s)
-                if thisBag > 0 then
-                    local inv = ContainerIDToInventoryID and ContainerIDToInventoryID(thisBag)
-                    if inv then SP:AnchorTooltipOutsidePanel(GameTooltip, s); pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", inv); GameTooltip:Show() end
-                end
-            end)
-            r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+            r.slots:SetText(total > 0 and ("%d/%d"):format(total - free, total) or "")
+            r.stripe:SetColorTexture(0, 0, 0, (i % 2 == 0) and 0.22 or 0.10)
             r:Show()
-        else
-            r:Hide()
         end
     end
-    p.note:SetText("|cFF888888Clic = inclure/exclure du tri.|r")
+    for j = i + 1, #p.rows do p.rows[j]:Hide() end
+    p._rowCount = i
+    p.note:SetText("|cFF888888Clic = changer le sac · Clic droit = tri/filtre Blizzard.|r")
 end
 
 function M:ToggleBagSlotsPanel()
@@ -547,15 +646,16 @@ function M:ToggleBagSlotsPanel()
     if not self.bagSlotsPanel then
         local p = CreateFrame("Frame", nil, self.body)
         p:SetFrameStrata("DIALOG"); p:SetFrameLevel((self.body:GetFrameLevel() or 1) + 15)
-        p:SetSize(172, 6 * 25 + 44)
+        p:SetSize(190, 6 * 31 + 50)
         p.bg = p:CreateTexture(nil, "BACKGROUND"); p.bg:SetAllPoints(p); p.bg:SetColorTexture(0.04, 0.05, 0.08, 0.96)
         p.title = p:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); p.title:SetPoint("TOPLEFT", p, "TOPLEFT", 8, -7); p.title:SetText("Sacs équipés")
-        p.note = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); p.note:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 8, 6); p.note:SetPoint("RIGHT", p, "RIGHT", -6, 0); p.note:SetJustifyH("LEFT")
+        p.note = p:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); p.note:SetPoint("BOTTOMLEFT", p, "BOTTOMLEFT", 8, 6); p.note:SetPoint("RIGHT", p, "RIGHT", -6, 0); p.note:SetJustifyH("LEFT"); p.note:SetWordWrap(true)
         p.rows = {}
         self.bagSlotsPanel = p
     end
     self:RefreshBagSlots()
     local p = self.bagSlotsPanel
+    p:SetHeight((p._rowCount or 6) * 31 + 52)
     local onRight = (SP.db.panel.side ~= "left")
     p:ClearAllPoints()
     if onRight then p:SetPoint("TOPRIGHT", self.body, "TOPLEFT", -4, 6)
@@ -652,6 +752,8 @@ function M:_AcquireHistoryRow(i)
                 self:RefreshHistory()
             end
         end)
+        r:EnableMouseWheel(true)
+        r:SetScript("OnMouseWheel", function(_, delta) self:ScrollBag(delta) end)
         self.histRows[i] = r
     end
     return r
@@ -712,7 +814,7 @@ function M:RefreshHistory()
         else
             local e = row.e
             r.dateKey = nil
-            r:EnableMouse(false)
+            r:EnableMouse(true)
             r.arrow:Hide()
             local cr, cg, cb
             if e.cat then cr, cg, cb = self:CategoryColor(e.cat) end
@@ -734,7 +836,7 @@ function M:RefreshHistory()
     if (self.histScroll or 0) > maxS then self.histScroll = maxS end
     if #rows == 0 then
         local r = self:_AcquireHistoryRow(1)
-        r.dateKey = nil; r:EnableMouse(false)
+        r.dateKey = nil; r:EnableMouse(true)
         r.bg:SetColorTexture(0, 0, 0, 0.14)
         r.time:Hide(); r.arrow:Hide(); r.icon:Hide()
         r.text:ClearAllPoints(); r.text:SetPoint("LEFT", r, "LEFT", 4, 0); r.text:SetPoint("RIGHT", r, "RIGHT", -4, 0)
@@ -891,7 +993,7 @@ function M:_CollectCurrencies()
     local money = GetMoney and GetMoney() or 0
     rows[#rows + 1] = {
         icon = "Interface\\MoneyFrame\\UI-GoldIcon",
-        text = GetMoneyString and GetMoneyString(money, true) or tostring(math.floor(money / 10000)) .. " po",
+        text = CompactNumber(math.floor(money / 10000)),
     }
 
     if C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize then
@@ -902,9 +1004,7 @@ function M:_CollectCurrencies()
             local id = okLink and link and tonumber(link:match("Hcurrency:(%d+)")) or nil
             if ok and info and not info.isHeader and id and not hidden[id] and (info.isShowInBackpack or info.isWatched or tracked[id]) then
                 local qty = info.quantity or 0
-                local maxQ = info.maxQuantity or 0
-                local text = ("%s  |cFFFFFFFF%d|r"):format(info.name or "?", qty)
-                if maxQ > 0 then text = text .. ("|cFF888888 / %d|r"):format(maxQ) end
+                local text = CompactNumber(qty)
                 rows[#rows + 1] = {
                     currencyID = id,
                     icon = info.iconFileID or "Interface\\Icons\\INV_Misc_QuestionMark",
@@ -1057,12 +1157,16 @@ function M:Refresh()
     local w = self.list:GetWidth(); if not w or w < 1 then w = (SP.db.panel.width or 280) - 4 end
     local perRow = math.max(1, math.floor((w + GAP) / (size + GAP)))
     local si, hi, subi, y = 0, 0, 0, 2
+    local visibleH = self.list:GetHeight() or 1
+    self.bagScroll = math.min(math.max(0, ((self._bagContentH or 0) - visibleH)), math.max(0, self.bagScroll or 0))
+    local scroll = self.bagScroll or 0
+    local function Y(v) return -(v - scroll) end
 
     local function placeItem(it, col, rowN, baseY)
         si = si + 1
         local b = self:_AcquireSlot(si)
         b:SetSize(size, size); b:ClearAllPoints()
-        b:SetPoint("TOPLEFT", self.list, "TOPLEFT", col * (size + GAP), -(baseY + rowN * (size + GAP)))
+        b:SetPoint("TOPLEFT", self.list, "TOPLEFT", col * (size + GAP), Y(baseY + rowN * (size + GAP)))
         b.bag, b.slot = it.bag, it.slot
         -- épaisseur de bordure configurable = inset de l'icône (la bordure = fond visible)
         local bth = cfg.iconBorderThickness or 2
@@ -1137,26 +1241,31 @@ function M:Refresh()
             hdr.fs:SetText(("Monnaies  |cFF888888%d|r"):format(#currencies))
             hdr.fs:SetTextColor(1, 0.82, 0)
             hdr:ClearAllPoints()
-            hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
-            hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
+            hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, Y(y))
+            hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, Y(y))
             hdr:SetScript("OnClick", function(_, button)
                 if button == "RightButton" then self:ToggleCurrencyPicker(hdr) end
             end)
             hdr:Show()
             y = y + HDR_H + 1
 
-            for _, cur in ipairs(currencies) do
+            local pillW = 58
+            local curPerRow = math.max(1, math.floor((w + GAP) / (pillW + GAP)))
+            pillW = math.max(44, math.floor((w - (curPerRow - 1) * GAP) / curPerRow))
+            for idx, cur in ipairs(currencies) do
                 currencyShown = currencyShown + 1
                 local r = self:_AcquireCurrencyRow(currencyShown)
                 r.currencyID = cur.currencyID
                 r.icon:SetTexture(cur.icon)
                 r.fs:SetText(cur.text)
                 r:ClearAllPoints()
-                r:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
-                r:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
+                r:SetSize(pillW, CURRENCY_ROW)
+                local col = (idx - 1) % curPerRow
+                local rowN = math.floor((idx - 1) / curPerRow)
+                r:SetPoint("TOPLEFT", self.list, "TOPLEFT", col * (pillW + GAP), Y(y + rowN * (CURRENCY_ROW + GAP)))
                 r:Show()
-                y = y + CURRENCY_ROW
             end
+            y = y + math.ceil(#currencies / curPerRow) * (CURRENCY_ROW + GAP)
             y = y + 3
         end
     end
@@ -1175,8 +1284,8 @@ function M:Refresh()
                 hdr.fs:SetText(("%s  |cFF888888%d / %d|r"):format(label, stats.free or 0, stats.total or #items))
                 hdr.fs:SetTextColor(1, 0.82, 0)
                 hdr:ClearAllPoints()
-                hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
-                hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
+                hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, Y(y))
+                hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, Y(y))
                 hdr:SetScript("OnClick", nil)
                 hdr:Show()
                 y = y + HDR_H + 1
@@ -1196,8 +1305,8 @@ function M:Refresh()
                 hdr.fs:SetText(("%s  |cFF888888%d|r"):format(c.label, count))
                 hdr.fs:SetTextColor(col[1], col[2], col[3])
                 hdr:ClearAllPoints()
-                hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
-                hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, -y)
+                hdr:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, Y(y))
+                hdr:SetPoint("TOPRIGHT", self.list, "TOPRIGHT", 0, Y(y))
                 hdr:SetScript("OnClick", function()
                     if c.key == "recent" then self.recentSet = {} else c.collapsed = not c.collapsed end
                     self:RequestRefresh()
@@ -1210,7 +1319,7 @@ function M:Refresh()
                         si = si + 1
                         local b = self:_AcquireSlot(si)
                         b.bag, b.slot = nil, nil
-                        b:SetSize(size, size); b:ClearAllPoints(); b:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -y)
+                        b:SetSize(size, size); b:ClearAllPoints(); b:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, Y(y))
                         b.icon:SetTexture(nil); b.icon:SetDesaturated(false); b.border:SetColorTexture(0.2, 0.2, 0.2, 1)
                         b.count:SetText(tostring(free)); b.ilvl:SetText(""); b.upg:Hide()
                         pcall(function() b:SetAttribute("type2", nil); b:SetAttribute("item2", nil); b:SetAttribute("bag", nil); b:SetAttribute("slot", nil) end)
@@ -1246,7 +1355,10 @@ function M:Refresh()
 
     SP:SetModuleHeaderText(self, ("%d / %d"):format(free, total))
     local needed = math.max(HDR_H, y)
-    SP:SetAutoHeight(self, needed)
+    self._bagContentH = needed
+    local maxS = math.max(0, needed - (self.list:GetHeight() or 1))
+    if (self.bagScroll or 0) > maxS then self.bagScroll = maxS end
+    SP:SetAutoHeight(self, math.min(needed, cfg.maxAutoHeight or 320))
 end
 
 SP:RegisterModule(M)

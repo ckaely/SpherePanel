@@ -923,8 +923,12 @@ function M:RefreshGear()
         local a = AuditSlot(slotId)
         local canEnch = CANENCH[key]
         local function setCol(fs, txt) if fs then if side == "B" then fs:Hide() else fs:Show(); fs:SetText(txt or "") end end end
+        -- icônes (enchant/gemmes) à la TAILLE DU TEXTE de la ligne enchant (pas plus gros)
+        local txtH = select(2, c.ench:GetFont()) or 10
+        local iconSz = math.max(8, math.floor(txtH + 0.5))
         local function setEnchantIcon(audit)
             if not c.enchIcon then return end
+            c.enchIcon:SetSize(iconSz, iconSz)
             if side == "B" or not (audit and audit.enchanted) then c.enchIcon:Hide(); return end
             if audit.enchantAtlas and c.enchIcon.SetAtlas and pcall(c.enchIcon.SetAtlas, c.enchIcon, audit.enchantAtlas, true) then
                 c.enchIcon:Show()
@@ -935,6 +939,7 @@ function M:RefreshGear()
         end
         local function setGemIcons(audit)
             for i, gt in ipairs(c.gemTex or {}) do
+                gt:SetSize(iconSz, iconSz)
                 local icon = audit and audit.gemIcons and audit.gemIcons[i]
                 if side ~= "B" and icon then
                     gt:SetTexture(icon)
