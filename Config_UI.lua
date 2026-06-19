@@ -20,7 +20,7 @@ local CONDITIONS = {
 }
 
 -- helpers partagés (définis plus bas, forward-declarés pour être utilisables partout)
-local MakeScrollPage, MakeRadioRow, SectionHeader
+local MakeScrollPage, MakeRadioRow, SectionHeader, MakeTabbedPage
 local FONT_CHOICES = {
     { "Inter-Regular.ttf", "Inter Regular" },
     { "ExpresswayRegular.ttf", "Expressway Regular" },
@@ -664,17 +664,30 @@ local function ChatOptions(root, y, opage)
         for i, tab in ipairs(tabs) do
             local row = root.chatWinRows[i]
             if not row then
-                row = CreateFrame("Frame", nil, root); row:SetSize(118, 24)
+                row = CreateFrame("Frame", nil, root); row:SetSize(134, 24)
                 row.bg = row:CreateTexture(nil, "BACKGROUND"); row.bg:SetAllPoints(row)
-                row.name = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.name:SetSize(64, 18); row.name:SetAutoFocus(false); row.name:SetPoint("LEFT", row, "LEFT", 6, 0)
+                row.swatch = CreateFrame("Button", nil, row); row.swatch:SetSize(14, 14); row.swatch:SetPoint("LEFT", row, "LEFT", 5, 0)
+                row.swatch.tex = row.swatch:CreateTexture(nil, "ARTWORK"); row.swatch.tex:SetAllPoints(row.swatch)
+                row.swatch.bd = row.swatch:CreateTexture(nil, "BACKGROUND"); row.swatch.bd:SetPoint("TOPLEFT", -1, 1); row.swatch.bd:SetPoint("BOTTOMRIGHT", 1, -1); row.swatch.bd:SetColorTexture(0, 0, 0, 0.8)
+                row.name = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.name:SetSize(58, 18); row.name:SetAutoFocus(false); row.name:SetPoint("LEFT", row.swatch, "RIGHT", 8, 0)
                 row.unread = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.unread:SetSize(18, 18); row.unread:SetPoint("LEFT", row.name, "RIGHT", 4, 0)
-                row.del = CreateFrame("Button", nil, row); row.del:SetSize(16, 16); row.del:SetPoint("LEFT", row.unread, "RIGHT", 4, 0)
+                row.del = CreateFrame("Button", nil, row); row.del:SetSize(16, 16); row.del:SetPoint("LEFT", row.unread, "RIGHT", 2, 0)
                 row.del.fs = row.del:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); row.del.fs:SetAllPoints(row.del); row.del.fs:SetText("|cFFFF6666x|r")
                 row:EnableMouse(true)
                 root.chatWinRows[i] = row
             end
             row:ClearAllPoints(); row:SetPoint("TOPLEFT", root, "TOPLEFT", xx, tabsTop)
             row.bg:SetColorTexture(0.30, 0.55, 0.95, (tab.id == root._selectedChatTabId) and 0.28 or 0.08)
+            local tcol = tab.color or { 0.85, 0.9, 1 }
+            row.swatch.tex:SetColorTexture(tcol[1], tcol[2], tcol[3])
+            row.swatch:SetScript("OnClick", function()
+                local c = tab.color or { 0.85, 0.9, 1 }
+                if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
+                    ColorPickerFrame:SetupColorPickerAndShow({ r = c[1], g = c[2], b = c[3], hasOpacity = false,
+                        swatchFunc = function() local r, g, b = ColorPickerFrame:GetColorRGB(); tab.color = { r, g, b }; row.swatch.tex:SetColorTexture(r, g, b); applyChat(); root._refreshWindows() end,
+                        cancelFunc = function() end })
+                end
+            end)
             if not (row.name.HasFocus and row.name:HasFocus()) then row.name:SetText(tab.label or tab.id) end
             row.name:SetScript("OnEditFocusLost", function(s) tab.label = s:GetText(); applyChat(); root._refreshWindows() end)
             row.name:SetScript("OnEnterPressed", function(s) s:ClearFocus() end)
@@ -693,7 +706,7 @@ local function ChatOptions(root, y, opage)
                 applyChat(); root._refreshWindows()
             end)
             row:Show()
-            xx = xx + 122
+            xx = xx + 140
         end
         for i = #tabs + 1, #root.chatWinRows do root.chatWinRows[i]:Hide() end
         if not root.chatWinAdd then
@@ -1054,17 +1067,10 @@ local REQUIRES = {
     PerfMonitor  = { "AddonScope" },
 }
 
--- ===== Page d'un module =====================================================
-local function BuildModulePage(page, m)
-    local cfg = SP:GetModuleConfig(m.name)
-    local root = MakeScrollPage(page, 700)   -- tout scrolle → plus rien ne déborde du panneau
-    page._inner = root
-
-    local y = -8
-    local hdr = root:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    hdr:SetPoint("TOPLEFT", root, "TOPLEFT", 8, y); hdr:SetText(m.label .. "  |cFF888888(" .. m.name .. ")|r")
-    y = y - 30
-
+-- ===== Page d'un module (sous-onglets : Général / Apparence / Options) ======
+-- Onglet « Général » : activation, dimensions/position, conditions.
+local function BuildModuleGeneralTab(root, m, cfg)
+    local y = -6
     MakeCheck(root, "Activé", 8, y,
         function() return cfg and cfg.enabled end,
         function(v) if v then SP:EnableModule(m.name) else SP:DisableModuleUI(m) end end)
@@ -1096,7 +1102,6 @@ local function BuildModulePage(page, m)
             SP:RebuildLayout()
         end)
         y = y - 50
-        -- Largeur INDIVIDUELLE du module (n'affecte pas le panneau ni les autres modules)
         MakeSlider(root, "Largeur du module", 16, y, 180, 800, 5,
             function() return (cfg and cfg.width and cfg.width > 0) and cfg.width or (SP.db.panel.width or 280) end,
             function(v) if cfg then cfg.width = v; SP:RebuildLayout() end end,
@@ -1105,13 +1110,21 @@ local function BuildModulePage(page, m)
         wauto:SetSize(50, 20); wauto:SetPoint("TOPLEFT", root, "TOPLEFT", 250, y - 6); wauto:SetText("Pleine")
         wauto:SetScript("OnClick", function() if cfg then cfg.width = nil; SP:RebuildLayout() end end)
         y = y - 50
-        -- Fixer dans un angle du panneau (le côté gauche/droite suit le panneau)
         local cl = root:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         cl:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y - 6); cl:SetText("|cFFAAAAAAFixer dans l'angle du panneau :|r")
         MakeRadioRow(root, 130, y, { { "none", "Aucun" }, { "top", "Haut" }, { "bottom", "Bas" } },
             function() return cfg.corner or "none" end,
             function(v) cfg.corner = (v ~= "none") and v or nil; SP:RebuildLayout() end)
-        y = y - 30
+        y = y - 32
+    end
+    local afterCond = BuildConditions(root, m, y)
+    root:SetHeight(math.max(420, -afterCond + 40))
+end
+
+-- Onglet « Apparence » : police du module + bordure (mode individuel).
+local function BuildModuleAppearanceTab(root, m, cfg, app)
+    local y = -6
+    if m.name ~= "GameMenu" then
         y = SectionHeader(root, y, "Police du module")
         local fontPreview = MakeFontPreview(root, 290, y + 4,
             function() return cfg.fontFace or "Inter-Regular.ttf" end,
@@ -1145,13 +1158,9 @@ local function BuildModulePage(page, m)
             end)
         y = y - 38
     end
-
-    -- Bordure (mode individuel / comportement 2) : auto, = texte, = fond, ou perso
-    local app = SP.GetModuleAppearanceConfig and SP:GetModuleAppearanceConfig(m.name)
     if app then
         app.glowMode = app.glowMode or "auto"
         app.glowColor = app.glowColor or { r = 0.29, g = 0.64, b = 1 }
-        -- NB : glowThickness/glowAlpha restent nil tant que non réglés ici → héritent du GLOBAL (Général)
         y = SectionHeader(root, y, "Bordure quand réduit (mode individuel)")
         MakeRadioRow(root, 16, y, { { "auto", "Auto" }, { "text", "= Texte" }, { "bg", "= Fond" }, { "custom", "Perso" } },
             function() return app.glowMode end,
@@ -1174,20 +1183,24 @@ local function BuildModulePage(page, m)
             function(v) app.glowLocal = true; app.glowAlpha = v end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
         y = y - 48
     end
+    root:SetHeight(math.max(360, -y + 40))
+end
 
-    local afterCond = BuildConditions(root, m, y)
-    local bottom = afterCond
-    if SPECIFIC[m.name] then bottom = SPECIFIC[m.name](root, afterCond, page) or afterCond end
-    root:SetHeight(math.max(560, -bottom + 40))
-
-    -- ouverture de la page : remonte en haut + rafraîchit les listes dynamiques
-    page:SetScript("OnShow", function()
-        page._scroll = 0
-        root:ClearAllPoints()
-        root:SetPoint("TOPLEFT", page, "TOPLEFT", 0, 0)
-        root:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, 0)
-        if root._refresh then root._refresh() end
-    end)
+local function BuildModulePage(page, m)
+    local cfg = SP:GetModuleConfig(m.name)
+    local app = SP.GetModuleAppearanceConfig and SP:GetModuleAppearanceConfig(m.name)
+    local defs = {
+        { label = "Général",   build = function(root) BuildModuleGeneralTab(root, m, cfg) end },
+        { label = "Apparence", build = function(root) BuildModuleAppearanceTab(root, m, cfg, app) end },
+    }
+    if SPECIFIC[m.name] then
+        defs[#defs + 1] = { label = "Options", build = function(root)
+            local bottom = SPECIFIC[m.name](root, -8, page) or -400
+            root:SetHeight(math.max(520, -bottom + 40))
+        end }
+    end
+    MakeTabbedPage(page, defs)
+    page:SetScript("OnShow", function() if page._showSub then page._showSub() end end)
 end
 
 -- ===== Modules (vue d'ensemble, boîtes vert/rouge) ==========================
@@ -1328,6 +1341,58 @@ MakeScrollPage = function(page, innerH)
         inner:SetPoint("TOPRIGHT", page, "TOPRIGHT", 0, page._scroll)
     end)
     return inner
+end
+
+-- Barre de sous-onglets en haut de `page` + un MakeScrollPage clippé par onglet.
+-- defs = { { label=..., build=function(inner) ... end, height=? }, ... }
+-- Chaque onglet scrolle indépendamment ; le 1er est actif. Si un build pose `inner._refresh`,
+-- il est rappelé à l'activation de l'onglet (listes dynamiques).
+MakeTabbedPage = function(page, defs)
+    local bar = CreateFrame("Frame", nil, page)
+    bar:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4)
+    bar:SetPoint("TOPRIGHT", page, "TOPRIGHT", -4, -4)
+    bar:SetHeight(22)
+    local line = bar:CreateTexture(nil, "ARTWORK")
+    line:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", -4, 0); line:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 4, 0)
+    line:SetHeight(1); line:SetColorTexture(0.29, 0.64, 1, 0.25)
+    local hosts, btns = {}, {}
+    local function show(idx)
+        for i, h in ipairs(hosts) do h:SetShown(i == idx) end
+        for i, b in ipairs(btns) do
+            b.bg:SetShown(i == idx)
+            b.fs:SetTextColor(i == idx and 0.29 or 0.72, i == idx and 0.64 or 0.72, i == idx and 1 or 0.72)
+        end
+        page._activeSub = idx
+        local d = defs[idx]
+        if d and d.inner then
+            d.host._scroll = 0
+            d.inner:ClearAllPoints()
+            d.inner:SetPoint("TOPLEFT", d.host, "TOPLEFT", 0, 0)
+            d.inner:SetPoint("TOPRIGHT", d.host, "TOPRIGHT", 0, 0)
+            if d.inner._refresh then d.inner._refresh() end
+        end
+    end
+    local x = 2
+    for i, d in ipairs(defs) do
+        local b = CreateFrame("Button", nil, bar)
+        b.fs = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"); b.fs:SetText(d.label); b.fs:SetPoint("CENTER")
+        local w = math.max(46, (b.fs:GetStringWidth() or 40) + 18)
+        b:SetSize(w, 20); b:SetPoint("LEFT", bar, "LEFT", x, 0)
+        b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetAllPoints(b); b.bg:SetColorTexture(0.29, 0.64, 1, 0.28)
+        b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        x = x + w + 4
+        local host = CreateFrame("Frame", nil, page)
+        host:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", -4, -3)
+        host:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", 0, 0)
+        local inner = MakeScrollPage(host, d.height or 700)
+        d.inner, d.host = inner, host
+        hosts[i], btns[i] = host, b
+        b:SetScript("OnClick", function() show(i) end)
+        d.build(inner)
+    end
+    page._showSub = function() show(page._activeSub or 1) end
+    show(1)
+    return defs
 end
 
 -- ===== Comportement (scrollable, sections nettes) ===========================
@@ -1498,104 +1563,102 @@ local function BuildComportement(page)
 end
 
 local function BuildGeneral(realPage)
-    -- Général scrolle désormais comme les autres pages → plus aucun débordement.
-    local page = MakeScrollPage(realPage, 620)
-    realPage:SetScript("OnShow", function()
-        realPage._scroll = 0
-        page:ClearAllPoints()
-        page:SetPoint("TOPLEFT", realPage, "TOPLEFT", 0, 0)
-        page:SetPoint("TOPRIGHT", realPage, "TOPRIGHT", 0, 0)
-    end)
-    local hdr = page:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    hdr:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); hdr:SetText("Général")
-    local y = SectionHeader(page, -34, "Panneau")
-    MakeSlider(page, "Largeur du panneau", 16, y, 180, 600, 5,
-        function() return SP.db.panel.width or 280 end,
-        function(v) SP.db.panel.width = v; if SP.panel then SP.panel:SetWidth(v); SP:OnPanelResized() end end,
-        function(v) return v .. " px" end)
-    y = y - 54
-    y = SectionHeader(page, y, "Bordures")
-    -- bordures GLOBALES (chaque module peut surcharger dans sa propre page)
-    MakeSlider(page, "Épaisseur des bordures (global)", 16, y, 2, 16, 1,
-        function() return SP.db.panel.glowThickness or 6 end,
-        function(v) SP.db.panel.glowThickness = v end, function(v) return v .. " px" end)
-    y = y - 48
-    MakeSlider(page, "Transparence des bordures (global)", 16, y, 0.1, 1, 0.05,
-        function() return SP.db.panel.glowAlpha or 0.9 end,
-        function(v) SP.db.panel.glowAlpha = v end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
-    y = y - 54
-    y = SectionHeader(page, y, "Polices")
-    MakeCheck(page, "Police globale prioritaire", 16, y,
-        function() return SP.db.panel.fontGlobal == true end,
-        function(v) SP.db.panel.fontGlobal = v and true or false; if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end end)
-    y = y - 32
-    local fontPreview = MakeFontPreview(page, 300, y + 4,
-        function() return SP.db.panel.fontFace or "Inter-Regular.ttf" end,
-        function() return SP.db.panel.fontSize or 11 end,
-        function() return SP.db.panel.fontFlags or "" end,
-        "Apercu police globale")
-    MakeCycle(page, "Police globale", 16, y, FONT_CHOICES,
-        function() return SP.db.panel.fontFace or "Inter-Regular.ttf" end,
-        function(v) SP.db.panel.fontFace = v end,
-        function()
-            if fontPreview and fontPreview.Refresh then fontPreview:Refresh() end
-            if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
-        end,
-        FontChoicePreview)
-    y = y - 42
-    MakeSlider(page, "Taille police globale", 16, y, 8, 22, 1,
-        function() return SP.db.panel.fontSize or 11 end,
-        function(v)
-            SP.db.panel.fontSize = v
-            if fontPreview and fontPreview.Refresh then fontPreview:Refresh() end
-            if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
-        end,
-        function(v) return tostring(v) end)
-    y = y - 48
-    MakeCycle(page, "Style police globale", 16, y, FONT_FLAG_CHOICES,
-        function() return SP.db.panel.fontFlags or "" end,
-        function(v) SP.db.panel.fontFlags = v end,
-        function()
-            if fontPreview and fontPreview.Refresh then fontPreview:Refresh() end
-            if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
-        end)
-    y = y - 38
-
-    local secondaryPreview = MakeFontPreview(page, 300, y + 4,
-        function() return SP.db.panel.fontSecondaryFace or SP.db.panel.fontFace or "Inter-Regular.ttf" end,
-        function() return SP.db.panel.fontSecondarySize or math.max(8, (SP.db.panel.fontSize or 11) - 1) end,
-        function() return SP.db.panel.fontSecondaryFlags or "" end,
-        "Apercu texte secondaire")
-    MakeCycle(page, "Police secondaire", 16, y, FONT_CHOICES,
-        function() return SP.db.panel.fontSecondaryFace or SP.db.panel.fontFace or "Inter-Regular.ttf" end,
-        function(v) SP.db.panel.fontSecondaryFace = v end,
-        function()
-            if secondaryPreview and secondaryPreview.Refresh then secondaryPreview:Refresh() end
-            if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
-        end,
-        FontChoicePreview)
-    y = y - 42
-    MakeSlider(page, "Taille police secondaire", 16, y, 8, 20, 1,
-        function() return SP.db.panel.fontSecondarySize or 10 end,
-        function(v)
-            SP.db.panel.fontSecondarySize = v
-            if secondaryPreview and secondaryPreview.Refresh then secondaryPreview:Refresh() end
-            if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
-        end,
-        function(v) return tostring(v) end)
-    y = y - 48
-    MakeCycle(page, "Style police secondaire", 16, y, FONT_FLAG_CHOICES,
-        function() return SP.db.panel.fontSecondaryFlags or "" end,
-        function(v) SP.db.panel.fontSecondaryFlags = v end,
-        function()
-            if secondaryPreview and secondaryPreview.Refresh then secondaryPreview:Refresh() end
-            if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
-        end)
-    y = y - 38
-    y = SectionHeader(page, y, "Aide")
-    local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y)
-    note:SetText("|cFF777777Astuce : clic droit sur un bandeau = menu (Paramètres / Verrouiller / Masquer).|r")
+    -- Général en sous-onglets : Panneau / Bordures / Polices
+    MakeTabbedPage(realPage, {
+        { label = "Panneau", build = function(page)
+            local y = SectionHeader(page, -8, "Panneau")
+            MakeSlider(page, "Largeur du panneau", 16, y, 180, 600, 5,
+                function() return SP.db.panel.width or 280 end,
+                function(v) SP.db.panel.width = v; if SP.panel then SP.panel:SetWidth(v); SP:OnPanelResized() end end,
+                function(v) return v .. " px" end)
+            y = y - 54
+            local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            note:SetPoint("TOPLEFT", page, "TOPLEFT", 8, y)
+            note:SetText("|cFF777777Astuce : clic droit sur un bandeau = menu (Paramètres / Verrouiller / Masquer).|r")
+            page:SetHeight(180)
+        end },
+        { label = "Bordures", build = function(page)
+            local y = SectionHeader(page, -8, "Bordures globales (surchargeable par module)")
+            MakeSlider(page, "Épaisseur des bordures (global)", 16, y, 2, 16, 1,
+                function() return SP.db.panel.glowThickness or 6 end,
+                function(v) SP.db.panel.glowThickness = v end, function(v) return v .. " px" end)
+            y = y - 48
+            MakeSlider(page, "Transparence des bordures (global)", 16, y, 0.1, 1, 0.05,
+                function() return SP.db.panel.glowAlpha or 0.9 end,
+                function(v) SP.db.panel.glowAlpha = v end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
+            page:SetHeight(180)
+        end },
+        { label = "Polices", build = function(page)
+            local y = SectionHeader(page, -8, "Polices")
+            MakeCheck(page, "Police globale prioritaire", 16, y,
+                function() return SP.db.panel.fontGlobal == true end,
+                function(v) SP.db.panel.fontGlobal = v and true or false; if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end end)
+            y = y - 32
+            local fontPreview = MakeFontPreview(page, 300, y + 4,
+                function() return SP.db.panel.fontFace or "Inter-Regular.ttf" end,
+                function() return SP.db.panel.fontSize or 11 end,
+                function() return SP.db.panel.fontFlags or "" end,
+                "Apercu police globale")
+            MakeCycle(page, "Police globale", 16, y, FONT_CHOICES,
+                function() return SP.db.panel.fontFace or "Inter-Regular.ttf" end,
+                function(v) SP.db.panel.fontFace = v end,
+                function()
+                    if fontPreview and fontPreview.Refresh then fontPreview:Refresh() end
+                    if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
+                end,
+                FontChoicePreview)
+            y = y - 42
+            MakeSlider(page, "Taille police globale", 16, y, 8, 22, 1,
+                function() return SP.db.panel.fontSize or 11 end,
+                function(v)
+                    SP.db.panel.fontSize = v
+                    if fontPreview and fontPreview.Refresh then fontPreview:Refresh() end
+                    if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
+                end,
+                function(v) return tostring(v) end)
+            y = y - 48
+            MakeCycle(page, "Style police globale", 16, y, FONT_FLAG_CHOICES,
+                function() return SP.db.panel.fontFlags or "" end,
+                function(v) SP.db.panel.fontFlags = v end,
+                function()
+                    if fontPreview and fontPreview.Refresh then fontPreview:Refresh() end
+                    if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
+                end)
+            y = y - 40
+            local secondaryPreview = MakeFontPreview(page, 300, y + 4,
+                function() return SP.db.panel.fontSecondaryFace or SP.db.panel.fontFace or "Inter-Regular.ttf" end,
+                function() return SP.db.panel.fontSecondarySize or math.max(8, (SP.db.panel.fontSize or 11) - 1) end,
+                function() return SP.db.panel.fontSecondaryFlags or "" end,
+                "Apercu texte secondaire")
+            MakeCycle(page, "Police secondaire", 16, y, FONT_CHOICES,
+                function() return SP.db.panel.fontSecondaryFace or SP.db.panel.fontFace or "Inter-Regular.ttf" end,
+                function(v) SP.db.panel.fontSecondaryFace = v end,
+                function()
+                    if secondaryPreview and secondaryPreview.Refresh then secondaryPreview:Refresh() end
+                    if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
+                end,
+                FontChoicePreview)
+            y = y - 42
+            MakeSlider(page, "Taille police secondaire", 16, y, 8, 20, 1,
+                function() return SP.db.panel.fontSecondarySize or 10 end,
+                function(v)
+                    SP.db.panel.fontSecondarySize = v
+                    if secondaryPreview and secondaryPreview.Refresh then secondaryPreview:Refresh() end
+                    if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
+                end,
+                function(v) return tostring(v) end)
+            y = y - 48
+            MakeCycle(page, "Style police secondaire", 16, y, FONT_FLAG_CHOICES,
+                function() return SP.db.panel.fontSecondaryFlags or "" end,
+                function(v) SP.db.panel.fontSecondaryFlags = v end,
+                function()
+                    if secondaryPreview and secondaryPreview.Refresh then secondaryPreview:Refresh() end
+                    if SP.ApplyAllModuleAppearance then SP:ApplyAllModuleAppearance() end
+                end)
+            y = y - 42
+            page:SetHeight(-y + 40)
+        end },
+    })
 end
 
 -- ===== Fenêtre ==============================================================
