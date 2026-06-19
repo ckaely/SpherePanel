@@ -82,6 +82,21 @@ local function CleanName(author)
     return (Ambiguate and Ambiguate(author, "none")) or author
 end
 
+-- palette par défaut pour la couleur de chaque onglet de chat
+local TAB_PALETTE = {
+    { 0.85, 0.90, 1.00 }, { 0.60, 1.00, 0.60 }, { 1.00, 0.80, 0.50 },
+    { 1.00, 0.60, 0.90 }, { 0.55, 0.90, 1.00 }, { 1.00, 1.00, 0.62 },
+}
+
+-- commandes slash → type de chat (pour basculer vers le bon onglet)
+local CMD_TYPE = {
+    g = "GUILD", gu = "GUILD", guild = "GUILD",
+    p = "PARTY", party = "PARTY",
+    r = "RAID", raid = "RAID", rl = "RAID",
+    i = "INSTANCE_CHAT", inst = "INSTANCE_CHAT", instance = "INSTANCE_CHAT",
+    o = "OFFICER", officer = "OFFICER",
+}
+
 -- ============================================================
 function M:Init(body)
     self.body = body
@@ -496,6 +511,10 @@ function M:EnsureChatTabs()
         tab.channels = tab.channels or { "A" }
         if tab.showUnread == nil then tab.showUnread = true end
         tab.unread = tonumber(tab.unread) or 0
+        if not tab.color then
+            local p = TAB_PALETTE[((i - 1) % #TAB_PALETTE) + 1]
+            tab.color = { p[1], p[2], p[3] }
+        end
     end
     cfg.activeChatTab = cfg.activeChatTab or cfg.chatTabs[1].id
 end
@@ -612,11 +631,14 @@ function M:RefreshChatTabButtons()
             display = label .. " " .. tostring(unread)
         end
         b.fs:SetText(display)
+        local tc = tab.color or { 0.85, 0.9, 1 }
+        b.fs:SetTextColor(tc[1], tc[2], tc[3], active and 1 or 0.8)
         local w = active and math.max(42, math.min(100, (b.fs:GetStringWidth() or #display * 7) + 18)) or math.max(22, math.min(42, (b.fs:GetStringWidth() or #display * 7) + 14))
         if maxW > 0 and x + w > maxW - 22 then b:Hide(); break end
         b:SetWidth(w)
         b:ClearAllPoints(); b:SetPoint("LEFT", self.chatTabBar, "LEFT", x, 0)
-        b.bg:SetColorTexture(0.30, 0.55, 0.95, active and 0.35 or ((unread > 0) and 0.22 or 0.10))
+        -- fond teinté par la couleur de l'onglet
+        b.bg:SetColorTexture(tc[1], tc[2], tc[3], active and 0.30 or ((unread > 0) and 0.20 or 0.08))
         b.tabId = tab.id
         b:SetScript("OnClick", function(s, mouse)
             if mouse == "RightButton" then self:DeleteChatTab(s.tabId)
@@ -1076,9 +1098,38 @@ function M:FindChannelByName(name)
     end
 end
 
+-- Bascule vers le premier onglet contenant la clé (sinon un onglet "Tout").
+function M:SwitchToTabForKey(key)
+    if not key then return end
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    for _, tab in ipairs(cfg.chatTabs or {}) do
+        if self:TabHasChannel(tab, key) and not self:TabHasChannel(tab, "A") then self:SetView(tab.id); return true end
+    end
+    for _, tab in ipairs(cfg.chatTabs or {}) do
+        if self:TabHasChannel(tab, "A") then self:SetView(tab.id); return true end
+    end
+end
+
+-- Déduit la clé de canal visée par une commande slash (/g, /2, /i…) pour basculer.
+function M:KeyForCommand(text)
+    local cmd, num = text:match("^/(%a+)"), text:match("^/(%d+)")
+    if num then
+        local n = tonumber(num)
+        local nm = GetChannelName and select(2, GetChannelName(n))
+        if nm then return self:PrimaryKey("CHANNEL", nm) end
+        return nil
+    end
+    if cmd then
+        local tk = CMD_TYPE[cmd:lower()]
+        if tk then return self:PrimaryKey(tk) end
+    end
+end
+
 function M:Send(text)
     if not text or text == "" then return end
     if text:sub(1, 1) == "/" then
+        local switchKey = self:KeyForCommand(text)   -- bascule vers la bonne fenêtre
         local eb = ChatFrame1EditBox or (DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox)
         if eb and ChatEdit_ParseText then
             local ok = pcall(function()
@@ -1088,7 +1139,10 @@ function M:Send(text)
                 eb:ClearFocus()
             end)
             self:ApplyBlizzardChatVisibility()
-            if ok then return end
+            if ok then
+                if switchKey then self:SwitchToTabForKey(switchKey) end
+                return
+            end
         end
     end
     local w = self.writeType or "SAY"
