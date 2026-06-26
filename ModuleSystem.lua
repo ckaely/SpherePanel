@@ -270,6 +270,43 @@ function SP:BuildModules()
     SP:RebuildLayout()
 end
 
+-- Place le bandeau (header) en HAUT (défaut) ou en BAS de la frame du module.
+-- cfg.headerBottom = true → bandeau en bas, le corps se déplie vers le HAUT.
+function SP:ApplyHeaderLayout(m)
+    if not (m and m.frame and m.header and m.body) then return end
+    local cfg = SP:GetModuleConfig(m.name)
+    m.header:ClearAllPoints()
+    m.body:ClearAllPoints()
+    if m.headerless then
+        m.header:Hide()
+        m.body:SetPoint("TOPLEFT",  m.frame, "TOPLEFT",  0, 0)
+        m.body:SetPoint("TOPRIGHT", m.frame, "TOPRIGHT", 0, 0)
+        return
+    end
+    m.header:Show()
+    if cfg and cfg.headerBottom then
+        m.header:SetPoint("BOTTOMLEFT",  m.frame, "BOTTOMLEFT",  0, 0)
+        m.header:SetPoint("BOTTOMRIGHT", m.frame, "BOTTOMRIGHT", 0, 0)
+        m.body:SetPoint("TOPLEFT",  m.frame, "TOPLEFT",  0, 0)
+        m.body:SetPoint("TOPRIGHT", m.frame, "TOPRIGHT", 0, 0)
+        if m.headerLine then
+            m.headerLine:ClearAllPoints()
+            m.headerLine:SetPoint("TOPLEFT",  m.header, "TOPLEFT",  1, 0)
+            m.headerLine:SetPoint("TOPRIGHT", m.header, "TOPRIGHT", -1, 0)
+        end
+    else
+        m.header:SetPoint("TOPLEFT",  m.frame, "TOPLEFT",  0, 0)
+        m.header:SetPoint("TOPRIGHT", m.frame, "TOPRIGHT", 0, 0)
+        m.body:SetPoint("TOPLEFT",  m.header, "BOTTOMLEFT",  0, 0)
+        m.body:SetPoint("TOPRIGHT", m.header, "BOTTOMRIGHT", 0, 0)
+        if m.headerLine then
+            m.headerLine:ClearAllPoints()
+            m.headerLine:SetPoint("BOTTOMLEFT",  m.header, "BOTTOMLEFT",  1, 0)
+            m.headerLine:SetPoint("BOTTOMRIGHT", m.header, "BOTTOMRIGHT", -1, 0)
+        end
+    end
+end
+
 function SP:CreateModuleFrame(m)
     local UIc     = SP.UI
     local content = SP.panel.content
@@ -346,10 +383,8 @@ function SP:CreateModuleFrame(m)
     header:SetScript("OnDragStop",  function() SP:EndReorder(m) end)
     m.header = header
 
-    -- --- Body (contenu du module) ---
+    -- --- Body (contenu du module) --- (ancrage haut/bas posé par ApplyHeaderLayout)
     local body = CreateFrame("Frame", nil, frame)
-    body:SetPoint("TOPLEFT",  header, "BOTTOMLEFT",  0, 0)
-    body:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 0)
     local cfg = SP:GetModuleConfig(m.name)
     body:SetHeight((cfg and cfg.height) or m.defaultHeight or 100)
     local bbg = body:CreateTexture(nil, "BACKGROUND")
@@ -370,13 +405,8 @@ function SP:CreateModuleFrame(m)
     m.headerLine = hline
     m.bodyBg = bbg
 
-    -- module "headerless" : fusionné visuellement avec le bandeau SpherePanel (pas de bandeau propre)
-    if m.headerless then
-        header:Hide()
-        body:ClearAllPoints()
-        body:SetPoint("TOPLEFT",  frame, "TOPLEFT",  0, 0)
-        body:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-    end
+    -- Ancrage bandeau/corps (haut par défaut, bas si cfg.headerBottom ; gère aussi headerless)
+    SP:ApplyHeaderLayout(m)
 
     SP:ApplyModuleAppearance(m)
     SP:UpdateCollapseVisual(m)
@@ -459,6 +489,14 @@ function SP:ShowModuleMenu(m)
         sub:CreateButton(((cfg and cfg.corner == "top") and "* " or "") .. "Haut", function() setCorner("top") end)
         sub:CreateButton(((cfg and cfg.corner == "bottom") and "* " or "") .. "Bas", function() setCorner("bottom") end)
         sub:CreateButton(((cfg and not cfg.corner) and "* " or "") .. "Aucun (dans le flux)", function() setCorner(nil) end)
+        -- Bandeau en bas : le corps se déplie vers le haut (utile pour le chat)
+        root:CreateButton(((cfg and cfg.headerBottom) and "* " or "") .. "Bandeau en bas (déplier vers le haut)", function()
+            if cfg then
+                cfg.headerBottom = (not cfg.headerBottom) and true or nil
+                SP:ApplyHeaderLayout(m)
+                SP:RebuildLayout()
+            end
+        end)
         root:CreateButton("Masquer", function() SP:DisableModuleUI(m) end)
     end
     if MenuUtil and MenuUtil.CreateContextMenu then
