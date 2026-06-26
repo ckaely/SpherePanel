@@ -170,6 +170,17 @@ function M:Init(body)
     self.viewLabel = self.bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.viewLabel:SetPoint("RIGHT", self.bar, "RIGHT", 0, 0)
 
+    self.inputBand = CreateFrame("Frame", nil, body)
+    self.inputBand:SetHeight(22)
+    self.inputBand.bg = self.inputBand:CreateTexture(nil, "BACKGROUND")
+    self.inputBand.bg:SetAllPoints(self.inputBand)
+    self.inputBand.bg:SetColorTexture(0.04, 0.06, 0.10, 0.18)
+    self.inputBand.line = self.inputBand:CreateTexture(nil, "ARTWORK")
+    self.inputBand.line:SetHeight(1)
+    self.inputBand.line:SetPoint("TOPLEFT", self.inputBand, "TOPLEFT", 0, 0)
+    self.inputBand.line:SetPoint("TOPRIGHT", self.inputBand, "TOPRIGHT", 0, 0)
+    self.inputBand.line:SetColorTexture(0.30, 0.62, 1, 0.35)
+
     self.smf = CreateFrame("ScrollingMessageFrame", nil, body)
     self.smf:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -4)
     self.smf:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -4, 22)
@@ -214,22 +225,36 @@ function M:Init(body)
     self.eb:SetHeight(18)
     self.eb:SetAutoFocus(false)
     self.eb:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
+    self.eb:SetScript("OnTextChanged", function(s, userInput)
+        if userInput then self:UpdateInputPreview(s:GetText()) end
+    end)
     self.eb:SetScript("OnEnterPressed", function(s)
-        self:Send(s:GetText())
+        local keepOpen = self:Send(s:GetText())
         s:SetText("")
-        s:ClearFocus()
-        self._forceReveal = false
+        if keepOpen then
+            self._forceReveal = true
+            self:UpdateInputLayout()
+            s:SetFocus()
+        else
+            s:ClearFocus()
+            self._forceReveal = false
+            self:UpdateInputLayout()
+        end
     end)
     self.eb:SetScript("OnEscapePressed", function(s)
         s:SetText("")
         s:ClearFocus()
         self._forceReveal = false
+        self:UpdateInputLayout()
     end)
     self.eb:SetScript("OnEditFocusGained", function()
         self._forceReveal = true
+        self:UpdateInputLayout()
+        self:UpdateInputPreview(self.eb and self.eb:GetText() or "")
     end)
     self.eb:SetScript("OnEditFocusLost", function()
         self._forceReveal = false
+        self:UpdateInputLayout()
     end)
 
     self.copyBox = CreateFrame("EditBox", nil, body)
@@ -354,6 +379,8 @@ function M:InstallChatHooks()
     self._chatHookedFrames = self._chatHookedFrames or {}
 
     local function onShowOrFocus(frame)
+        if self._sendingNativeSlash then return end
+        if self._loginGuardUntil and (GetTime and GetTime() or 0) < self._loginGuardUntil then return end
         if self:IsBlizzardChatEditBox(frame) and self:ShouldReplaceBlizzardInput() then
             self:OpenInput(nil, frame)
         elseif self:ShouldHideBlizzardChat() and frame and frame.Hide then
@@ -380,6 +407,7 @@ function M:InstallChatHooks()
         end
         if ChatEdit_ActivateChat and not self._chatActivateHookInstalled then
             local ok = pcall(hooksecurefunc, "ChatEdit_ActivateChat", function(editBox)
+                if self._loginGuardUntil and (GetTime and GetTime() or 0) < self._loginGuardUntil then return end
                 if self:ShouldReplaceBlizzardInput() then self:OpenInput(nil, editBox) end
             end)
             if ok then self._chatActivateHookInstalled = true end
@@ -413,6 +441,8 @@ function M:OpenInput(text, sourceEditBox)
         self.eb:Show()
         self.eb:SetText(text or "")
         self.eb:SetCursorPosition((text and #text) or 0)
+        self:UpdateInputLayout()
+        self:UpdateInputPreview(text or "")
         self.eb:SetFocus()
     end
     self._openingInput = false
@@ -436,6 +466,10 @@ end
 
 function M:Enable()
     self._enabled = true
+    -- fenêtre de grâce : ignore l'activation AUTOMATIQUE du chat par Blizzard au login
+    -- (sinon la fenêtre de saisie s'ouvre seule à la connexion). N'affecte pas les ouvertures
+    -- volontaires faites ensuite par l'utilisateur.
+    self._loginGuardUntil = (GetTime and GetTime() or 0) + 3
     if self._placeholder then self._placeholder:Hide() end
     self:EnsureChannels()
     self:ApplyConfig()
@@ -475,22 +509,113 @@ function M:Disable()
     if self.toastHost then self.toastHost:Hide() end
     for _, f in ipairs(self.toasts or {}) do f:Hide(); f._fading = false end
     if self.activeToasts then wipe(self.activeToasts) end
+    if SP.ChatFollow and SP.ChatFollow.HideAll then SP.ChatFollow:HideAll() end
     self:SetBlizzardChatHidden(false)
 end
 
-function M:OnResize(w, h) end
+function M:OnResize(w, h)
+    self:UpdateInputLayout()
+end
 
 function M:OnCollapseChanged(collapsed)
     if collapsed then
         if self.chatTabBar then self.chatTabBar:Hide() end
         if self.bar then self.bar:Hide() end
         if self.smf then self.smf:Hide() end
+        if self.inputBand then self.inputBand:Hide() end
         if self.eb then self.eb:Hide(); self.eb:ClearFocus() end
         if self.copyBox then self.copyBox:Hide() end
         if self.social then self.social:Hide() end
     else
         self:SetTab(self.tab or "chat")
     end
+end
+
+function M:InputVisible()
+    local cfg = SP:GetModuleConfig(self.name)
+    if not cfg then return false end
+    if cfg.inputAutoHide == false then return true end
+    return self._forceReveal == true or (self.eb and self.eb.HasFocus and self.eb:HasFocus())
+end
+
+function M:UpdateInputLayout()
+    if not (self.body and self.smf and self.eb and self.inputBand) then return end
+    local cfg = SP:GetModuleConfig(self.name) or {}
+    local chatOn = self.tab ~= "social" and not cfg.collapsed
+    local showInput = chatOn and self:InputVisible()
+    local h = math.max(18, math.min(42, tonumber(cfg.inputBandHeight) or 22))
+    local bottom = (cfg.inputDock or "bottom") ~= "top"
+
+    self.inputBand:ClearAllPoints()
+    self.eb:ClearAllPoints()
+    self.smf:ClearAllPoints()
+
+    self.inputBand:SetHeight(h)
+    if self.inputBand.bg then self.inputBand.bg:SetColorTexture(0.04, 0.06, 0.10, tonumber(cfg.inputBandAlpha) or 0.18) end
+    if bottom then
+        self.inputBand:SetPoint("BOTTOMLEFT", self.body, "BOTTOMLEFT", 4, 2)
+        self.inputBand:SetPoint("BOTTOMRIGHT", self.body, "BOTTOMRIGHT", -4, 2)
+        self.smf:SetPoint("TOPLEFT", self.body, "TOPLEFT", 4, -4)
+        self.smf:SetPoint("BOTTOMRIGHT", self.body, "BOTTOMRIGHT", -4, showInput and (h + 6) or 4)
+    else
+        self.inputBand:SetPoint("TOPLEFT", self.body, "TOPLEFT", 4, -2)
+        self.inputBand:SetPoint("TOPRIGHT", self.body, "TOPRIGHT", -4, -2)
+        self.smf:SetPoint("TOPLEFT", self.body, "TOPLEFT", 4, showInput and -(h + 6) or -4)
+        self.smf:SetPoint("BOTTOMRIGHT", self.body, "BOTTOMRIGHT", -4, 4)
+    end
+    self.eb:SetPoint("LEFT", self.inputBand, "LEFT", 6, 0)
+    self.eb:SetPoint("RIGHT", self.inputBand, "RIGHT", -6, 0)
+    self.eb:SetHeight(math.max(16, h - 4))
+    self.inputBand:SetShown(showInput)
+    self.eb:SetShown(showInput)
+    if self.smf then self.smf:SetShown(chatOn) end
+end
+
+function M:SetInputColorForType(chatType, key)
+    local info = chatType and ChatTypeInfo and ChatTypeInfo[chatType]
+    local r, g, b
+    if info then
+        r, g, b = info.r or 1, info.g or 1, info.b or 1
+    elseif key and self.colorOf and self.colorOf[key] then
+        r, g, b = self.colorOf[key][1], self.colorOf[key][2], self.colorOf[key][3]
+    else
+        r, g, b = 1, 1, 1
+    end
+    if self.eb then self.eb:SetTextColor(r, g, b) end
+end
+
+function M:UpdateInputPreview(text)
+    text = text or ""
+    local cmd, num = text:match("^/(%a+)"), text:match("^/(%d+)")
+    if num then
+        local n = tonumber(num)
+        local nm = GetChannelName and select(2, GetChannelName(n))
+        if nm and nm ~= "" then
+            self.writeType, self.writeChannel = "CUSTOM", nm
+            self:SetInputColorForType("CHANNEL")
+            if self.viewLabel then self.viewLabel:SetText("|cFFAAAAAAcanal:|r " .. nm) end
+            return
+        end
+    elseif cmd then
+        local c = cmd:lower()
+        if c == "w" or c == "whisper" or c == "t" or c == "tell" then
+            local target = text:match("^/%a+%s+(%S+)")
+            if target then self._lastWhisper = target end
+            self.writeType, self.writeChannel = "WHISPER", nil
+            self:SetInputColorForType("WHISPER", "W")
+            if self.viewLabel then self.viewLabel:SetText("|cFFFF80FFwhisper|r" .. (target and (" -> " .. target) or "")) end
+            return
+        end
+        local map = { g = "GUILD", gu = "GUILD", guild = "GUILD", p = "PARTY", party = "PARTY", r = "RAID", raid = "RAID", i = "INSTANCE_CHAT", inst = "INSTANCE_CHAT", instance = "INSTANCE_CHAT", o = "OFFICER", officer = "OFFICER", s = "SAY", say = "SAY", y = "YELL", yell = "YELL", e = "EMOTE", emote = "EMOTE" }
+        local t = map[c]
+        if t then
+            self.writeType, self.writeChannel = t, nil
+            self:SetInputColorForType(t, self:PrimaryKey(t))
+            if self.viewLabel then self.viewLabel:SetText("|cFFAAAAAAcanal:|r " .. t) end
+            return
+        end
+    end
+    self:SetInputColorForType(self.writeType, self:PrimaryKey(self.writeType or "SAY"))
 end
 
 function M:ChannelByKey(key)
@@ -597,6 +722,24 @@ function M:DeleteChatTab(id)
     self:ApplyConfig()
 end
 
+-- Bascule sur l'onglet ET prépare l'écriture dans SON canal (style du chat).
+-- Ex. onglet raid → écrit en raid ; onglet "Tout" → SAY par défaut.
+function M:WriteToTab(tabId)
+    local cfg = SP:GetModuleConfig(self.name)
+    self:EnsureChatTabs()
+    for _, tab in ipairs(cfg.chatTabs or {}) do
+        if tab.id == tabId then
+            self:SetView(tabId)
+            local key
+            for _, k in ipairs(tab.channels or {}) do
+                if k ~= "A" then key = k; break end   -- 1er canal spécifique de l'onglet
+            end
+            self:SetWrite(key or "A")
+            return
+        end
+    end
+end
+
 function M:RefreshChatTabButtons()
     if not self.chatTabBar then return end
     local cfg = SP:GetModuleConfig(self.name)
@@ -641,14 +784,15 @@ function M:RefreshChatTabButtons()
         b.bg:SetColorTexture(tc[1], tc[2], tc[3], active and 0.30 or ((unread > 0) and 0.20 or 0.08))
         b.tabId = tab.id
         b:SetScript("OnClick", function(s, mouse)
-            if mouse == "RightButton" then self:DeleteChatTab(s.tabId)
+            if mouse == "RightButton" then self:WriteToTab(s.tabId)   -- écrit dans le canal de l'onglet (plus de suppression)
             else self:SetView(s.tabId) end
         end)
         b:SetScript("OnEnter", function()
             GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
             GameTooltip:SetText(label)
             if unread > 0 then GameTooltip:AddLine(tostring(unread) .. " message(s) non lu(s)", 1, 0.82, 0) end
-            GameTooltip:AddLine("Clic gauche : afficher. Clic droit : supprimer.", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Clic gauche : afficher. Clic droit : écrire dans ce canal.", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("(suppression : bouton x dans la config)", 0.5, 0.5, 0.5)
             GameTooltip:Show()
         end)
         b:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -678,6 +822,7 @@ function M:ApplyConfig()
         self.smf:SetFont(face or cfg.font or STANDARD_TEXT_FONT, size or cfg.fontSize or 12, flags or "")
     end)
     if self.ApplyBlizzardChatVisibility then self:ApplyBlizzardChatVisibility() end
+    if SP.ChatFollow and SP.ChatFollow.ApplyConfig then SP.ChatFollow:ApplyConfig() end
 
     self.colorOf = {}
     for _, ch in ipairs(cfg.channels or {}) do
@@ -731,6 +876,7 @@ function M:ApplyConfig()
     end
     self._btnUsed = i
     self:SetView(cfg.activeChatTab)
+    self:UpdateInputLayout()
     self:RefreshSocialCounts()
 end
 
@@ -819,10 +965,15 @@ function M:CreateToast()
 
     f:SetScript("OnEnter", function(s)
         s._toastToken = (s._toastToken or 0) + 1
+    end)
+    f:SetScript("OnLeave", function(s)
+        local cfg = SP:GetModuleConfig(self.name)
+        s._toastToken = (s._toastToken or 0) + 1
         local token = s._toastToken
+        local duration = cfg and cfg.popupDuration or 7
         if C_Timer and C_Timer.After then
-            C_Timer.After(1, function()
-                if s:IsShown() and s._toastToken == token then self:FadeToast(s) end
+            C_Timer.After(duration, function()
+                if s:IsShown() and s._toastToken == token and not s:IsMouseOver() then self:FadeToast(s) end
             end)
         end
     end)
@@ -1049,7 +1200,11 @@ function M:AddMessage(typeKey, msg, author, channelName, guid, rawEvent)
     local tab = self:GetActiveChatTab()
     local cfg = SP:GetModuleConfig(self.name)
     if not (cfg and cfg.collapsed) and self.tab ~= "social" and (self:TabHasChannel(tab, "A") or self:TabHasChannel(tab, pk)) then self:SetView(tab.id) end
-    self:ShowInstantPopup(typeKey, msg, author, pk, channelName, rawEvent)
+    if SP.ChatFollow and SP.ChatFollow.OnChatMessage then
+        SP.ChatFollow:OnChatMessage(self, typeKey, msg, author, pk, channelName, rawEvent, id)
+    else
+        self:ShowInstantPopup(typeKey, msg, author, pk, channelName, rawEvent)
+    end
 end
 
 function M:SetView(key)
@@ -1089,13 +1244,23 @@ function M:SetWrite(key)
     elseif ch and ch.channelName then self.writeType, self.writeChannel = "CUSTOM", ch.channelName
     else self.writeType, self.writeChannel = "SAY", nil end
     local col = self.colorOf[key] or { 1, 1, 1 }
-    if self.eb then self.eb:SetTextColor(col[1], col[2], col[3]); self.eb:SetFocus() end
+    if self.eb then
+        self._forceReveal = true
+        self:UpdateInputLayout()
+        self:SetInputColorForType((self.writeType == "CUSTOM") and "CHANNEL" or self.writeType, key)
+        self.eb:SetFocus()
+    end
 end
 
 function M:StartWhisper(name)
     self.writeType, self.writeChannel = "WHISPER", nil
     self._lastWhisper = name
-    if self.eb then self.eb:SetFocus() end
+    if self.eb then
+        self._forceReveal = true
+        self:UpdateInputLayout()
+        self:SetInputColorForType("WHISPER", "W")
+        self.eb:SetFocus()
+    end
     if self.viewLabel then
         self.viewLabel:SetText("|cFF40FF40→ " .. (Ambiguate and Ambiguate(name, "none") or name) .. "|r")
         C_Timer.After(4, function() if self.viewLabel then self:SetView(self.viewFilter) end end)
@@ -1155,20 +1320,42 @@ end
 function M:Send(text)
     if not text or text == "" then return end
     if text:sub(1, 1) == "/" then
+        local whisperTarget = text:match("^/[wWtT][hH]?[iI]?[sS]?[pP]?[eE]?[rR]?%s+(%S+)%s*$")
+        if whisperTarget then
+            self:StartWhisper(whisperTarget)
+            return true
+        end
+        local channelOnly = text:match("^/(%d+)%s*$")
+        if channelOnly then
+            local nm = GetChannelName and select(2, GetChannelName(tonumber(channelOnly)))
+            if nm and nm ~= "" then
+                self.writeType, self.writeChannel = "CUSTOM", nm
+                self:SetInputColorForType("CHANNEL")
+                if self.viewLabel then self.viewLabel:SetText("|cFFAAAAAAcanal:|r " .. nm) end
+                return true
+            end
+        end
         local switchKey = self:KeyForCommand(text)   -- bascule vers la bonne fenêtre
         local eb = ChatFrame1EditBox or (DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox)
         if eb and ChatEdit_ParseText then
+            self._sendingNativeSlash = true
             local ok = pcall(function()
+                if ChatEdit_ActivateChat then ChatEdit_ActivateChat(eb) end
                 eb:SetText(text)
                 ChatEdit_ParseText(eb, 0)
+                self:AdoptBlizzardChatType(eb)
                 eb:SetText("")
                 eb:ClearFocus()
+                if eb.Hide then eb:Hide() end
             end)
+            self._sendingNativeSlash = false
             self:ApplyBlizzardChatVisibility()
             if ok then
                 if switchKey then self:SwitchToTabForKey(switchKey) end
+                self:UpdateInputPreview("")
                 return
             end
+            self._sendingNativeSlash = false
         end
     end
     local w = self.writeType or "SAY"
@@ -1208,9 +1395,8 @@ function M:SetTab(tab)
     local cfg = SP:GetModuleConfig(self.name)
     if self.chatTabBar then self.chatTabBar:SetShown(chatOn and not (cfg and cfg.collapsed)) end
     if self.bar then self.bar:Hide() end
-    if self.smf then self.smf:SetShown(chatOn) end
-    if self.eb then self.eb:SetShown(chatOn) end
     if self.social then self.social:SetShown(not chatOn) end
+    self:UpdateInputLayout()
     if self.chatModeBtn and self.chatModeBtn.bg then self.chatModeBtn.bg:SetColorTexture(0.30, 0.55, 0.95, chatOn and 0.32 or 0.10) end
     if self.socialBtn and self.socialBtn.bg then self.socialBtn.bg:SetColorTexture(0.30, 0.55, 0.95, (not chatOn) and 0.32 or 0.12) end
     if not chatOn then self:RefreshSocial() end
