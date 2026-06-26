@@ -836,23 +836,49 @@ end
 
 function M:StyleToast(f, color, theme)
     local r, g, b = color[1] or 1, color[2] or 1, color[3] or 1
+    -- init verre dépoli + halo pulsant (une seule fois ; tout local à StyleToast)
+    if not f._glassInit then
+        f._glassInit = true
+        -- reflet (sheen) translucide en haut → effet verre
+        f._sheen = f:CreateTexture(nil, "ARTWORK")
+        f._sheen:SetPoint("TOPLEFT", f, "TOPLEFT", 4, -4)
+        f._sheen:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
+        f._sheen:SetHeight(20)
+        f._sheen:SetColorTexture(1, 1, 1, 1)
+        if f._sheen.SetGradient and CreateColor then
+            pcall(f._sheen.SetGradient, f._sheen, "VERTICAL", CreateColor(1, 1, 1, 0), CreateColor(1, 1, 1, 0.22))
+        end
+        -- halo de CONTOUR doux (texture glow native) + pulsation alpha continue
+        pcall(f.glow.SetTexture, f.glow, "Interface\\Buttons\\UI-ActionButton-Border")
+        f:HookScript("OnHide", function(s) s._pt = 0 end)
+        f:SetScript("OnUpdate", function(s, e)
+            s._pt = (s._pt or 0) + e
+            s.glow:SetAlpha(0.28 + 0.34 * (0.5 + 0.5 * math.sin(s._pt * 3.1)))
+        end)
+        -- lisibilité du message sur fond translucide
+        f.title:SetShadowColor(0, 0, 0, 0.85); f.title:SetShadowOffset(1, -1)
+        f.msg:SetShadowColor(0, 0, 0, 0.85); f.msg:SetShadowOffset(1, -1)
+    end
+
     if theme == "shadow" then
-        if f.SetBackdropColor then f:SetBackdropColor(0.015, 0.018, 0.026, 0.88) end
-        if f.SetBackdropBorderColor then f:SetBackdropBorderColor(r, g, b, 0.70) end
-        f.shadow:SetColorTexture(0, 0, 0, 0.52)
-        f.blur:SetColorTexture(r, g, b, 0.10)
-        f.glow:SetColorTexture(r, g, b, 0.20)
+        if f.SetBackdropColor then f:SetBackdropColor(0.05, 0.07, 0.11, 0.55) end
+        if f.SetBackdropBorderColor then f:SetBackdropBorderColor(r, g, b, 0.85) end
+        f.shadow:SetColorTexture(0, 0, 0, 0.50)
         f.title:SetTextColor(r, g, b, 1)
-        f.msg:SetTextColor(0.94, 0.96, 1, 1)
+        f.msg:SetTextColor(0.95, 0.97, 1, 1)
     else
-        if f.SetBackdropColor then f:SetBackdropColor(0.94, 0.96, 1.0, 0.22) end
-        if f.SetBackdropBorderColor then f:SetBackdropBorderColor(r, g, b, 0.78) end
-        f.shadow:SetColorTexture(0, 0, 0, 0.24)
-        f.blur:SetColorTexture(1, 1, 1, 0.15)
-        f.glow:SetColorTexture(r, g, b, 0.24)
+        if f.SetBackdropColor then f:SetBackdropColor(0.88, 0.93, 1.0, 0.16) end   -- verre froid translucide
+        if f.SetBackdropBorderColor then f:SetBackdropBorderColor(r, g, b, 0.85) end
+        f.shadow:SetColorTexture(0, 0, 0, 0.28)
         f.title:SetTextColor(r, g, b, 1)
         f.msg:SetTextColor(1, 1, 1, 1)
     end
+    -- givre interne : lueur blanche douce en dégradé (faux frost, pas un vrai blur)
+    f.blur:SetColorTexture(1, 1, 1, 1)
+    if f.blur.SetGradient and CreateColor then
+        pcall(f.blur.SetGradient, f.blur, "VERTICAL", CreateColor(1, 1, 1, 0.02), CreateColor(1, 1, 1, 0.12))
+    end
+    f.glow:SetVertexColor(r, g, b)   -- halo teinté par le canal (alpha animé en OnUpdate)
     f.line:SetColorTexture(r, g, b, 0.95)
 end
 
