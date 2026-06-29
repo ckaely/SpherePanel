@@ -724,60 +724,13 @@ local function ChatOptions(root, y, opage)
     y = y - 52
     -- (la largeur du module Chat se règle via « Largeur du module » en haut de page — individuelle)
 
-    y = SectionHeader(root, y, "suivi_chat")
-    MakeCheck(root, "Activer les capsules", 16, y,
-        function() return followCfg().enabled ~= false end, function(v) followCfg().enabled = v and true or false; applyChat() end)
-    MakeCheck(root, "Masquer si visible", 230, y,
-        function() return followCfg().hideIfChatVisible ~= false end, function(v) followCfg().hideIfChatVisible = v and true or false; applyChat() end)
-    y = y - 30
-    MakeRadioRow(root, 16, y, { { "white", "White Blur" }, { "dark", "Dark Fade" } },
-        function() return followCfg().style or "white" end, function(v) followCfg().style = v; applyChat() end)
-    y = y - 32
-    MakeRadioRow(root, 16, y, { { "up", "Pile haut" }, { "down", "Pile bas" } },
-        function() return followCfg().grow or "up" end, function(v) followCfg().grow = v; applyChat() end)
-    y = y - 32
-    MakeRadioRow(root, 16, y, { { "all", "Toujours" }, { "hide", "Hors combat" }, { "only", "Combat" } },
-        function() return followCfg().combatMode or "all" end, function(v) followCfg().combatMode = v; applyChat() end)
-    y = y - 38
-    MakeSlider(root, "Largeur capsule", 16, y, 220, 700, 10,
-        function() return followCfg().width or 360 end, function(v) followCfg().width = v; applyChat() end, function(v) return v .. " px" end)
-    MakeSlider(root, "Hauteur", 270, y, 42, 120, 2,
-        function() return followCfg().height or 58 end, function(v) followCfg().height = v; applyChat() end, function(v) return v .. " px" end, 170)
-    y = y - 50
-    MakeSlider(root, "Duree", 16, y, 3, 20, 1,
-        function() return followCfg().duration or 7 end, function(v) local f = followCfg(); f.duration = v; f.whisperDuration = math.max(f.whisperDuration or v, v); applyChat() end, function(v) return v .. " s" end)
-    MakeSlider(root, "Max capsules", 270, y, 1, 8, 1,
-        function() return followCfg().maxVisible or 4 end, function(v) followCfg().maxVisible = v; applyChat() end, function(v) return tostring(v) end, 170)
-    y = y - 50
-    MakeSlider(root, "Ecart", 16, y, 0, 24, 1,
-        function() return followCfg().gap or 8 end, function(v) followCfg().gap = v; applyChat() end, function(v) return v .. " px" end)
-    y = y - 42
-    MakeCheck(root, "Clic gauche = repondre", 16, y,
-        function() return followCfg().clickReply ~= false end, function(v) followCfg().clickReply = v and true or false; applyChat() end)
-    MakeCheck(root, "Survol = fondu", 230, y,
-        function() return followCfg().hoverDismiss ~= false end, function(v) followCfg().hoverDismiss = v and true or false; applyChat() end)
-    y = y - 28
-    MakeCheck(root, "Heure", 16, y,
-        function() return followCfg().showTime == true end, function(v) followCfg().showTime = v and true or false; applyChat() end)
-    MakeCheck(root, "Son", 100, y,
-        function() return followCfg().sound == true end, function(v) followCfg().sound = v and true or false; applyChat() end)
-    y = y - 30
-    local note = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    note:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y)
-    note:SetText("|cFF888888Canaux : regler Popup/Son dans le tableau ci-dessous.|r")
-    y = y - 28
-    local test = MakeModernButton(root, "Tester", 90, 22); test:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y)
-    test:SetScript("OnClick", function() if SP.ChatFollow and SP.ChatFollow.Test then SP.ChatFollow:Test() end end)
-    local edit = MakeModernButton(root, "Mode edition", 120, 22); edit:SetPoint("TOPLEFT", root, "TOPLEFT", 116, y)
-    edit:SetScript("OnClick", function()
-        if SP.ChatFollow and SP.ChatFollow.SetEditMode then
-            local f = followCfg()
-            SP.ChatFollow:SetEditMode(f.locked ~= false)
-        end
-    end)
-    local reset = MakeModernButton(root, "Reset position", 125, 22); reset:SetPoint("TOPLEFT", root, "TOPLEFT", 246, y)
-    reset:SetScript("OnClick", function() if SP.ChatFollow and SP.ChatFollow.ResetPosition then SP.ChatFollow:ResetPosition() end end)
-    y = y - 44
+    -- Les réglages du SUIVI CHAT (capsules) ont leur PROPRE page dédiée « Suivi chat »
+    -- (nav de gauche). On garde ici juste un renvoi pour la clarté / éviter la duplication.
+    y = SectionHeader(root, y, "Suivi chat (capsules)")
+    local fnote = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    fnote:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y); fnote:SetPoint("RIGHT", root, "RIGHT", -10, 0); fnote:SetJustifyH("LEFT"); fnote:SetWordWrap(true)
+    fnote:SetText("|cFF888888Tous les réglages des capsules de suivi (style, position, canaux suivis, test) sont sur la page « Suivi chat » dans le menu de gauche.|r")
+    y = y - 34
 
     y = SectionHeader(root, y, "Fenetres de chat")
     root.chatWinRows = root.chatWinRows or {}
@@ -858,7 +811,7 @@ local function ChatOptions(root, y, opage)
 
     y = SectionHeader(root, y, "Canaux - registre global")
     local th = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    th:SetPoint("TOPLEFT", root, "TOPLEFT", 12, y); th:SetText("|cFF888888drag  Actif  Fen.  Popup  Son  Couleur  Alias  Canal|r")
+    th:SetPoint("TOPLEFT", root, "TOPLEFT", 12, y); th:SetText("|cFF888888drag  Actif  Fen.  Couleur  Alias  Canal|r")
     y = y - 16
     local listTop = y
 
@@ -877,9 +830,7 @@ local function ChatOptions(root, y, opage)
                 row.grip:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
                 row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.check:SetSize(20, 20); row.check:SetPoint("LEFT", row.grip, "RIGHT", 2, 0)
                 row.win = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.win:SetSize(20, 20); row.win:SetPoint("LEFT", row.check, "RIGHT", 18, 0)
-                row.follow = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.follow:SetSize(20, 20); row.follow:SetPoint("LEFT", row.win, "RIGHT", 18, 0)
-                row.sound = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate"); row.sound:SetSize(20, 20); row.sound:SetPoint("LEFT", row.follow, "RIGHT", 18, 0)
-                row.swatch = CreateFrame("Button", nil, row); row.swatch:SetSize(16, 16); row.swatch:SetPoint("LEFT", row.sound, "RIGHT", 14, 0)
+                row.swatch = CreateFrame("Button", nil, row); row.swatch:SetSize(16, 16); row.swatch:SetPoint("LEFT", row.win, "RIGHT", 18, 0)
                 row.swatch.tex = row.swatch:CreateTexture(nil, "ARTWORK"); row.swatch.tex:SetAllPoints(row.swatch)
                 row.swatch.bd = row.swatch:CreateTexture(nil, "BACKGROUND"); row.swatch.bd:SetPoint("TOPLEFT", -1, 1); row.swatch.bd:SetPoint("BOTTOMRIGHT", 1, -1); row.swatch.bd:SetColorTexture(0, 0, 0, 0.8)
                 row.nameBox = CreateFrame("EditBox", nil, row, "InputBoxTemplate"); row.nameBox:SetSize(110, 18); row.nameBox:SetAutoFocus(false); row.nameBox:SetPoint("LEFT", row.swatch, "RIGHT", 10, 0)
@@ -899,10 +850,6 @@ local function ChatOptions(root, y, opage)
             row.check:SetScript("OnClick", function(s) ch.enabled = s:GetChecked() and true or false; applyChat() end)
             row.win:SetChecked(tabHas(tab, ch.key))
             row.win:SetScript("OnClick", function(s) setTabChannel(selectedTab(), ch.key, s:GetChecked()); applyChat(); root._refresh() end)
-            row.follow:SetChecked(getFollowChannel(ch))
-            row.follow:SetScript("OnClick", function(s) setFollowChannel(ch, s:GetChecked()); applyChat(); root._refresh() end)
-            row.sound:SetChecked(getSoundChannel(ch))
-            row.sound:SetScript("OnClick", function(s) setSoundChannel(ch, s:GetChecked()); applyChat(); root._refresh() end)
             row.swatch.tex:SetColorTexture(ch.r, ch.g, ch.b)
             row.swatch:SetScript("OnClick", function()
                 if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
