@@ -290,6 +290,11 @@ function M:StyleCapsule(f)
     if not cfg then return end
     local w, h = Clamp(cfg.width, 220, 700), Clamp(cfg.height, 34, 120)
     f:SetSize(w, h)
+    -- ordre des calques : le liseré (border, pilule pleine colorée) DOIT être SOUS le fond
+    -- (sinon il recouvre tout → capsule entièrement colorée). Le fond inset laisse voir le rim.
+    f.glow:SetDrawLayer("BACKGROUND", -3)
+    f.border:SetDrawLayer("BACKGROUND", -1)
+    f.bg:SetDrawLayer("BACKGROUND", 1)
     local r, g, b = f._colorR or 0.65, f._colorG or 0.8, f._colorB or 1
     -- le liseré coloré = la pilule `border` (pleine, colorée) qui dépasse le `bg` inset de bt
     local bt = Clamp(cfg.borderThickness or 2, 1, 5)
@@ -371,6 +376,7 @@ function M:CreateCapsule()
     f:SetScript("OnEnter", function(frame)
         local cfg = M:GetConfig()
         if not cfg or not cfg.hoverDismiss then return end
+        if frame._noHover then return end   -- capsules de test : pas de fondu au survol
         if frame._ignoreInitialHover then return end
         local now = GetTime and GetTime() or nil
         if now and frame._shownAt and (now - frame._shownAt) < math.max(1.25, (cfg.hoverDelay or 0.65) + 0.35) then return end
@@ -469,6 +475,7 @@ function M:Show(info)
     local f = self:Acquire()
     f._shownAt = GetTime and GetTime() or nil
     f._info = info
+    f._noHover = info.noHover and true or false
     f._colorR, f._colorG, f._colorB = info.r or 1, info.g or 1, info.b or 1
     f.title:SetText(info.author or "")
     f.channel:SetText(info.channelLabel or "")
@@ -522,7 +529,11 @@ end
 function M:OnChatMessage(chat, typeKey, msg, author, pk, channelName, rawEvent, id)
     if rawEvent and rawEvent:find("_INFORM", 1, true) then return end
     local who = CleanName(author)
-    if who == "" or (UnitName and who == UnitName("player")) then return end
+    if who == "" then return end
+    -- on ignore SES PROPRES messages (say/yell/groupe…) SAUF les chuchotements à soi-même
+    -- (utile pour tester) : un auto-chuchotement reçu doit bien popper.
+    local isWhisper = (typeKey == "WHISPER" or typeKey == "BN_WHISPER")
+    if not isWhisper and UnitName and who == UnitName("player") then return end
     if not self:IsAllowed(typeKey, pk, channelName) then return end
     if not self:PassCombatMode() then return end
     if self:IsChatShowingMessage(chat, pk) then return end
@@ -568,14 +579,50 @@ function M:Test(keep)
         author = "SpherePanel",
         authorRaw = "SpherePanel",
         channelLabel = "Test",
-        message = "Apercu suivi_chat : capsule interactive, empilee, repondable.",
+        message = "Aperçu suivi chat : capsule interactive, empilée, cliquable.",
         timeText = date("%H:%M"),
-        keep = cfg.duration or 7,
+        keep = math.max(cfg.duration or 7, 8),   -- durée garantie pour le test
+        noHover = true,                          -- pas de fondu au survol (sinon disparaît trop vite)
         r = 1,
         g = 0.48,
         b = 0.95,
     }
     self:Show(info)
+end
+
+-- ===== Aperçu live pour le panneau de config =====
+-- Une capsule persistante, non interactive, restylée à chaque changement d'option.
+function M:RefreshConfigPreview()
+    local f = self.cfgPreview
+    if not f then return end
+    local cfg = self:GetConfig(); if not cfg then return end
+    local r, g, b = 1, 0.48, 0.95
+    local chat = SP.modulesByName and SP.modulesByName.Chat
+    if chat and chat.DirectColor then
+        local c = chat:DirectColor("WHISPER")
+        if c then r, g, b = c[1] or r, c[2] or g, c[3] or b end
+    end
+    f._colorR, f._colorG, f._colorB = r, g, b
+    f.title:SetText("Kyalin")
+    f.channel:SetText("Chuchotement")
+    f.time:SetText(date("%H:%M"))
+    f.msg:SetText("Aperçu de la capsule de suivi.")
+    self:StyleCapsule(f)
+    f:SetWidth(math.min(f:GetWidth() or 360, 380))   -- borné pour tenir dans le panneau de config
+    f:SetAlpha(1); f:Show()
+end
+
+function M:GetConfigPreview(parent)
+    if not self.cfgPreview then self.cfgPreview = self:CreateCapsule() end
+    local f = self.cfgPreview
+    f:SetParent(parent)
+    f:EnableMouse(false)
+    f:SetScript("OnEnter", nil); f:SetScript("OnLeave", nil); f:SetScript("OnClick", nil)
+    f._noHover = true
+    f:ClearAllPoints()
+    f:SetPoint("CENTER", parent, "CENTER", 0, 0)
+    self:RefreshConfigPreview()
+    return f
 end
 
 function M:HideAll()

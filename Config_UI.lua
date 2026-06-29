@@ -1709,13 +1709,29 @@ end
 
 local function BuildSuiviChat(page)
     local function fc() return SP.ChatFollow and SP.ChatFollow:GetConfig() end
-    local function apply() if SP.ChatFollow and SP.ChatFollow.ApplyConfig then SP.ChatFollow:ApplyConfig() end end
+    local function apply()
+        if SP.ChatFollow then
+            if SP.ChatFollow.ApplyConfig then SP.ChatFollow:ApplyConfig() end
+            if SP.ChatFollow.RefreshConfigPreview then SP.ChatFollow:RefreshConfigPreview() end
+        end
+    end
     if not fc() then
         local note = page:CreateFontString(nil, "OVERLAY", "GameFontDisable")
         note:SetPoint("TOPLEFT", page, "TOPLEFT", 12, -12); note:SetText("Module Suivi chat indisponible.")
         return
     end
-    MakeTabbedPage(page, {
+    -- Aperçu LIVE persistant en haut, au-dessus des sous-onglets (mis à jour à chaque réglage).
+    local preview = CreateFrame("Frame", nil, page)
+    preview:SetPoint("TOPLEFT", page, "TOPLEFT", 4, -4); preview:SetPoint("TOPRIGHT", page, "TOPRIGHT", -4, -4); preview:SetHeight(66)
+    preview.bg = preview:CreateTexture(nil, "BACKGROUND"); preview.bg:SetAllPoints(preview); preview.bg:SetColorTexture(1, 1, 1, 0.03)
+    preview.lbl = preview:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall"); preview.lbl:SetPoint("TOPLEFT", preview, "TOPLEFT", 6, -3); preview.lbl:SetText("|cFF888888Aperçu live|r")
+    local function ensurePreview() if SP.ChatFollow and SP.ChatFollow.GetConfigPreview then SP.ChatFollow:GetConfigPreview(preview) end end
+    page:SetScript("OnShow", ensurePreview)
+    ensurePreview()
+    -- Les sous-onglets occupent l'espace SOUS l'aperçu.
+    local tabArea = CreateFrame("Frame", nil, page)
+    tabArea:SetPoint("TOPLEFT", preview, "BOTTOMLEFT", -4, -4); tabArea:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", 0, 0)
+    MakeTabbedPage(tabArea, {
         { label = "Apparence", build = function(root)
             local y = -6
             MakeCheck(root, "Activer le suivi chat (capsules flottantes)", 8, y,
