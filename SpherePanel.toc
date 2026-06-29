@@ -16,6 +16,7 @@ Media\IconAtlas.lua
 Config_UI.lua
 Modules\QuestTracker.lua
 Modules\Chat.lua
+Modules\ChatFollow.lua
 Modules\DamageMeter.lua
 Modules\Raid.lua
 Modules\Auras.lua
