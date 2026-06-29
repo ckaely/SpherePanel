@@ -1739,17 +1739,17 @@ local function BuildSuiviChat(page)
             y = y - 30
             local sl = root:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             sl:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y - 6); sl:SetText("|cFFAAAAAAStyle :|r")
-            MakeRadioRow(root, 70, y, { { "pill", "Pilule noir transp." }, { "dark", "Sombre" }, { "white", "Clair" } },
+            MakeRadioRow(root, 70, y, { { "pill", "Pilule (noir transparent)" }, { "white", "Clair" } },
                 function() return fc().style or "pill" end, function(v) fc().style = v; apply() end)
             y = y - 30
-            MakeSlider(root, "Transparence du fond", 16, y, 0, 1, 0.05,
-                function() return fc().bgAlpha or 0.55 end, function(v) fc().bgAlpha = v; apply() end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
+            MakeSlider(root, "Transparence du fond (0% = transparent)", 16, y, 0, 1, 0.05,
+                function() return fc().bgAlpha or 0.35 end, function(v) fc().bgAlpha = v; apply() end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
             y = y - 48
-            MakeSlider(root, "Épaisseur du liseré", 16, y, 1, 5, 1,
-                function() return fc().borderThickness or 2 end, function(v) fc().borderThickness = v; apply() end, function(v) return v .. " px" end)
-            y = y - 48
-            MakeSlider(root, "Intensité du liseré", 16, y, 0.2, 1, 0.05,
-                function() return fc().borderAlpha or 0.92 end, function(v) fc().borderAlpha = v; apply() end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
+            MakeCheck(root, "Ombre intérieure (effet creusé)", 16, y,
+                function() return fc().innerShadow ~= false end, function(v) fc().innerShadow = v and true or false; apply() end)
+            y = y - 30
+            MakeSlider(root, "Intensité du liseré (anneau)", 16, y, 0.2, 1, 0.05,
+                function() return fc().borderAlpha or 0.95 end, function(v) fc().borderAlpha = v; apply() end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
             y = y - 50
             MakeCheck(root, "Halo coloré", 16, y, function() return fc().glow == true end, function(v) fc().glow = v and true or false; apply() end)
             MakeCheck(root, "Halo pulsant", 200, y, function() return fc().pulse == true end, function(v) fc().pulse = v and true or false; apply() end)

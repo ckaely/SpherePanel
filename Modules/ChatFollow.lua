@@ -50,15 +50,16 @@ local function Clamp(v, minV, maxV)
     return v
 end
 
-local PILL_MASK = "Interface\\AddOns\\SpherePanel\\Media\\pill_mask"
+local PILL_MASK = "Interface\\AddOns\\SpherePanel\\Media\\pill_mask"        -- pilule pleine
+local RING_MASK = "Interface\\AddOns\\SpherePanel\\Media\\pill_ring_mask"   -- anneau (liseré seul)
 
-local function AddPillMask(frame, tex, key)
+local function AddPillMask(frame, tex, key, maskPath)
     if not (frame and tex and frame.CreateMaskTexture and tex.AddMaskTexture) then return end
     frame._pillMasks = frame._pillMasks or {}
     local mask = frame._pillMasks[key]
     if not mask then
         mask = frame:CreateMaskTexture(nil, "ARTWORK")
-        mask:SetTexture(PILL_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetTexture(maskPath or PILL_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
         frame._pillMasks[key] = mask
         tex:AddMaskTexture(mask)
     end
@@ -99,10 +100,11 @@ function M:GetConfig()
     cfg.follow = cfg.follow or {}
     local f = cfg.follow
     if f.enabled == nil then f.enabled = cfg.instantPopups ~= false end
-    f.style = f.style or "pill"          -- pill (noir transparent) / dark / white
-    f.bgAlpha = f.bgAlpha or 0.55        -- transparence du fond
-    f.borderAlpha = f.borderAlpha or 0.92 -- intensité du liseré coloré
+    f.style = f.style or "pill"          -- pill (noir transparent) / white
+    f.bgAlpha = f.bgAlpha or 0.35        -- transparence du fond (0 = transparent total)
+    f.borderAlpha = f.borderAlpha or 0.95 -- intensité du liseré (anneau coloré)
     f.borderThickness = Clamp(f.borderThickness or 2, 1, 5)
+    if f.innerShadow == nil then f.innerShadow = true end  -- ombre intérieure creusée
     if f.glow == nil then f.glow = false end
     f.glowAlpha = f.glowAlpha or 0.22
     if f.pulse == nil then f.pulse = false end   -- halo pulsant
@@ -122,7 +124,7 @@ function M:GetConfig()
     f.combatMode = f.combatMode or "all"
     if f.hideIfChatVisible == nil then f.hideIfChatVisible = true end
     if f.clickReply == nil then f.clickReply = true end
-    if f.hoverDismiss == nil then f.hoverDismiss = true end
+    if f.hoverDismiss == nil then f.hoverDismiss = false end   -- off : la durée prime (survol ne coupe pas)
     if f.locked == nil then f.locked = true end
     f.channels = f.channels or {}
     f.sounds = f.sounds or {}
@@ -290,34 +292,30 @@ function M:StyleCapsule(f)
     if not cfg then return end
     local w, h = Clamp(cfg.width, 220, 700), Clamp(cfg.height, 34, 120)
     f:SetSize(w, h)
-    -- ordre des calques : le liseré (border, pilule pleine colorée) DOIT être SOUS le fond
-    -- (sinon il recouvre tout → capsule entièrement colorée). Le fond inset laisse voir le rim.
-    f.glow:SetDrawLayer("BACKGROUND", -3)
-    f.border:SetDrawLayer("BACKGROUND", -1)
-    f.bg:SetDrawLayer("BACKGROUND", 1)
     local r, g, b = f._colorR or 0.65, f._colorG or 0.8, f._colorB or 1
-    -- le liseré coloré = la pilule `border` (pleine, colorée) qui dépasse le `bg` inset de bt
-    local bt = Clamp(cfg.borderThickness or 2, 1, 5)
-    f.bg:ClearAllPoints()
-    f.bg:SetPoint("TOPLEFT", f, "TOPLEFT", bt, -bt)
-    f.bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -bt, bt)
     local style = cfg.style or "pill"
+    -- FOND : pilule PLEINE, transparente (centre NEUTRE) — bgAlpha = vraie transparence
     if style == "white" then
-        f.bg:SetColorTexture(0.93, 0.96, 1.0, cfg.bgAlpha or 0.55)
+        f.bg:SetColorTexture(0.95, 0.97, 1.0, cfg.bgAlpha or 0.35)
         f.title:SetTextColor(0.10, 0.12, 0.18); f.msg:SetTextColor(0.16, 0.18, 0.26)
-    elseif style == "dark" then
-        f.bg:SetColorTexture(0.02, 0.025, 0.035, math.min(0.96, (cfg.bgAlpha or 0.55) + 0.22))
-        f.title:SetTextColor(1, 1, 1); f.msg:SetTextColor(0.88, 0.90, 0.97)
-    else  -- "pill" : noir transparent
-        f.bg:SetColorTexture(0, 0, 0, cfg.bgAlpha or 0.55)
-        f.title:SetTextColor(1, 1, 1); f.msg:SetTextColor(0.90, 0.92, 0.98)
+    else  -- pill / dark : noir transparent
+        f.bg:SetColorTexture(0, 0, 0, cfg.bgAlpha or 0.35)
+        f.title:SetTextColor(1, 1, 1); f.msg:SetTextColor(0.92, 0.94, 0.99)
     end
-    f.border:SetColorTexture(r, g, b, cfg.borderAlpha or 0.92)   -- liseré coloré (couleur du canal)
-    f.blur:SetColorTexture(1, 1, 1, 0)                            -- pas de voile parasite
+    -- LISERÉ : anneau coloré SEUL (texture masquée en anneau) → pas un bloc
+    f.border:SetColorTexture(r, g, b, cfg.borderAlpha or 0.95)
+    -- OMBRE INTÉRIEURE creusée : dégradé sombre haut → transparent (effet verre creusé)
+    if cfg.innerShadow ~= false and f.blur.SetGradient and CreateColor then
+        f.blur:SetColorTexture(1, 1, 1, 1)
+        pcall(f.blur.SetGradient, f.blur, "VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.45))
+    else
+        f.blur:SetColorTexture(0, 0, 0, 0)
+    end
+    -- HALO externe optionnel (sous le fond)
     if cfg.glow then f.glow:SetBlendMode("ADD"); f.glow:SetColorTexture(r, g, b, cfg.glowAlpha or 0.22)
     else f.glow:SetColorTexture(r, g, b, 0) end
     f.edge:SetColorTexture(r, g, b, cfg.accentBar and 0.85 or 0)
-    f.edge:SetHeight(math.max(12, h - 14))
+    f.edge:SetHeight(math.max(12, h - 16))
     f.channel:SetTextColor(r, g, b)
     f.time:SetShown(cfg.showTime == true)
     -- halo pulsant optionnel (nécessite le halo activé)
@@ -337,23 +335,20 @@ function M:CreateCapsule()
     f:SetFrameStrata("DIALOG")
     f:SetAlpha(0)
     f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    f.bg = f:CreateTexture(nil, "BACKGROUND")
+    f.bg = f:CreateTexture(nil, "BACKGROUND")   -- fond pilule PLEIN, transparent (centre neutre)
     f.bg:SetAllPoints(f)
-    f.blur = f:CreateTexture(nil, "BORDER")
-    f.blur:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
-    f.blur:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
-    f.glow = f:CreateTexture(nil, "BACKGROUND")
+    AddPillMask(f, f.bg, "bg")
+    f.glow = f:CreateTexture(nil, "BACKGROUND")  -- halo externe (sous le fond)
+    f.glow:SetDrawLayer("BACKGROUND", -3)
     f.glow:SetPoint("TOPLEFT", f, "TOPLEFT", -5, 5)
     f.glow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 5, -5)
     AddPillMask(f, f.glow, "glow")
-    f.border = f:CreateTexture(nil, "BORDER")
-    f.border:SetAllPoints(f)
-    AddPillMask(f, f.border, "border")
-    f.bg:ClearAllPoints()
-    f.bg:SetPoint("TOPLEFT", f, "TOPLEFT", 2, -2)
-    f.bg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -2, 2)
-    AddPillMask(f, f.bg, "bg")
+    f.blur = f:CreateTexture(nil, "BORDER")      -- repurposé : OMBRE INTÉRIEURE (dégradé sombre)
+    f.blur:SetAllPoints(f)
     AddPillMask(f, f.blur, "blur")
+    f.border = f:CreateTexture(nil, "ARTWORK")   -- LISERÉ : anneau coloré seul (masque anneau)
+    f.border:SetAllPoints(f)
+    AddPillMask(f, f.border, "border", RING_MASK)
     f.edge = f:CreateTexture(nil, "ARTWORK")
     f.edge:SetPoint("LEFT", f, "LEFT", 8, 0)
     f.edge:SetSize(4, 30)
@@ -490,13 +485,18 @@ function M:Show(info)
     self:Layout()
     f._ignoreInitialHover = f:IsMouseOver()
     f:SetAlpha(0)
-    local ag = f:CreateAnimationGroup()
-    local a = ag:CreateAnimation("Alpha")
-    a:SetFromAlpha(0)
-    a:SetToAlpha(1)
-    a:SetDuration(cfg.fadeIn or 0.16)
-    a:SetSmoothing("OUT")
-    ag:Play()
+    f._fadeInAG = f._fadeInAG or (function()
+        local ag = f:CreateAnimationGroup()
+        local a = ag:CreateAnimation("Alpha")
+        a:SetFromAlpha(0); a:SetToAlpha(1); a:SetSmoothing("OUT")
+        ag._a = a
+        -- CRUCIAL : sans ça, l'alpha revient à sa base (0) à la fin du fondu → capsule invisible
+        if ag.SetToFinalAlpha then ag:SetToFinalAlpha(true) end
+        ag:SetScript("OnFinished", function() f:SetAlpha(1) end)
+        return ag
+    end)()
+    f._fadeInAG._a:SetDuration(cfg.fadeIn or 0.16)
+    f._fadeInAG:Play()
     local sounds = cfg.sounds or {}
     if (cfg.sound or sounds[info.typeKey] or sounds[info.pk] or sounds[info.channelName]) and PlaySound and SOUNDKIT then pcall(PlaySound, SOUNDKIT.UI_BNET_TOAST) end
     local keep = info.keep or ((info.typeKey == "WHISPER" or info.typeKey == "BN_WHISPER") and (cfg.whisperDuration or 12) or (cfg.duration or 7))
