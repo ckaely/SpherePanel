@@ -1337,13 +1337,14 @@ function M:Send(text)
         end
         local switchKey = self:KeyForCommand(text)   -- bascule vers la bonne fenêtre
         local eb = ChatFrame1EditBox or (DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.editBox)
-        if eb and ChatEdit_ParseText then
+        if eb and (ChatEdit_SendText or ChatEdit_ParseText) then
             self._sendingNativeSlash = true
             local ok = pcall(function()
-                if ChatEdit_ActivateChat then ChatEdit_ActivateChat(eb) end
                 eb:SetText(text)
-                ChatEdit_ParseText(eb, 0)
-                self:AdoptBlizzardChatType(eb)
+                -- EXÉCUTE réellement la commande/envoi. ChatEdit_SendText(eb,1) = comme Entrée.
+                -- (ChatEdit_ParseText(eb, 0) ne faisait que parser sans envoyer → bug.)
+                if ChatEdit_SendText then ChatEdit_SendText(eb, 1)
+                else ChatEdit_ParseText(eb, 1) end
                 eb:SetText("")
                 eb:ClearFocus()
                 if eb.Hide then eb:Hide() end
@@ -1355,7 +1356,6 @@ function M:Send(text)
                 self:UpdateInputPreview("")
                 return
             end
-            self._sendingNativeSlash = false
         end
     end
     local w = self.writeType or "SAY"
