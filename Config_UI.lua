@@ -1757,15 +1757,17 @@ local function BuildSuiviChat(page)
             MakeSlider(root, "Intensité du halo", 16, y, 0.05, 0.6, 0.05,
                 function() return fc().glowAlpha or 0.22 end, function(v) fc().glowAlpha = v; apply() end, function(v) return ("%d%%"):format(math.floor(v * 100)) end)
             y = y - 48
-            MakeCheck(root, "Barre d'accent à gauche", 16, y, function() return fc().accentBar == true end, function(v) fc().accentBar = v and true or false; apply() end)
-            MakeCheck(root, "Afficher l'heure", 240, y, function() return fc().showTime == true end, function(v) fc().showTime = v and true or false; apply() end)
+            MakeCheck(root, "Afficher l'heure", 16, y, function() return fc().showTime == true end, function(v) fc().showTime = v and true or false; apply() end)
             y = y - 30
+            MakeSlider(root, "Épaisseur de la bordure", 16, y, 1, 5, 1,
+                function() return fc().borderThickness or 2 end, function(v) fc().borderThickness = v; apply() end, function(v) return v .. " px" end)
+            y = y - 48
             MakeSlider(root, "Largeur des capsules", 16, y, 220, 600, 5,
                 function() return fc().width or 360 end, function(v) fc().width = v; apply() end, function(v) return v .. " px" end)
             y = y - 48
-            MakeSlider(root, "Hauteur des capsules", 16, y, 34, 90, 2,
-                function() return fc().height or 48 end, function(v) fc().height = v; apply() end, function(v) return v .. " px" end)
-            y = y - 50
+            local hn = root:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            hn:SetPoint("TOPLEFT", root, "TOPLEFT", 16, y); hn:SetText("La hauteur des capsules s'ajuste automatiquement au contenu.")
+            y = y - 28
             root:SetHeight(-y + 30)
         end },
         { label = "Comportement", build = function(root)

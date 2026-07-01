@@ -184,12 +184,15 @@ end
 -- → pas de déformation des coins, contrairement à un edgeFile Backdrop (coins carrés)
 -- ou à AddMaskTexture (muet en 12.x, cf. AP-15).
 -- ------------------------------------------------------------
-local PILL_CAP  = "Interface\\AddOns\\SpherePanel\\Media\\pill_cap"       -- embout rempli
-local PILL_RING = "Interface\\AddOns\\SpherePanel\\Media\\pill_cap_ring"  -- embout liseré (arc)
-local PILL_GLOW = "Interface\\AddOns\\SpherePanel\\Media\\pill_cap_glow"  -- embout glow flou
-local PILL_DOT  = "Interface\\AddOns\\SpherePanel\\Media\\pill_dot"       -- point indicateur
+local PILL_DIR  = "Interface\\AddOns\\SpherePanel\\Media\\"
+local PILL_CAP  = PILL_DIR .. "pill_cap"        -- embout rempli
+local PILL_GLOW = PILL_DIR .. "pill_cap_glow"   -- embout glow flou
+local PILL_DOT  = PILL_DIR .. "pill_dot"        -- point indicateur
 local PILL_WHITE = "Interface\\Buttons\\WHITE8x8"
-local PILL_TEX_H, PILL_RING_T = 128, 7   -- réf. texture (hauteur, épaisseur d'arc)
+local PILL_TEX_H = 128
+-- Famille de liserés (arcs) par épaisseur 1..5 ; épaisseur d'arc en px-texture (réf 128).
+local PILL_RINGS  = { PILL_DIR.."pill_cap_ring1", PILL_DIR.."pill_cap_ring2", PILL_DIR.."pill_cap_ring3", PILL_DIR.."pill_cap_ring4", PILL_DIR.."pill_cap_ring5" }
+local PILL_RING_TT = { 3, 6, 9, 12, 15 }
 
 -- Crée les couches de la pilule sur `frame`. Idempotent (renvoie frame.pill).
 function SP:BuildPill(frame)
@@ -211,12 +214,12 @@ function SP:BuildPill(frame)
     -- OMBRE INTÉRIEURE (dégradé sombre en haut = creusé)
     p.shadow = frame:CreateTexture(nil, "ARTWORK", nil, -1)
     p.shadow:SetTexture(PILL_WHITE)
-    -- LISERÉ (arc + lignes haut/bas)
+    -- LISERÉ (arc + lignes haut/bas) — texture d'arc choisie par LayoutPill selon l'épaisseur
     p.ringL = frame:CreateTexture(nil, "ARTWORK", nil, 1)
     p.ringR = frame:CreateTexture(nil, "ARTWORK", nil, 1)
     p.lineT = frame:CreateTexture(nil, "ARTWORK", nil, 1)
     p.lineB = frame:CreateTexture(nil, "ARTWORK", nil, 1)
-    p.ringL:SetTexture(PILL_RING); p.ringR:SetTexture(PILL_RING)
+    p.ringL:SetTexture(PILL_RINGS[2]); p.ringR:SetTexture(PILL_RINGS[2])
     p.ringR:SetTexCoord(1, 0, 0, 1)
     p.lineT:SetTexture(PILL_WHITE); p.lineB:SetTexture(PILL_WHITE)
     -- POINT indicateur (gauche)
@@ -227,12 +230,16 @@ function SP:BuildPill(frame)
 end
 
 -- Positionne les couches selon la taille courante de `frame` (à rappeler après tout SetSize).
-function SP:LayoutPill(frame)
+-- `bt` = épaisseur de bordure 1..5 (choisit la texture d'arc + l'épaisseur des lignes).
+function SP:LayoutPill(frame, bt)
     local p = frame.pill; if not p then return end
     local h = frame:GetHeight() or 40
     local capW = h / 2
-    local lw = math.max(1.5, PILL_RING_T * h / PILL_TEX_H)   -- épaisseur liseré = arc au seam
-    local g = math.max(4, h * 0.14)                           -- débord du glow
+    bt = math.max(1, math.min(5, math.floor((tonumber(bt) or 2) + 0.5)))
+    p.ringL:SetTexture(PILL_RINGS[bt]); p.ringR:SetTexture(PILL_RINGS[bt])
+    p.ringR:SetTexCoord(1, 0, 0, 1)   -- SetTexture réinitialise le TexCoord → re-flip
+    local lw = math.max(1.5, PILL_RING_TT[bt] * h / PILL_TEX_H)  -- épaisseur ligne = arc au seam
+    local g = math.max(4, h * 0.14)                              -- débord du glow
     -- FILL
     p.fillL:ClearAllPoints(); p.fillL:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0);  p.fillL:SetSize(capW, h)
     p.fillR:ClearAllPoints(); p.fillR:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0); p.fillR:SetSize(capW, h)

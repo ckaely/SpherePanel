@@ -297,12 +297,21 @@ end
 function M:StyleCapsule(f)
     local cfg = self:GetConfig()
     if not cfg then return end
-    local w, h = Clamp(cfg.width, 220, 700), Clamp(cfg.height, 34, 120)
-    f:SetSize(w, h)
+    local w = Clamp(cfg.width, 220, 700)
+    local bt = Clamp(cfg.borderThickness or 2, 1, 5)
+    f:SetWidth(w)
+    -- Hauteur AUTO : s'ajuste au contenu (titre + message) + marges
+    local th = f.title:GetStringHeight(); if not th or th < 6 then th = 14 end
+    local mtxt = f.msg:GetText()
+    local mh = (mtxt and mtxt ~= "") and (f.msg:GetStringHeight() or 0) or 0
+    if mh > 0 and mh < 6 then mh = 12 end
+    local h = math.floor(8 + th + (mh > 0 and (4 + mh) or 0) + 8 + 0.5)
+    h = math.max(34, math.min(h, 160))
+    f:SetHeight(h)
     local r, g, b = f._colorR or 0.65, f._colorG or 0.8, f._colorB or 1
     local style = cfg.style or "pill"
     -- Pilule arrondie (3-slice) : fond transparent + liseré coloré + glow + ombre + point
-    SP:LayoutPill(f)
+    SP:LayoutPill(f, bt)
     SP:StylePill(f, r, g, b, {
         bgAlpha     = tonumber(cfg.bgAlpha) or 0.4,
         borderAlpha = tonumber(cfg.borderAlpha) or 0.95,
@@ -316,11 +325,6 @@ function M:StyleCapsule(f)
         f.title:SetTextColor(0.10, 0.12, 0.18); f.msg:SetTextColor(0.16, 0.18, 0.26)
     else
         f.title:SetTextColor(1, 1, 1); f.msg:SetTextColor(0.92, 0.94, 0.99)
-    end
-    -- Barre d'accent gauche (optionnelle, en plus du point)
-    if f.edge then
-        f.edge:SetColorTexture(r, g, b, cfg.accentBar and 0.85 or 0)
-        f.edge:SetHeight(math.max(12, h - 16))
     end
     f.channel:SetTextColor(r, g, b)
     f.time:SetShown(cfg.showTime == true)
@@ -352,10 +356,6 @@ function M:CreateCapsule()
     f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     -- Pilule arrondie (embouts demi-cercle + milieu étirable), cf. SP:BuildPill
     SP:BuildPill(f)
-    -- Barre d'accent gauche (optionnelle, en plus du point indicateur)
-    f.edge = f:CreateTexture(nil, "ARTWORK", nil, 2)
-    f.edge:SetPoint("LEFT", f, "LEFT", 10, 0)
-    f.edge:SetSize(3, 30)
     -- FontStrings (décalés à droite du point indicateur)
     f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 26, -8)
