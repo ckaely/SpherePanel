@@ -170,16 +170,30 @@ function M:Init(body)
     self.viewLabel = self.bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.viewLabel:SetPoint("RIGHT", self.bar, "RIGHT", 0, 0)
 
-    self.inputBand = CreateFrame("Frame", nil, body)
-    self.inputBand:SetHeight(22)
-    self.inputBand.bg = self.inputBand:CreateTexture(nil, "BACKGROUND")
-    self.inputBand.bg:SetAllPoints(self.inputBand)
-    self.inputBand.bg:SetColorTexture(0.04, 0.06, 0.10, 0.18)
-    self.inputBand.line = self.inputBand:CreateTexture(nil, "ARTWORK")
-    self.inputBand.line:SetHeight(1)
-    self.inputBand.line:SetPoint("TOPLEFT", self.inputBand, "TOPLEFT", 0, 0)
-    self.inputBand.line:SetPoint("TOPRIGHT", self.inputBand, "TOPRIGHT", 0, 0)
-    self.inputBand.line:SetColorTexture(0.30, 0.62, 1, 0.35)
+    -- Pilule de saisie flottante centrée (UIParent) — click-through quand inactive
+    self.inputBand = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    self.inputBand:SetFrameStrata("DIALOG")
+    self.inputBand:SetClampedToScreen(true)
+    if self.inputBand.SetBackdrop then
+        self.inputBand:SetBackdrop({
+            bgFile   = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileEdge = true, tileSize = 8, edgeSize = 8,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 },
+        })
+        self.inputBand:SetBackdropColor(0, 0, 0, 0.55)
+        self.inputBand:SetBackdropBorderColor(0.65, 0.8, 1, 0.9)
+    end
+    -- Label cible chuchotement (ex: "-> Kyalin")
+    self.inputBand.targetLabel = self.inputBand:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    self.inputBand.targetLabel:SetPoint("LEFT", self.inputBand, "LEFT", 8, 0)
+    self.inputBand.targetLabel:SetJustifyH("LEFT")
+    self.inputBand.targetLabel:Hide()
+    -- Hint "Tab" (visible 3 s à l'ouverture de la saisie)
+    self.inputBand.tabHint = self.inputBand:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    self.inputBand.tabHint:SetPoint("BOTTOM", self.inputBand, "BOTTOM", 0, -12)
+    self.inputBand.tabHint:SetText("Tab : changer de canal")
+    self.inputBand.tabHint:Hide()
 
     self.smf = CreateFrame("ScrollingMessageFrame", nil, body)
     self.smf:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -4)
@@ -219,10 +233,10 @@ function M:Init(body)
     end)
     self.smf:SetScript("OnHyperlinkLeave", function() GameTooltip:Hide() end)
 
-    self.eb = CreateFrame("EditBox", nil, body)
-    self.eb:SetPoint("BOTTOMLEFT", body, "BOTTOMLEFT", 4, 2)
-    self.eb:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -4, 2)
-    self.eb:SetHeight(18)
+    self.eb = CreateFrame("EditBox", nil, self.inputBand)
+    self.eb:SetPoint("LEFT",  self.inputBand, "LEFT",  6, 0)
+    self.eb:SetPoint("RIGHT", self.inputBand, "RIGHT", -8, 0)
+    self.eb:SetHeight(20)
     self.eb:SetAutoFocus(false)
     self.eb:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
     self.eb:SetScript("OnTextChanged", function(s, userInput)
@@ -255,6 +269,9 @@ function M:Init(body)
     self.eb:SetScript("OnEditFocusLost", function()
         self._forceReveal = false
         self:UpdateInputLayout()
+    end)
+    self.eb:SetScript("OnTabPressed", function()
+        self:CycleWriteChannel()
     end)
 
     self.copyBox = CreateFrame("EditBox", nil, body)
@@ -510,6 +527,9 @@ function M:Disable()
     for _, f in ipairs(self.toasts or {}) do f:Hide(); f._fading = false end
     if self.activeToasts then wipe(self.activeToasts) end
     if SP.ChatFollow and SP.ChatFollow.HideAll then SP.ChatFollow:HideAll() end
+    if self.inputBand then self.inputBand:Hide(); self.inputBand:EnableMouse(false) end
+    if self.eb and self.eb.ClearFocus then self.eb:ClearFocus() end
+    self._forceReveal = false
     self:SetBlizzardChatHidden(false)
 end
 
@@ -543,32 +563,32 @@ function M:UpdateInputLayout()
     local cfg = SP:GetModuleConfig(self.name) or {}
     local chatOn = self.tab ~= "social" and not cfg.collapsed
     local showInput = chatOn and self:InputVisible()
-    local h = math.max(18, math.min(42, tonumber(cfg.inputBandHeight) or 22))
-    local bottom = (cfg.inputDock or "bottom") ~= "top"
+    local h = math.max(26, math.min(42, tonumber(cfg.inputBandHeight) or 28))
 
-    self.inputBand:ClearAllPoints()
-    self.eb:ClearAllPoints()
+    -- ScrollingMessageFrame : occupe tout le corps (pilule flottante, pas dans le panneau)
     self.smf:ClearAllPoints()
+    self.smf:SetPoint("TOPLEFT",     self.body, "TOPLEFT",     4, -4)
+    self.smf:SetPoint("BOTTOMRIGHT", self.body, "BOTTOMRIGHT", -4, 4)
+    self.smf:SetShown(chatOn)
 
-    self.inputBand:SetHeight(h)
-    if self.inputBand.bg then self.inputBand.bg:SetColorTexture(0.04, 0.06, 0.10, tonumber(cfg.inputBandAlpha) or 0.18) end
-    if bottom then
-        self.inputBand:SetPoint("BOTTOMLEFT", self.body, "BOTTOMLEFT", 4, 2)
-        self.inputBand:SetPoint("BOTTOMRIGHT", self.body, "BOTTOMRIGHT", -4, 2)
-        self.smf:SetPoint("TOPLEFT", self.body, "TOPLEFT", 4, -4)
-        self.smf:SetPoint("BOTTOMRIGHT", self.body, "BOTTOMRIGHT", -4, showInput and (h + 6) or 4)
-    else
-        self.inputBand:SetPoint("TOPLEFT", self.body, "TOPLEFT", 4, -2)
-        self.inputBand:SetPoint("TOPRIGHT", self.body, "TOPRIGHT", -4, -2)
-        self.smf:SetPoint("TOPLEFT", self.body, "TOPLEFT", 4, showInput and -(h + 6) or -4)
-        self.smf:SetPoint("BOTTOMRIGHT", self.body, "BOTTOMRIGHT", -4, 4)
-    end
-    self.eb:SetPoint("LEFT", self.inputBand, "LEFT", 6, 0)
-    self.eb:SetPoint("RIGHT", self.inputBand, "RIGHT", -6, 0)
-    self.eb:SetHeight(math.max(16, h - 4))
+    -- Pilule flottante centrée sur l'écran, taille basée sur la largeur du module
+    local panelW = math.max(self.body:GetWidth() or 280, 280)
+    local pillW  = math.min(panelW + 60, 500)
+    self.inputBand:SetSize(pillW, h)
+    self.inputBand:ClearAllPoints()
+    self.inputBand:SetPoint("CENTER", UIParent, "CENTER", 0, -240)
+    -- Click-through quand la saisie est fermée (ne bloque pas le jeu)
+    self.inputBand:EnableMouse(showInput)
     self.inputBand:SetShown(showInput)
+
+    self.eb:SetHeight(math.max(16, h - 8))
     self.eb:SetShown(showInput)
-    if self.smf then self.smf:SetShown(chatOn) end
+
+    -- Couleur du liseré selon le canal actif
+    self:SetInputColorForType(
+        (self.writeType == "CUSTOM") and "CHANNEL" or (self.writeType or "SAY"),
+        self:PrimaryKey(self.writeType or "SAY"))
+    self:UpdateWhisperTarget()
 end
 
 function M:SetInputColorForType(chatType, key)
@@ -582,6 +602,10 @@ function M:SetInputColorForType(chatType, key)
         r, g, b = 1, 1, 1
     end
     if self.eb then self.eb:SetTextColor(r, g, b) end
+    -- Liseré de la pilule = couleur du canal actif
+    if self.inputBand and self.inputBand.SetBackdropBorderColor then
+        self.inputBand:SetBackdropBorderColor(r, g, b, 0.9)
+    end
 end
 
 function M:UpdateInputPreview(text)
@@ -1259,10 +1283,11 @@ function M:StartWhisper(name)
         self._forceReveal = true
         self:UpdateInputLayout()
         self:SetInputColorForType("WHISPER", "W")
+        self:UpdateWhisperTarget()
         self.eb:SetFocus()
     end
     if self.viewLabel then
-        self.viewLabel:SetText("|cFF40FF40→ " .. (Ambiguate and Ambiguate(name, "none") or name) .. "|r")
+        self.viewLabel:SetText("|cFF40FF40-> " .. (Ambiguate and Ambiguate(name, "none") or name) .. "|r")
         C_Timer.After(4, function() if self.viewLabel then self:SetView(self.viewFilter) end end)
     end
 end
@@ -1384,6 +1409,73 @@ function M:Send(text)
     else
         pcall(SendChatMessage, text, "SAY")
     end
+end
+
+-- Affiche la cible du chuchotement dans la pilule de saisie et repositionne l'EB.
+function M:UpdateWhisperTarget()
+    local band = self.inputBand
+    if not band then return end
+    local lbl  = band.targetLabel
+    local hint = band.tabHint
+    if self.writeType == "WHISPER" and self._lastWhisper and self._lastWhisper ~= "" then
+        local short = (Ambiguate and Ambiguate(self._lastWhisper, "none")) or self._lastWhisper
+        if lbl then
+            lbl:SetText("|cFFFF80FF-> " .. short .. "|r")
+            lbl:Show()
+            local lw = math.max(0, (lbl:GetStringWidth() or 0) + 14)
+            if self.eb then
+                self.eb:ClearAllPoints()
+                self.eb:SetPoint("LEFT",  band, "LEFT",  lw, 0)
+                self.eb:SetPoint("RIGHT", band, "RIGHT", -8, 0)
+            end
+        end
+    else
+        if lbl then lbl:Hide() end
+        if self.eb then
+            self.eb:ClearAllPoints()
+            self.eb:SetPoint("LEFT",  band, "LEFT",   6, 0)
+            self.eb:SetPoint("RIGHT", band, "RIGHT", -8, 0)
+        end
+    end
+    -- Hint Tab : visible 3 s après l'ouverture
+    if hint then
+        if self._forceReveal and not self._tabHintShown then
+            self._tabHintShown = true
+            hint:Show()
+            C_Timer.After(3, function() self._tabHintShown = false; if hint then hint:Hide() end end)
+        end
+    end
+end
+
+-- Tab : cycle SAY → GUILD → GROUP/RAID → WHISPER récent → SAY…
+function M:CycleWriteChannel()
+    local sequence = {}
+    sequence[#sequence + 1] = "SAY"
+    if IsInGuild and IsInGuild() then
+        sequence[#sequence + 1] = "GUILD"
+    end
+    if IsInGroup and IsInGroup() then
+        if IsInRaid and IsInRaid() then
+            sequence[#sequence + 1] = "RAID"
+        elseif LE_PARTY_CATEGORY_INSTANCE and IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then
+            sequence[#sequence + 1] = "INSTANCE_CHAT"
+        else
+            sequence[#sequence + 1] = "GROUP"
+        end
+    end
+    if self._lastWhisper and self._lastWhisper ~= "" then
+        sequence[#sequence + 1] = "WHISPER"
+    end
+    if #sequence == 0 then return end
+    local cur = self.writeType or "SAY"
+    local idx = 1
+    for i, t in ipairs(sequence) do
+        if t == cur then idx = (i % #sequence) + 1; break end
+    end
+    self.writeType = sequence[idx]
+    self.writeChannel = nil
+    self:UpdateInputPreview(self.eb and self.eb:GetText() or "")
+    self:UpdateWhisperTarget()
 end
 
 -- ============================================================

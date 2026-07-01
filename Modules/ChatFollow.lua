@@ -124,7 +124,8 @@ function M:GetConfig()
     f.combatMode = f.combatMode or "all"
     if f.hideIfChatVisible == nil then f.hideIfChatVisible = true end
     if f.clickReply == nil then f.clickReply = true end
-    if f.hoverDismiss == nil then f.hoverDismiss = false end   -- off : la durée prime (survol ne coupe pas)
+    -- Migration V1 : forcer hoverDismiss=false (ancien défaut était true → bug capsule ~1 s)
+    if not f._cfgMig1 then f.hoverDismiss = false; f._cfgMig1 = true end
     if f.locked == nil then f.locked = true end
     f.channels = f.channels or {}
     f.sounds = f.sounds or {}
@@ -293,40 +294,58 @@ function M:StyleCapsule(f)
     local w, h = Clamp(cfg.width, 220, 700), Clamp(cfg.height, 34, 120)
     f:SetSize(w, h)
     local r, g, b = f._colorR or 0.65, f._colorG or 0.8, f._colorB or 1
+    local bgAlpha = tonumber(cfg.bgAlpha) or 0.35
     local style = cfg.style or "pill"
-    -- FOND : pilule PLEINE, transparente (centre NEUTRE) — bgAlpha = vraie transparence
+    -- Fond transparent + liseré coloré via Backdrop (pas de fichier TGA requis)
+    if f.SetBackdropColor then
+        if style == "white" then
+            f:SetBackdropColor(0.93, 0.96, 1.0, bgAlpha)
+        else
+            f:SetBackdropColor(0, 0, 0, bgAlpha)
+        end
+    end
+    if f.SetBackdropBorderColor then
+        f:SetBackdropBorderColor(r, g, b, tonumber(cfg.borderAlpha) or 0.95)
+    end
     if style == "white" then
-        f.bg:SetColorTexture(0.95, 0.97, 1.0, cfg.bgAlpha or 0.35)
         f.title:SetTextColor(0.10, 0.12, 0.18); f.msg:SetTextColor(0.16, 0.18, 0.26)
-    else  -- pill / dark : noir transparent
-        f.bg:SetColorTexture(0, 0, 0, cfg.bgAlpha or 0.35)
+    else
         f.title:SetTextColor(1, 1, 1); f.msg:SetTextColor(0.92, 0.94, 0.99)
     end
-    -- LISERÉ : anneau coloré SEUL (texture masquée en anneau) → pas un bloc
-    f.border:SetColorTexture(r, g, b, cfg.borderAlpha or 0.95)
-    -- OMBRE INTÉRIEURE creusée : dégradé sombre haut → transparent (effet verre creusé)
-    if cfg.innerShadow ~= false and f.blur.SetGradient and CreateColor then
-        f.blur:SetColorTexture(1, 1, 1, 1)
-        pcall(f.blur.SetGradient, f.blur, "VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.45))
-    else
-        f.blur:SetColorTexture(0, 0, 0, 0)
+    -- Ombre intérieure creusée (dégradé sombre en haut = effet verre)
+    if f.innerShadow then
+        if cfg.innerShadow ~= false and f.innerShadow.SetGradient and CreateColor then
+            f.innerShadow:SetColorTexture(1, 1, 1, 1)
+            pcall(f.innerShadow.SetGradient, f.innerShadow, "VERTICAL",
+                CreateColor(0, 0, 0, 0.5), CreateColor(0, 0, 0, 0))
+        else
+            f.innerShadow:SetColorTexture(0, 0, 0, 0)
+        end
     end
-    -- HALO externe optionnel (sous le fond)
-    if cfg.glow then f.glow:SetBlendMode("ADD"); f.glow:SetColorTexture(r, g, b, cfg.glowAlpha or 0.22)
-    else f.glow:SetColorTexture(r, g, b, 0) end
-    f.edge:SetColorTexture(r, g, b, cfg.accentBar and 0.85 or 0)
-    f.edge:SetHeight(math.max(12, h - 16))
+    -- Halo externe
+    if f.glow then
+        if cfg.glow then
+            f.glow:SetBlendMode("ADD")
+            f.glow:SetColorTexture(r, g, b, tonumber(cfg.glowAlpha) or 0.22)
+        else
+            f.glow:SetColorTexture(r, g, b, 0)
+        end
+    end
+    if f.edge then
+        f.edge:SetColorTexture(r, g, b, cfg.accentBar and 0.85 or 0)
+        f.edge:SetHeight(math.max(12, h - 16))
+    end
     f.channel:SetTextColor(r, g, b)
     f.time:SetShown(cfg.showTime == true)
-    -- halo pulsant optionnel (nécessite le halo activé)
-    if cfg.pulse and cfg.glow then
+    -- Halo pulsant
+    if cfg.pulse and cfg.glow and f.glow then
         f:SetScript("OnUpdate", function(s, e)
             s._pt = (s._pt or 0) + e
             s.glow:SetAlpha(0.4 + 0.6 * (0.5 + 0.5 * math.sin(s._pt * 3)))
         end)
     else
         f:SetScript("OnUpdate", nil)
-        f.glow:SetAlpha(1)
+        if f.glow then f.glow:SetAlpha(1) end
     end
 end
 
@@ -335,50 +354,59 @@ function M:CreateCapsule()
     f:SetFrameStrata("DIALOG")
     f:SetAlpha(0)
     f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    f.bg = f:CreateTexture(nil, "BACKGROUND")   -- fond pilule PLEIN, transparent (centre neutre)
-    f.bg:SetAllPoints(f)
-    AddPillMask(f, f.bg, "bg")
-    f.glow = f:CreateTexture(nil, "BACKGROUND")  -- halo externe (sous le fond)
+    -- Fond transparent + liseré coloré (Backdrop — aucun fichier TGA requis)
+    if f.SetBackdrop then
+        f:SetBackdrop({
+            bgFile   = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            tile = true, tileEdge = true, tileSize = 8, edgeSize = 8,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 },
+        })
+    end
+    -- Halo externe (sous le backdrop)
+    f.glow = f:CreateTexture(nil, "BACKGROUND")
     f.glow:SetDrawLayer("BACKGROUND", -3)
-    f.glow:SetPoint("TOPLEFT", f, "TOPLEFT", -5, 5)
-    f.glow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 5, -5)
-    AddPillMask(f, f.glow, "glow")
-    f.blur = f:CreateTexture(nil, "BORDER")      -- repurposé : OMBRE INTÉRIEURE (dégradé sombre)
-    f.blur:SetAllPoints(f)
-    AddPillMask(f, f.blur, "blur")
-    f.border = f:CreateTexture(nil, "ARTWORK")   -- LISERÉ : anneau coloré seul (masque anneau)
-    f.border:SetAllPoints(f)
-    AddPillMask(f, f.border, "border", RING_MASK)
+    f.glow:SetPoint("TOPLEFT",     f, "TOPLEFT",     -6,  6)
+    f.glow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT",  6, -6)
+    -- Ombre intérieure creusée (dégradé sombre en haut = effet verre)
+    f.innerShadow = f:CreateTexture(nil, "ARTWORK")
+    f.innerShadow:SetPoint("TOPLEFT",  f, "TOPLEFT",  2, -2)
+    f.innerShadow:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
+    f.innerShadow:SetHeight(20)
+    -- Barre d'accent gauche (optionnel)
     f.edge = f:CreateTexture(nil, "ARTWORK")
     f.edge:SetPoint("LEFT", f, "LEFT", 8, 0)
-    f.edge:SetSize(4, 30)
-    AddPillMask(f, f.edge, "edge")
+    f.edge:SetSize(3, 30)
+    -- FontStrings
     f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 12, -8)
-    f.title:SetPoint("RIGHT", f, "RIGHT", -92, 0)
+    f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -8)
+    f.title:SetPoint("RIGHT",   f, "RIGHT", -92, 0)
     f.title:SetJustifyH("LEFT")
     f.title:SetWordWrap(false)
     f.channel = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.channel:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, -9)
+    f.channel:SetPoint("TOPRIGHT", f, "TOPRIGHT", -10, -9)
     f.channel:SetJustifyH("RIGHT")
     f.time = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     f.time:SetPoint("RIGHT", f.channel, "LEFT", -6, 0)
     f.msg = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.msg:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -6)
-    f.msg:SetPoint("RIGHT", f, "RIGHT", -12, 0)
+    f.msg:SetPoint("TOPLEFT", f.title, "BOTTOMLEFT", 0, -4)
+    f.msg:SetPoint("RIGHT",   f, "RIGHT", -10, 0)
     f.msg:SetJustifyH("LEFT")
     f.msg:SetWordWrap(false)
+    -- Interactions
     f:SetScript("OnEnter", function(frame)
         local cfg = M:GetConfig()
         if not cfg or not cfg.hoverDismiss then return end
-        if frame._noHover then return end   -- capsules de test : pas de fondu au survol
+        if frame._noHover then return end
         if frame._ignoreInitialHover then return end
         local now = GetTime and GetTime() or nil
         if now and frame._shownAt and (now - frame._shownAt) < math.max(1.25, (cfg.hoverDelay or 0.65) + 0.35) then return end
         frame._hoverToken = (frame._hoverToken or 0) + 1
         local token = frame._hoverToken
         C_Timer.After(cfg.hoverDelay or 0.65, function()
-            if frame:IsShown() and frame:IsMouseOver() and frame._hoverToken == token then M:Fade(frame, cfg.fadeOut or 0.3) end
+            if frame:IsShown() and frame:IsMouseOver() and frame._hoverToken == token then
+                M:Fade(frame, cfg.fadeOut or 0.3)
+            end
         end)
     end)
     f:SetScript("OnLeave", function(frame)
@@ -448,6 +476,8 @@ end
 function M:Fade(f, duration)
     if not f or f._fading then return end
     f._fading = true
+    -- Stopper le fondu entrant s'il est encore en cours
+    if f._fadeInAG then pcall(f._fadeInAG.Stop, f._fadeInAG) end
     local token = (f._token or 0) + 1
     f._token = token
     f._expireToken = (f._expireToken or 0) + 1
@@ -484,19 +514,21 @@ function M:Show(info)
     end
     self:Layout()
     f._ignoreInitialHover = f:IsMouseOver()
+    -- Fondu entrant : nouveau groupe à chaque Show pour éviter les conflits inter-animations
+    if f._fadeInAG then pcall(f._fadeInAG.Stop, f._fadeInAG); f._fadeInAG = nil end
     f:SetAlpha(0)
-    f._fadeInAG = f._fadeInAG or (function()
+    local fadeIn = tonumber(cfg.fadeIn) or 0.16
+    if fadeIn > 0.01 then
         local ag = f:CreateAnimationGroup()
-        local a = ag:CreateAnimation("Alpha")
-        a:SetFromAlpha(0); a:SetToAlpha(1); a:SetSmoothing("OUT")
-        ag._a = a
-        -- CRUCIAL : sans ça, l'alpha revient à sa base (0) à la fin du fondu → capsule invisible
         if ag.SetToFinalAlpha then ag:SetToFinalAlpha(true) end
-        ag:SetScript("OnFinished", function() f:SetAlpha(1) end)
-        return ag
-    end)()
-    f._fadeInAG._a:SetDuration(cfg.fadeIn or 0.16)
-    f._fadeInAG:Play()
+        local a = ag:CreateAnimation("Alpha")
+        a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(fadeIn); a:SetSmoothing("OUT")
+        ag:SetScript("OnFinished", function() if f:IsShown() then f:SetAlpha(1) end end)
+        f._fadeInAG = ag
+        ag:Play()
+    else
+        f:SetAlpha(1)
+    end
     local sounds = cfg.sounds or {}
     if (cfg.sound or sounds[info.typeKey] or sounds[info.pk] or sounds[info.channelName]) and PlaySound and SOUNDKIT then pcall(PlaySound, SOUNDKIT.UI_BNET_TOAST) end
     local keep = info.keep or ((info.typeKey == "WHISPER" or info.typeKey == "BN_WHISPER") and (cfg.whisperDuration or 12) or (cfg.duration or 7))
