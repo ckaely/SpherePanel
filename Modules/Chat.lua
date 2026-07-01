@@ -240,7 +240,10 @@ function M:Init(body)
     self.eb:SetAutoFocus(false)
     self.eb:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
     self.eb:SetScript("OnTextChanged", function(s, userInput)
-        if userInput then self:UpdateInputPreview(s:GetText()) end
+        if userInput then
+            self:UpdateInputPreview(s:GetText())
+            self:UpdateWhisperTarget()
+        end
     end)
     self.eb:SetScript("OnEnterPressed", function(s)
         local keepOpen = self:Send(s:GetText())
