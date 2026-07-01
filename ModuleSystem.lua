@@ -618,7 +618,7 @@ function SP:EnsureDock(corner)
     local pt, mx = DOCK_POINT[corner][1], DOCK_POINT[corner][2]
     local my = DOCK_POINT[corner][3]
     local d = CreateFrame("Frame", "SpherePanelDock" .. corner, UIParent)
-    d:SetFrameStrata("MEDIUM")
+    d:SetFrameStrata("HIGH")   -- au-dessus des barres d'action/sacs par défaut (sinon occulté dans les coins)
     d:SetClampedToScreen(true)
     d:SetSize(DOCK_WIDTH, 1)
     d:ClearAllPoints()
@@ -777,15 +777,20 @@ function SP:RebuildLayout()
             if SP.docks and SP.docks[corner] then SP.docks[corner]:Hide() end
         else
             local d = SP:EnsureDock(corner)
+            -- Pré-dimensionne le host AVANT le placement : le contenu a alors sa géométrie finale
+            -- quand on ancre les modules (sinon ancrage transitoire hors écran pour les coins bas).
+            local total = 0
+            for _, entry in ipairs(list) do
+                total = total + GetModuleHeight(entry.module, entry.cfg) + UIc.GAP
+            end
+            if total < 1 then total = 1 end
+            d:SetSize(DOCK_WIDTH, total)
+            d:Show()
             local yd = 0
             for _, entry in ipairs(list) do
                 entry.dock = corner
                 yd = Place(entry, d.content, yd)
             end
-            if yd < 1 then yd = 1 end
-            d:SetSize(DOCK_WIDTH, yd)
-            d.content:SetSize(DOCK_WIDTH, yd)
-            d:Show()
         end
     end
 

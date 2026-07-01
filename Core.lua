@@ -352,6 +352,34 @@ function SP:HandleSlash(msg)
         else
             SP:Print("Module Rares indisponible.")
         end
+    elseif cmd == "dockdbg" then
+        -- Diagnostic des docks de coin : état des hosts + modules dockés (position/alpha/parent).
+        SP:Print("Docks de coin :")
+        for _, c in ipairs(SP.DOCK_CORNERS or {}) do
+            local d = SP.docks and SP.docks[c]
+            if d then
+                local l, b, w, h = d:GetLeft(), d:GetBottom(), d:GetWidth(), d:GetHeight()
+                SP:Print(("  %s host: shown=%s strata=%s L=%s B=%s W=%s H=%s"):format(
+                    c, tostring(d:IsShown()), tostring(d:GetFrameStrata()),
+                    l and math.floor(l) or "?", b and math.floor(b) or "?",
+                    w and math.floor(w) or "?", h and math.floor(h) or "?"))
+            else
+                SP:Print(("  %s host: (non créé)"):format(c))
+            end
+        end
+        for _, m in ipairs(SP:GetOrderedModules()) do
+            local cfg = SP:GetModuleConfig(m.name)
+            if cfg and cfg.dock then
+                local f = m.frame
+                local l, b, w, h = f and f:GetLeft(), f and f:GetBottom(), f and f:GetWidth(), f and f:GetHeight()
+                local par = f and f:GetParent()
+                SP:Print(("  [%s] dock=%s shown=%s alpha=%.2f parent=%s L=%s B=%s W=%s H=%s"):format(
+                    m.name, tostring(cfg.dock), tostring(f and f:IsShown()),
+                    f and f:GetAlpha() or -1, par and (par:GetName() or "?") or "nil",
+                    l and math.floor(l) or "?", b and math.floor(b) or "?",
+                    w and math.floor(w) or "?", h and math.floor(h) or "?"))
+            end
+        end
     elseif cmd == "enable" and rest ~= "" then
         SP:EnableModule(rest)
     elseif cmd == "modules" then
@@ -362,6 +390,6 @@ function SP:HandleSlash(msg)
             SP:Print(("  %s (%s) — %s"):format(m.name, m.label, state))
         end
     else
-        SP:Print("Commandes : |cFFFFFFFF/span|r config | mbscan | lock | reset | show | hide | modules | enable <Nom>")
+        SP:Print("Commandes : |cFFFFFFFF/span|r config | mbscan | lock | reset | show | hide | modules | enable <Nom> | dockdbg")
     end
 end
