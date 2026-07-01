@@ -191,7 +191,7 @@ function SP:_TickFree(p, elapsed)
     p.bg:SetAlpha(lerp(p.bg:GetAlpha(), pg, elapsed, dur))
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and not m._onPanel2 then
+        if f and f:IsShown() and not m._onPanel2 and not m._docked then
             local cfg = SP:GetModuleConfig(m.name)
             local goal
             if m._forceReveal or (cfg and cfg.pinned) or (apply and apply[m.name] == false) then goal = 1
@@ -226,7 +226,7 @@ function SP:_TickSlide(p, elapsed, b, side, isP2)
     local wantP2 = isP2 and true or false
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
+        if f and f:IsShown() and m._layoutTop and not m._docked and ((m._onPanel2 and true or false) == wantP2) then
             local cfg = SP:GetModuleConfig(m.name)
             local reveal
             if m._forceReveal or (cfg and cfg.pinned) then reveal = true
@@ -278,7 +278,7 @@ function SP:_UpdateEdgeGlows(p, side, isP2)
     local i = 0
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
+        if f and f:IsShown() and m._layoutTop and not m._docked and ((m._onPanel2 and true or false) == wantP2) then
             local cfg = SP:GetModuleConfig(m.name)
             local slidOff = (math.abs(m._curSlide or 0) > 4) and not (cfg and cfg.pinned)
             i = i + 1
@@ -322,7 +322,7 @@ end
 function SP:_ResetSlides(p, isP2)
     local wantP2 = isP2 and true or false
     for _, m in ipairs(SP.modules) do
-        if m.frame and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
+        if m.frame and m._layoutTop and not m._docked and ((m._onPanel2 and true or false) == wantP2) then
             m._curSlide = 0
             m.frame:SetAlpha(1)   -- mode libre : modules pleinement visibles
             if not (InCombatLockdown() and m.secureChildren) then
@@ -340,29 +340,20 @@ function SP:_ResetSlides(p, isP2)
     SP:_HideEdgeGlows(p)
 end
 
--- Effets visuels de la barre de titre (orbe pulsant + shimmer balayant).
-function SP:_TickCosmetics(p, elapsed)
-    local fx = SP.db and SP.db.panel and SP.db.panel.fx
-    if not fx then
-        if p.titleOrb then p.titleOrb:SetAlpha(0) end
-        if p.titleShimmer then p.titleShimmer:Hide() end
-        return
-    end
-    local now = GetTime()
-    if p.titleOrb then p.titleOrb:SetAlpha(0.45 + 0.40 * (math.sin(now * 2.2) * 0.5 + 0.5)) end
-    if p.titleShimmer and p.title then
-        p.titleShimmer:Show()
-        local w = (p.title:GetWidth() or 200) - 44
-        local t = (now * 0.30) % 1
-        p.titleShimmer:ClearAllPoints()
-        p.titleShimmer:SetPoint("BOTTOMLEFT", p.title, "BOTTOMLEFT", t * w, 0)
-        p.titleShimmer:SetAlpha(0.30 + 0.35 * (math.sin(now * 4) * 0.5 + 0.5))
+-- Barre de titre SpherePanel : design simple STATIQUE.
+-- (Avant : orbe pulsante + reflet balayant recalculés à CHAQUE frame -> supprimé.)
+function SP:_TickCosmetics(p)
+    if p.titleShimmer and p.titleShimmer:IsShown() then p.titleShimmer:Hide() end
+    if p.titleOrb then
+        local fx = SP.db and SP.db.panel and SP.db.panel.fx
+        local a = fx and 0.7 or 0
+        if p.titleOrb:GetAlpha() ~= a then p.titleOrb:SetAlpha(a) end
     end
 end
 
 function SP:_PanelTick(p, elapsed)
-    SP:_TickCosmetics(p, elapsed)
-    -- horloge / FPS permanents (pilotés par le panneau, indépendants de l'état du module Menus)
+    SP:_TickCosmetics(p)   -- statique, négligeable
+    -- horloge / FPS (déjà throttlée 1s) — chaque frame, léger
     if p == SP.panel then
         p._clockAccum = (p._clockAccum or 0) + elapsed
         if p._clockAccum >= 1 then
@@ -371,9 +362,19 @@ function SP:_PanelTick(p, elapsed)
             if gm and gm.UpdateHeaderInfo then gm:UpdateHeaderInfo() end
         end
     end
+
+    -- Contrôleur d'animation (fondu / glissement) : THROTTLE ~30 Hz au lieu de
+    -- chaque frame. La boucle par module ne servait qu'aux animations -> 30 Hz
+    -- reste fluide et coûte ~4x moins. dt CUMULÉ passé au lerp -> vitesse d'anim
+    -- identique. Toujours exécuté (jamais figé, juste moins souvent).
+    p._ctrlAccum = (p._ctrlAccum or 0) + elapsed
+    if p._ctrlAccum < 0.033 then return end
+    local dt = p._ctrlAccum
+    p._ctrlAccum = 0
+
     local b = (SP.db and SP.db.panel and SP.db.panel.behavior) or 3
-    if b == 1 or b == 2 then SP:_TickSlide(p, elapsed, b, SP.db.panel.side, false)
-    else SP:_TickFree(p, elapsed) end
+    if b == 1 or b == 2 then SP:_TickSlide(p, dt, b, SP.db.panel.side, false)
+    else SP:_TickFree(p, dt) end
 
     -- panneau ② : son propre mode (libre / glissant / individuel)
     local p2 = SP.panel2
@@ -382,7 +383,7 @@ function SP:_PanelTick(p, elapsed)
         local b2 = p2cfg.behavior or 3
         if b2 == 1 or b2 == 2 then
             p2._resetDone = false
-            SP:_TickSlide(p2, elapsed, b2, SP._p2side or "left", true)
+            SP:_TickSlide(p2, dt, b2, SP._p2side or "left", true)
         elseif not p2._resetDone then
             SP:_ResetSlides(p2, true)
             p2._resetDone = true

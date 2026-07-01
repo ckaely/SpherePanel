@@ -217,7 +217,7 @@ function SP:GetVisibleOrderedModules()
     local t = {}
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
-        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) and not m._onPanel2 then t[#t + 1] = m end
+        if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) and not m._onPanel2 and not cfg.dock then t[#t + 1] = m end
     end
     return t
 end
@@ -489,6 +489,13 @@ function SP:ShowModuleMenu(m)
         sub:CreateButton(((cfg and cfg.corner == "top") and "* " or "") .. "Haut", function() setCorner("top") end)
         sub:CreateButton(((cfg and cfg.corner == "bottom") and "* " or "") .. "Bas", function() setCorner("bottom") end)
         sub:CreateButton(((cfg and not cfg.corner) and "* " or "") .. "Aucun (dans le flux)", function() setCorner(nil) end)
+        -- Détacher et ancrer dans un COIN DE L'ÉCRAN (hors panneau) — ou glisser le bandeau vers un coin
+        local subd = root:CreateButton("Ancrer dans un coin de l'écran")
+        local function setDock(v) if cfg then cfg.dock = v; SP:RebuildLayout() end end
+        for _, c in ipairs(SP.DOCK_CORNERS) do
+            subd:CreateButton(((cfg and cfg.dock == c) and "* " or "") .. SP.DOCK_LABEL[c], function() setDock(c) end)
+        end
+        subd:CreateButton(((cfg and not cfg.dock) and "* " or "") .. "Aucun (dans le panneau)", function() setDock(nil) end)
         -- Bandeau en bas : le corps se déplie vers le haut (utile pour le chat)
         root:CreateButton(((cfg and cfg.headerBottom) and "* " or "") .. "Bandeau en bas (déplier vers le haut)", function()
             if cfg then
@@ -588,6 +595,91 @@ function SP:AnchorModuleFrame(m, content, x, y)
     end
 end
 
+-- ============================================================
+-- Docks de coin d'écran : 4 emplacements réservés (TL/TR/BL/BR).
+-- Un module "docké" est DÉTACHÉ du flux des panneaux (comme _onPanel2) et ancré à
+-- un coin de l'écran → les panneaux ne bougent pas. Les emplacements vides
+-- s'affichent pendant qu'on glisse un bandeau (SP:_ShowDockZones).
+-- ============================================================
+SP.DOCK_CORNERS = { "TL", "TR", "BL", "BR" }
+SP.DOCK_LABEL   = { TL = "Haut-gauche", TR = "Haut-droite", BL = "Bas-gauche", BR = "Bas-droite" }
+local DOCK_POINT = {   -- point d'ancrage UIParent + signe des marges (mx, my)
+    TL = { "TOPLEFT",      1, -1 },
+    TR = { "TOPRIGHT",    -1, -1 },
+    BL = { "BOTTOMLEFT",   1,  1 },
+    BR = { "BOTTOMRIGHT", -1,  1 },
+}
+local DOCK_MARGIN, DOCK_WIDTH = 12, 340
+
+-- Host d'un coin (créé à la demande). Contient un `content` où s'empilent les modules dockés.
+function SP:EnsureDock(corner)
+    SP.docks = SP.docks or {}
+    if SP.docks[corner] then return SP.docks[corner] end
+    local pt, mx = DOCK_POINT[corner][1], DOCK_POINT[corner][2]
+    local my = DOCK_POINT[corner][3]
+    local d = CreateFrame("Frame", "SpherePanelDock" .. corner, UIParent)
+    d:SetFrameStrata("MEDIUM")
+    d:SetClampedToScreen(true)
+    d:SetSize(DOCK_WIDTH, 1)
+    d:ClearAllPoints()
+    d:SetPoint(pt, UIParent, pt, mx * DOCK_MARGIN, my * DOCK_MARGIN)
+    local content = CreateFrame("Frame", nil, d)
+    content:SetAllPoints(d)
+    d.content = content
+    d._corner = corner
+    d:Hide()
+    SP.docks[corner] = d
+    return d
+end
+
+-- Zones de dépôt visibles (contour bleu + libellé) pendant un drag de bandeau.
+function SP:_EnsureDockZones()
+    SP._dockZones = SP._dockZones or {}
+    for _, corner in ipairs(SP.DOCK_CORNERS) do
+        if not SP._dockZones[corner] then
+            local pt, mx = DOCK_POINT[corner][1], DOCK_POINT[corner][2]
+            local my = DOCK_POINT[corner][3]
+            local z = CreateFrame("Frame", nil, UIParent)
+            z:SetFrameStrata("FULLSCREEN_DIALOG")
+            z:SetSize(DOCK_WIDTH, 60)
+            z:SetPoint(pt, UIParent, pt, mx * DOCK_MARGIN, my * DOCK_MARGIN)
+            z.bg = z:CreateTexture(nil, "BACKGROUND"); z.bg:SetAllPoints(z)
+            z.bg:SetColorTexture(0.30, 0.70, 1.0, 0.12)
+            z.borders = {}
+            for _, e in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+                local t = z:CreateTexture(nil, "OVERLAY"); t:SetColorTexture(0.35, 0.75, 1.0, 0.9)
+                z.borders[e] = t
+            end
+            z.borders.TOP:SetPoint("TOPLEFT"); z.borders.TOP:SetPoint("TOPRIGHT"); z.borders.TOP:SetHeight(2)
+            z.borders.BOTTOM:SetPoint("BOTTOMLEFT"); z.borders.BOTTOM:SetPoint("BOTTOMRIGHT"); z.borders.BOTTOM:SetHeight(2)
+            z.borders.LEFT:SetPoint("TOPLEFT"); z.borders.LEFT:SetPoint("BOTTOMLEFT"); z.borders.LEFT:SetWidth(2)
+            z.borders.RIGHT:SetPoint("TOPRIGHT"); z.borders.RIGHT:SetPoint("BOTTOMRIGHT"); z.borders.RIGHT:SetWidth(2)
+            z.label = z:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            z.label:SetPoint("CENTER"); z.label:SetText(SP.DOCK_LABEL[corner])
+            z:Hide()
+            SP._dockZones[corner] = z
+        end
+    end
+end
+
+function SP:_ShowDockZones(show)
+    SP:_EnsureDockZones()
+    for _, corner in ipairs(SP.DOCK_CORNERS) do
+        local z = SP._dockZones[corner]
+        if show then z:Show() else z:Hide() end
+    end
+end
+
+-- Coin dont la zone est sous le curseur (ou nil).
+function SP:_DockZoneAtCursor()
+    if not SP._dockZones then return nil end
+    for _, corner in ipairs(SP.DOCK_CORNERS) do
+        local z = SP._dockZones[corner]
+        if z and z:IsShown() and z:IsMouseOver() then return corner end
+    end
+    return nil
+end
+
 function SP:RebuildLayout()
     local panel = SP.panel
     if not panel then return end
@@ -621,12 +713,17 @@ function SP:RebuildLayout()
         local m, cfg = entry.module, entry.cfg
         if m.frame:GetParent() ~= content then m.frame:SetParent(content) end
         local h = GetModuleHeight(m, cfg)
-        SP:AnchorModuleFrame(m, content, 0, y)
+        if entry.dock then m._curSlide = 0 end
+        SP:AnchorModuleFrame(m, content, m._curSlide or 0, y)   -- respecte le glissement courant
         m.frame:SetHeight(h)
-        m.frame:SetAlpha(1)
+        -- Anti-scintillement : ne PLUS forcer alpha=1 en masse (sinon flash global au relayout,
+        -- puis re-estompage par _PanelTick). Seuls un module docké (toujours visible) ou
+        -- explicitement révélé passent à 1 ; les autres gardent leur alpha animé courant.
+        if entry.dock or m._forceReveal then m.frame:SetAlpha(1) end
         m.frame:Show()
         m._layoutTop, m._layoutHeight = y, h
         m._onPanel2 = entry.onP2
+        m._docked = entry.dock
         m._corner = cfg.corner or nil
         return y + h + UIc.GAP
     end
@@ -638,22 +735,29 @@ function SP:RebuildLayout()
         return y
     end
 
+    local dockLists = { TL = {}, TR = {}, BL = {}, BR = {} }
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
         if cfg and cfg.enabled and m.frame and SP:ModuleConditionsMet(m) then
-            -- panneau cible (2 si demandé ET second panneau actif, sinon 1)
-            local onP2 = (cfg.panel == 2) and p2 ~= nil
-            if cfg.corner == "top" then
-                Queue(onP2 and top2 or top1, m, cfg, onP2)
-            elseif cfg.corner == "bottom" then
-                Queue(onP2 and bottom2 or bottom1, m, cfg, onP2)
+            if cfg.dock and dockLists[cfg.dock] then
+                -- module docké à un coin d'écran → hors flux des panneaux
+                Queue(dockLists[cfg.dock], m, cfg, false)
             else
-                Queue(onP2 and flow2 or flow1, m, cfg, onP2)
+                -- panneau cible (2 si demandé ET second panneau actif, sinon 1)
+                local onP2 = (cfg.panel == 2) and p2 ~= nil
+                if cfg.corner == "top" then
+                    Queue(onP2 and top2 or top1, m, cfg, onP2)
+                elseif cfg.corner == "bottom" then
+                    Queue(onP2 and bottom2 or bottom1, m, cfg, onP2)
+                else
+                    Queue(onP2 and flow2 or flow1, m, cfg, onP2)
+                end
             end
         elseif m.frame then
             m.frame:Hide()
             m._layoutTop, m._layoutHeight = nil, nil
             m._corner = nil
+            m._docked = nil
         end
     end
 
@@ -664,6 +768,25 @@ function SP:RebuildLayout()
         y2 = Layout(top2, p2.content, y2)
         y2 = Layout(flow2, p2.content, y2)
         y2 = Layout(bottom2, p2.content, y2)
+    end
+
+    -- Docks de coin d'écran (détachés du flux). Chaque coin = mini-pile propre.
+    for _, corner in ipairs(SP.DOCK_CORNERS) do
+        local list = dockLists[corner]
+        if #list == 0 then
+            if SP.docks and SP.docks[corner] then SP.docks[corner]:Hide() end
+        else
+            local d = SP:EnsureDock(corner)
+            local yd = 0
+            for _, entry in ipairs(list) do
+                entry.dock = corner
+                yd = Place(entry, d.content, yd)
+            end
+            if yd < 1 then yd = 1 end
+            d:SetSize(DOCK_WIDTH, yd)
+            d.content:SetSize(DOCK_WIDTH, yd)
+            d:Show()
+        end
     end
 
     if y1 < 1 then y1 = 1 end
@@ -712,7 +835,7 @@ function SP:GetPanelModules(isP2)
     local t = {}
     for _, m in ipairs(SP:GetOrderedModules()) do
         local cfg = SP:GetModuleConfig(m.name)
-        if cfg and cfg.enabled and m.frame and m._layoutTop and ((m._onPanel2 and true or false) == isP2) then
+        if cfg and cfg.enabled and m.frame and m._layoutTop and not cfg.dock and ((m._onPanel2 and true or false) == isP2) then
             t[#t + 1] = m
         end
     end
@@ -727,6 +850,7 @@ function SP:BeginReorder(m)
     g.label:SetText(m.label)
     g:SetWidth(SP.panel:GetWidth())
     g:Show()
+    SP:_ShowDockZones(true)   -- montre les 4 emplacements de coin réservés
     g:SetScript("OnUpdate", function() SP:UpdateReorder() end)
 end
 
@@ -777,7 +901,19 @@ function SP:UpdateReorder()
     x, y = x / scale, y / scale
     g:ClearAllPoints()
     g:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x + 8, y + 8)
-    -- ligne d'insertion sur le panneau survolé (① ou ②)
+    -- survol d'un coin réservé ? → surligne la zone, cache la ligne d'insertion panneau
+    local corner = SP:_DockZoneAtCursor()
+    if SP._dockZones then
+        for _, c in ipairs(SP.DOCK_CORNERS) do
+            local z = SP._dockZones[c]
+            if z then z.bg:SetColorTexture(0.30, 0.70, 1.0, (c == corner) and 0.30 or 0.12) end
+        end
+    end
+    if corner then
+        if SP._dropLine then SP._dropLine:Hide() end
+        return
+    end
+    -- sinon : ligne d'insertion sur le panneau survolé (① ou ②)
     local content, isP2 = SP:_DragTarget()
     local mods = SP:GetPanelModules(isP2)
     SP:ShowDropIndicator(content, mods, SP:ComputeDropIndex(content, mods))
@@ -788,15 +924,25 @@ function SP:EndReorder(m)
     if g then g:SetScript("OnUpdate", nil); g:Hide() end
     if SP._dropLine then SP._dropLine:Hide() end
 
+    -- Lâché sur un coin réservé ? → détache le module vers ce coin d'écran.
+    local corner = SP:_DockZoneAtCursor()
+    SP:_ShowDockZones(false)
+    local cfg = SP:GetModuleConfig(m.name)
+    if corner then
+        if cfg then cfg.dock = corner end
+        SP._dragModule = nil
+        SP:RebuildLayout()
+        return
+    end
+
     -- panneau cible = celui survolé ; on calcule l'index AVANT de déplacer le module
     local content, isP2 = SP:_DragTarget()
     local mods = SP:GetPanelModules(isP2)
     local dropIdx = SP:ComputeDropIndex(content, mods)
     local beforeName = (dropIdx and mods[dropIdx]) and mods[dropIdx].name or nil
 
-    -- assignation du panneau (① ou ②) selon le survol
-    local cfg = SP:GetModuleConfig(m.name)
-    if cfg then cfg.panel = isP2 and 2 or 1 end
+    -- assignation du panneau (① ou ②) selon le survol ; sort le module d'un éventuel dock
+    if cfg then cfg.panel = isP2 and 2 or 1; cfg.dock = nil end
     SP._dragModule = nil
 
     -- Liste complète des noms ordonnés, dragged retiré, réinséré avant beforeName.
