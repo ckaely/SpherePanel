@@ -170,23 +170,16 @@ function M:Init(body)
     self.viewLabel = self.bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     self.viewLabel:SetPoint("RIGHT", self.bar, "RIGHT", 0, 0)
 
-    -- Pilule de saisie flottante centrée (UIParent) — click-through quand inactive
-    self.inputBand = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    -- Pilule de saisie flottante centrée (UIParent) — même style que les capsules Suivi chat,
+    -- click-through quand inactive. Pilule arrondie via SP:BuildPill (cf. Core.lua).
+    self.inputBand = CreateFrame("Frame", nil, UIParent)
     self.inputBand:SetFrameStrata("DIALOG")
     self.inputBand:SetClampedToScreen(true)
-    if self.inputBand.SetBackdrop then
-        self.inputBand:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true, tileEdge = true, tileSize = 8, edgeSize = 8,
-            insets = { left = 2, right = 2, top = 2, bottom = 2 },
-        })
-        self.inputBand:SetBackdropColor(0, 0, 0, 0.55)
-        self.inputBand:SetBackdropBorderColor(0.65, 0.8, 1, 0.9)
-    end
+    SP:BuildPill(self.inputBand)
+    SP:StylePill(self.inputBand, 0.65, 0.8, 1, { bgAlpha = 0.5, borderAlpha = 0.92, glow = true, glowAlpha = 0.22, dot = true })
     -- Label cible chuchotement (ex: "-> Kyalin")
     self.inputBand.targetLabel = self.inputBand:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    self.inputBand.targetLabel:SetPoint("LEFT", self.inputBand, "LEFT", 8, 0)
+    self.inputBand.targetLabel:SetPoint("LEFT", self.inputBand, "LEFT", 16, 0)
     self.inputBand.targetLabel:SetJustifyH("LEFT")
     self.inputBand.targetLabel:Hide()
     -- Hint "Tab" (visible 3 s à l'ouverture de la saisie)
@@ -234,8 +227,8 @@ function M:Init(body)
     self.smf:SetScript("OnHyperlinkLeave", function() GameTooltip:Hide() end)
 
     self.eb = CreateFrame("EditBox", nil, self.inputBand)
-    self.eb:SetPoint("LEFT",  self.inputBand, "LEFT",  6, 0)
-    self.eb:SetPoint("RIGHT", self.inputBand, "RIGHT", -8, 0)
+    self.eb:SetPoint("LEFT",  self.inputBand, "LEFT",  16, 0)
+    self.eb:SetPoint("RIGHT", self.inputBand, "RIGHT", -14, 0)
     self.eb:SetHeight(20)
     self.eb:SetAutoFocus(false)
     self.eb:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
@@ -580,6 +573,7 @@ function M:UpdateInputLayout()
     self.inputBand:SetSize(pillW, h)
     self.inputBand:ClearAllPoints()
     self.inputBand:SetPoint("CENTER", UIParent, "CENTER", 0, -240)
+    SP:LayoutPill(self.inputBand)   -- repositionne les embouts après SetSize
     -- Click-through quand la saisie est fermée (ne bloque pas le jeu)
     self.inputBand:EnableMouse(showInput)
     self.inputBand:SetShown(showInput)
@@ -605,9 +599,11 @@ function M:SetInputColorForType(chatType, key)
         r, g, b = 1, 1, 1
     end
     if self.eb then self.eb:SetTextColor(r, g, b) end
-    -- Liseré de la pilule = couleur du canal actif
-    if self.inputBand and self.inputBand.SetBackdropBorderColor then
-        self.inputBand:SetBackdropBorderColor(r, g, b, 0.9)
+    -- Liseré + point + glow de la pilule = couleur du canal actif
+    if self.inputBand and self.inputBand.pill then
+        SP:StylePill(self.inputBand, r, g, b, {
+            bgAlpha = 0.5, borderAlpha = 0.92, glow = true, glowAlpha = 0.22, dot = true,
+        })
     end
 end
 
@@ -1425,19 +1421,20 @@ function M:UpdateWhisperTarget()
         if lbl then
             lbl:SetText("|cFFFF80FF-> " .. short .. "|r")
             lbl:Show()
-            local lw = math.max(0, (lbl:GetStringWidth() or 0) + 14)
+            -- label ancré à LEFT+16 → l'eb démarre après lui
+            local lw = math.max(16, 16 + (lbl:GetStringWidth() or 0) + 8)
             if self.eb then
                 self.eb:ClearAllPoints()
                 self.eb:SetPoint("LEFT",  band, "LEFT",  lw, 0)
-                self.eb:SetPoint("RIGHT", band, "RIGHT", -8, 0)
+                self.eb:SetPoint("RIGHT", band, "RIGHT", -14, 0)
             end
         end
     else
         if lbl then lbl:Hide() end
         if self.eb then
             self.eb:ClearAllPoints()
-            self.eb:SetPoint("LEFT",  band, "LEFT",   6, 0)
-            self.eb:SetPoint("RIGHT", band, "RIGHT", -8, 0)
+            self.eb:SetPoint("LEFT",  band, "LEFT",  16, 0)
+            self.eb:SetPoint("RIGHT", band, "RIGHT", -14, 0)
         end
     end
     -- Hint Tab : visible 3 s après l'ouverture

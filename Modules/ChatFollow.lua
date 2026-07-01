@@ -105,9 +105,9 @@ function M:GetConfig()
     f.borderAlpha = f.borderAlpha or 0.95 -- intensité du liseré (anneau coloré)
     f.borderThickness = Clamp(f.borderThickness or 2, 1, 5)
     if f.innerShadow == nil then f.innerShadow = true end  -- ombre intérieure creusée
-    if f.glow == nil then f.glow = false end
-    f.glowAlpha = f.glowAlpha or 0.22
-    if f.pulse == nil then f.pulse = false end   -- halo pulsant
+    if f.glow == nil then f.glow = true end
+    f.glowAlpha = f.glowAlpha or 0.30
+    if f.pulse == nil then f.pulse = true end   -- halo pulsant
     if f.accentBar == nil then f.accentBar = false end -- barre d'accent à gauche
     f.width = f.width or 360
     f.height = f.height or 48
@@ -126,6 +126,12 @@ function M:GetConfig()
     if f.clickReply == nil then f.clickReply = true end
     -- Migration V1 : forcer hoverDismiss=false (ancien défaut était true → bug capsule ~1 s)
     if not f._cfgMig1 then f.hoverDismiss = false; f._cfgMig1 = true end
+    -- Migration V2 : nouvelle pilule arrondie → réactiver glow/pulse/ombre sur les profils existants
+    if not f._cfgMig2 then
+        f.glow = true; f.pulse = true; f.innerShadow = true
+        if not f.bgAlpha or f.bgAlpha < 0.05 then f.bgAlpha = 0.40 end
+        f._cfgMig2 = true
+    end
     if f.locked == nil then f.locked = true end
     f.channels = f.channels or {}
     f.sounds = f.sounds or {}
@@ -294,92 +300,65 @@ function M:StyleCapsule(f)
     local w, h = Clamp(cfg.width, 220, 700), Clamp(cfg.height, 34, 120)
     f:SetSize(w, h)
     local r, g, b = f._colorR or 0.65, f._colorG or 0.8, f._colorB or 1
-    local bgAlpha = tonumber(cfg.bgAlpha) or 0.35
     local style = cfg.style or "pill"
-    -- Fond transparent + liseré coloré via Backdrop (pas de fichier TGA requis)
-    if f.SetBackdropColor then
-        if style == "white" then
-            f:SetBackdropColor(0.93, 0.96, 1.0, bgAlpha)
-        else
-            f:SetBackdropColor(0, 0, 0, bgAlpha)
-        end
-    end
-    if f.SetBackdropBorderColor then
-        f:SetBackdropBorderColor(r, g, b, tonumber(cfg.borderAlpha) or 0.95)
-    end
+    -- Pilule arrondie (3-slice) : fond transparent + liseré coloré + glow + ombre + point
+    SP:LayoutPill(f)
+    SP:StylePill(f, r, g, b, {
+        bgAlpha     = tonumber(cfg.bgAlpha) or 0.4,
+        borderAlpha = tonumber(cfg.borderAlpha) or 0.95,
+        light       = (style == "white"),
+        glow        = cfg.glow and true or false,
+        glowAlpha   = tonumber(cfg.glowAlpha) or 0.30,
+        innerShadow = cfg.innerShadow ~= false,
+        dot         = true,
+    })
     if style == "white" then
         f.title:SetTextColor(0.10, 0.12, 0.18); f.msg:SetTextColor(0.16, 0.18, 0.26)
     else
         f.title:SetTextColor(1, 1, 1); f.msg:SetTextColor(0.92, 0.94, 0.99)
     end
-    -- Ombre intérieure creusée (dégradé sombre en haut = effet verre)
-    if f.innerShadow then
-        if cfg.innerShadow ~= false and f.innerShadow.SetGradient and CreateColor then
-            f.innerShadow:SetColorTexture(1, 1, 1, 1)
-            pcall(f.innerShadow.SetGradient, f.innerShadow, "VERTICAL",
-                CreateColor(0, 0, 0, 0.5), CreateColor(0, 0, 0, 0))
-        else
-            f.innerShadow:SetColorTexture(0, 0, 0, 0)
-        end
-    end
-    -- Halo externe
-    if f.glow then
-        if cfg.glow then
-            f.glow:SetBlendMode("ADD")
-            f.glow:SetColorTexture(r, g, b, tonumber(cfg.glowAlpha) or 0.22)
-        else
-            f.glow:SetColorTexture(r, g, b, 0)
-        end
-    end
+    -- Barre d'accent gauche (optionnelle, en plus du point)
     if f.edge then
         f.edge:SetColorTexture(r, g, b, cfg.accentBar and 0.85 or 0)
         f.edge:SetHeight(math.max(12, h - 16))
     end
     f.channel:SetTextColor(r, g, b)
     f.time:SetShown(cfg.showTime == true)
-    -- Halo pulsant
-    if cfg.pulse and cfg.glow and f.glow then
+    -- Halo + point pulsants
+    local p = f.pill
+    if cfg.pulse and p then
         f:SetScript("OnUpdate", function(s, e)
             s._pt = (s._pt or 0) + e
-            s.glow:SetAlpha(0.4 + 0.6 * (0.5 + 0.5 * math.sin(s._pt * 3)))
+            local k = 0.5 + 0.5 * math.sin(s._pt * 3)
+            if (s.pill._glowBase or 0) > 0 then
+                s.pill.glowL:SetAlpha(0.35 + 0.65 * k)
+                s.pill.glowR:SetAlpha(0.35 + 0.65 * k)
+                s.pill.glowM:SetAlpha(0.35 + 0.65 * k)
+            end
+            s.pill.dot:SetAlpha(0.45 + 0.55 * k)
         end)
     else
         f:SetScript("OnUpdate", nil)
-        if f.glow then f.glow:SetAlpha(1) end
+        if p then
+            p.glowL:SetAlpha(1); p.glowR:SetAlpha(1); p.glowM:SetAlpha(1); p.dot:SetAlpha(1)
+        end
     end
 end
 
 function M:CreateCapsule()
-    local f = CreateFrame("Button", nil, self:EnsureHost(), "BackdropTemplate")
+    local f = CreateFrame("Button", nil, self:EnsureHost())
     f:SetFrameStrata("DIALOG")
     f:SetAlpha(0)
     f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    -- Fond transparent + liseré coloré (Backdrop — aucun fichier TGA requis)
-    if f.SetBackdrop then
-        f:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true, tileEdge = true, tileSize = 8, edgeSize = 8,
-            insets = { left = 2, right = 2, top = 2, bottom = 2 },
-        })
-    end
-    -- Halo externe (sous le backdrop)
-    f.glow = f:CreateTexture(nil, "BACKGROUND")
-    f.glow:SetDrawLayer("BACKGROUND", -3)
-    f.glow:SetPoint("TOPLEFT",     f, "TOPLEFT",     -6,  6)
-    f.glow:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT",  6, -6)
-    -- Ombre intérieure creusée (dégradé sombre en haut = effet verre)
-    f.innerShadow = f:CreateTexture(nil, "ARTWORK")
-    f.innerShadow:SetPoint("TOPLEFT",  f, "TOPLEFT",  2, -2)
-    f.innerShadow:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
-    f.innerShadow:SetHeight(20)
-    -- Barre d'accent gauche (optionnel)
-    f.edge = f:CreateTexture(nil, "ARTWORK")
-    f.edge:SetPoint("LEFT", f, "LEFT", 8, 0)
+    -- Pilule arrondie (embouts demi-cercle + milieu étirable), cf. SP:BuildPill
+    SP:BuildPill(f)
+    -- Barre d'accent gauche (optionnelle, en plus du point indicateur)
+    f.edge = f:CreateTexture(nil, "ARTWORK", nil, 2)
+    f.edge:SetPoint("LEFT", f, "LEFT", 10, 0)
     f.edge:SetSize(3, 30)
-    -- FontStrings
+    -- FontStrings (décalés à droite du point indicateur)
     f.title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -8)
+    f.title:SetPoint("TOPLEFT", f, "TOPLEFT", 26, -8)
     f.title:SetPoint("RIGHT",   f, "RIGHT", -92, 0)
     f.title:SetJustifyH("LEFT")
     f.title:SetWordWrap(false)

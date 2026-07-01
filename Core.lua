@@ -177,6 +177,116 @@ function SP:AnchorTooltipOutsidePanel(tooltip, owner, preferredSide)
     return tooltip
 end
 
+-- ------------------------------------------------------------
+-- Pilule arrondie (stadium) réutilisable — ChatFollow + Chat.
+-- 3-slice horizontal : 2 embouts demi-cercle (textures) + milieu étirable (WHITE8x8).
+-- L'embout, dimensionné à largeur = hauteur/2, reste un demi-cercle parfait à toute taille
+-- → pas de déformation des coins, contrairement à un edgeFile Backdrop (coins carrés)
+-- ou à AddMaskTexture (muet en 12.x, cf. AP-15).
+-- ------------------------------------------------------------
+local PILL_CAP  = "Interface\\AddOns\\SpherePanel\\Media\\pill_cap"       -- embout rempli
+local PILL_RING = "Interface\\AddOns\\SpherePanel\\Media\\pill_cap_ring"  -- embout liseré (arc)
+local PILL_GLOW = "Interface\\AddOns\\SpherePanel\\Media\\pill_cap_glow"  -- embout glow flou
+local PILL_DOT  = "Interface\\AddOns\\SpherePanel\\Media\\pill_dot"       -- point indicateur
+local PILL_WHITE = "Interface\\Buttons\\WHITE8x8"
+local PILL_TEX_H, PILL_RING_T = 128, 7   -- réf. texture (hauteur, épaisseur d'arc)
+
+-- Crée les couches de la pilule sur `frame`. Idempotent (renvoie frame.pill).
+function SP:BuildPill(frame)
+    if frame.pill then return frame.pill end
+    local p = {}
+    -- GLOW (le plus bas, ADD) — déborde du cadre
+    p.glowL = frame:CreateTexture(nil, "BACKGROUND", nil, -3)
+    p.glowR = frame:CreateTexture(nil, "BACKGROUND", nil, -3)
+    p.glowM = frame:CreateTexture(nil, "BACKGROUND", nil, -3)
+    p.glowL:SetTexture(PILL_GLOW); p.glowR:SetTexture(PILL_GLOW); p.glowM:SetTexture(PILL_GLOW)
+    p.glowR:SetTexCoord(1, 0, 0, 1)
+    for _, t in ipairs({ p.glowL, p.glowR, p.glowM }) do t:SetBlendMode("ADD") end
+    -- FILL (fond transparent)
+    p.fillL = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    p.fillR = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    p.fillM = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+    p.fillL:SetTexture(PILL_CAP); p.fillR:SetTexture(PILL_CAP); p.fillM:SetTexture(PILL_WHITE)
+    p.fillR:SetTexCoord(1, 0, 0, 1)
+    -- OMBRE INTÉRIEURE (dégradé sombre en haut = creusé)
+    p.shadow = frame:CreateTexture(nil, "ARTWORK", nil, -1)
+    p.shadow:SetTexture(PILL_WHITE)
+    -- LISERÉ (arc + lignes haut/bas)
+    p.ringL = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+    p.ringR = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+    p.lineT = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+    p.lineB = frame:CreateTexture(nil, "ARTWORK", nil, 1)
+    p.ringL:SetTexture(PILL_RING); p.ringR:SetTexture(PILL_RING)
+    p.ringR:SetTexCoord(1, 0, 0, 1)
+    p.lineT:SetTexture(PILL_WHITE); p.lineB:SetTexture(PILL_WHITE)
+    -- POINT indicateur (gauche)
+    p.dot = frame:CreateTexture(nil, "OVERLAY", nil, 1)
+    p.dot:SetTexture(PILL_DOT)
+    frame.pill = p
+    return p
+end
+
+-- Positionne les couches selon la taille courante de `frame` (à rappeler après tout SetSize).
+function SP:LayoutPill(frame)
+    local p = frame.pill; if not p then return end
+    local h = frame:GetHeight() or 40
+    local capW = h / 2
+    local lw = math.max(1.5, PILL_RING_T * h / PILL_TEX_H)   -- épaisseur liseré = arc au seam
+    local g = math.max(4, h * 0.14)                           -- débord du glow
+    -- FILL
+    p.fillL:ClearAllPoints(); p.fillL:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0);  p.fillL:SetSize(capW, h)
+    p.fillR:ClearAllPoints(); p.fillR:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0); p.fillR:SetSize(capW, h)
+    p.fillM:ClearAllPoints()
+    p.fillM:SetPoint("TOPLEFT", p.fillL, "TOPRIGHT", 0, 0)
+    p.fillM:SetPoint("BOTTOMRIGHT", p.fillR, "BOTTOMLEFT", 0, 0)
+    -- GLOW (embouts +g, ratio 1:2 conservé)
+    p.glowL:ClearAllPoints(); p.glowL:SetPoint("TOPLEFT", frame, "TOPLEFT", -g, g);  p.glowL:SetSize(capW + g, h + 2*g)
+    p.glowR:ClearAllPoints(); p.glowR:SetPoint("TOPRIGHT", frame, "TOPRIGHT", g, g);  p.glowR:SetSize(capW + g, h + 2*g)
+    p.glowM:ClearAllPoints()
+    p.glowM:SetTexture(PILL_WHITE)   -- milieu du glow = strip plein
+    p.glowM:SetPoint("TOPLEFT", p.glowL, "TOPRIGHT", 0, 0)
+    p.glowM:SetPoint("BOTTOMRIGHT", p.glowR, "BOTTOMLEFT", 0, 0)
+    -- LISERÉ
+    p.ringL:ClearAllPoints(); p.ringL:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0);  p.ringL:SetSize(capW, h)
+    p.ringR:ClearAllPoints(); p.ringR:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0); p.ringR:SetSize(capW, h)
+    p.lineT:ClearAllPoints(); p.lineT:SetPoint("TOPLEFT", p.ringL, "TOPRIGHT", 0, 0);    p.lineT:SetPoint("TOPRIGHT", p.ringR, "TOPLEFT", 0, 0);    p.lineT:SetHeight(lw)
+    p.lineB:ClearAllPoints(); p.lineB:SetPoint("BOTTOMLEFT", p.ringL, "BOTTOMRIGHT", 0, 0); p.lineB:SetPoint("BOTTOMRIGHT", p.ringR, "BOTTOMLEFT", 0, 0); p.lineB:SetHeight(lw)
+    -- OMBRE INTÉRIEURE (zone à sommet plat uniquement → inset horizontal)
+    p.shadow:ClearAllPoints()
+    p.shadow:SetPoint("TOPLEFT",  frame, "TOPLEFT",  capW * 0.6, -lw)
+    p.shadow:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -capW * 0.6, -lw)
+    p.shadow:SetHeight(math.max(6, h * 0.42))
+    -- POINT
+    local ds = math.max(6, h * 0.20)
+    p.dot:ClearAllPoints(); p.dot:SetPoint("LEFT", frame, "LEFT", capW * 0.55, 0); p.dot:SetSize(ds, ds)
+end
+
+-- Colore/opacité de la pilule. opts: bgAlpha, borderAlpha, light, glow, glowAlpha, innerShadow, dot.
+function SP:StylePill(frame, r, g, b, opts)
+    opts = opts or {}
+    local p = frame.pill; if not p then return end
+    local bgA = tonumber(opts.bgAlpha) or 0.5
+    local bdA = tonumber(opts.borderAlpha) or 0.95
+    local fr, fg, fb = 0, 0, 0
+    if opts.light then fr, fg, fb = 0.95, 0.97, 1 end
+    for _, t in ipairs({ p.fillL, p.fillR, p.fillM }) do t:SetVertexColor(fr, fg, fb, bgA) end
+    for _, t in ipairs({ p.ringL, p.ringR, p.lineT, p.lineB }) do t:SetVertexColor(r, g, b, bdA) end
+    local gA = opts.glow and (tonumber(opts.glowAlpha) or 0.35) or 0
+    for _, t in ipairs({ p.glowL, p.glowR, p.glowM }) do t:SetVertexColor(r, g, b, gA) end
+    p._glowBase = gA
+    -- Ombre intérieure : sombre en haut → transparent en bas
+    if p.shadow then
+        if opts.innerShadow ~= false and p.shadow.SetGradient and CreateColor then
+            p.shadow:SetColorTexture(1, 1, 1, 1)
+            pcall(p.shadow.SetGradient, p.shadow, "VERTICAL",
+                CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.5))
+        else
+            p.shadow:SetColorTexture(0, 0, 0, 0)
+        end
+    end
+    if p.dot then p.dot:SetVertexColor(r, g, b, opts.dot and 1 or 0) end
+end
+
 -- Son de déplacement d'objet (prise/dépôt). Le moteur en joue déjà un sur Pickup*/Equip* ;
 -- ce helper garantit un retour audible même si ce n'est pas le cas. kind = "pickup" | "drop".
 function SP:PlayItemSound(kind)
