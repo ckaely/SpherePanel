@@ -50,24 +50,6 @@ local function Clamp(v, minV, maxV)
     return v
 end
 
-local PILL_MASK = "Interface\\AddOns\\SpherePanel\\Media\\pill_mask"        -- pilule pleine
-local RING_MASK = "Interface\\AddOns\\SpherePanel\\Media\\pill_ring_mask"   -- anneau (liseré seul)
-
-local function AddPillMask(frame, tex, key, maskPath)
-    if not (frame and tex and frame.CreateMaskTexture and tex.AddMaskTexture) then return end
-    frame._pillMasks = frame._pillMasks or {}
-    local mask = frame._pillMasks[key]
-    if not mask then
-        mask = frame:CreateMaskTexture(nil, "ARTWORK")
-        mask:SetTexture(maskPath or PILL_MASK, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-        frame._pillMasks[key] = mask
-        tex:AddMaskTexture(mask)
-    end
-    mask:ClearAllPoints()
-    mask:SetPoint("TOPLEFT", tex, "TOPLEFT", 0, 0)
-    mask:SetPoint("BOTTOMRIGHT", tex, "BOTTOMRIGHT", 0, 0)
-end
-
 local function CleanName(name)
     if type(name) ~= "string" then return "" end
     name = name:gsub("|H.-|h%[(.-)%]|h", "%1")
@@ -108,7 +90,6 @@ function M:GetConfig()
     if f.glow == nil then f.glow = true end
     f.glowAlpha = f.glowAlpha or 0.30
     if f.pulse == nil then f.pulse = true end   -- halo pulsant
-    if f.accentBar == nil then f.accentBar = false end -- barre d'accent à gauche
     f.width = f.width or 360
     f.height = f.height or 48
     f.x = f.x or 0

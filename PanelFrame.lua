@@ -191,7 +191,7 @@ function SP:_TickFree(p, elapsed)
     p.bg:SetAlpha(lerp(p.bg:GetAlpha(), pg, elapsed, dur))
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and not m._onPanel2 and not m._docked then
+        if f and f:IsShown() and not m._onPanel2 then
             local cfg = SP:GetModuleConfig(m.name)
             local goal
             if m._forceReveal or (cfg and cfg.pinned) or (apply and apply[m.name] == false) then goal = 1
@@ -217,7 +217,16 @@ function SP:_TickSlide(p, elapsed, b, side, isP2)
 
     local revealAll
     if b == 1 then
-        if p:IsMouseOver() or (p.edge and p.edge:IsMouseOver()) then p._panelActive = now end
+        local hover = p:IsMouseOver() or (p.edge and p.edge:IsMouseOver())
+        -- les coins réservés de cette colonne comptent aussi comme zone de survol
+        if not hover and SP.cornerHosts then
+            local idx = isP2 and 2 or 1
+            for _, which in ipairs({ "top", "bottom" }) do
+                local d = SP.cornerHosts[idx .. which]
+                if d and d:IsShown() and d:IsMouseOver() then hover = true; break end
+            end
+        end
+        if hover then p._panelActive = now end
         revealAll = (now - (p._panelActive or 0)) <= delay
     end
 
@@ -226,7 +235,7 @@ function SP:_TickSlide(p, elapsed, b, side, isP2)
     local wantP2 = isP2 and true or false
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and m._layoutTop and not m._docked and ((m._onPanel2 and true or false) == wantP2) then
+        if f and f:IsShown() and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             local cfg = SP:GetModuleConfig(m.name)
             local reveal
             if m._forceReveal or (cfg and cfg.pinned) then reveal = true
@@ -246,12 +255,13 @@ function SP:_TickSlide(p, elapsed, b, side, isP2)
             if math.abs(aCur - aGoal) < 0.03 then aCur = aGoal end
             f:SetAlpha(aCur)
             if not (InCombatLockdown() and m.secureChildren) then
+                local host = m._layoutHost or p.content   -- content du panneau OU host de coin
                 if SP.AnchorModuleFrame then
-                    SP:AnchorModuleFrame(m, p.content, cur, m._layoutTop)
+                    SP:AnchorModuleFrame(m, host, cur, m._layoutTop)
                 else
                     f:ClearAllPoints()
-                    f:SetPoint("TOPLEFT", p.content, "TOPLEFT", cur, -m._layoutTop)
-                    f:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", cur, -m._layoutTop)
+                    f:SetPoint("TOPLEFT", host, "TOPLEFT", cur, -m._layoutTop)
+                    f:SetPoint("TOPRIGHT", host, "TOPRIGHT", cur, -m._layoutTop)
                 end
             end
         end
@@ -278,7 +288,7 @@ function SP:_UpdateEdgeGlows(p, side, isP2)
     local i = 0
     for _, m in ipairs(SP.modules) do
         local f = m.frame
-        if f and f:IsShown() and m._layoutTop and not m._docked and ((m._onPanel2 and true or false) == wantP2) then
+        if f and f:IsShown() and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             local cfg = SP:GetModuleConfig(m.name)
             local slidOff = (math.abs(m._curSlide or 0) > 4) and not (cfg and cfg.pinned)
             i = i + 1
@@ -322,16 +332,17 @@ end
 function SP:_ResetSlides(p, isP2)
     local wantP2 = isP2 and true or false
     for _, m in ipairs(SP.modules) do
-        if m.frame and m._layoutTop and not m._docked and ((m._onPanel2 and true or false) == wantP2) then
+        if m.frame and m._layoutTop and ((m._onPanel2 and true or false) == wantP2) then
             m._curSlide = 0
             m.frame:SetAlpha(1)   -- mode libre : modules pleinement visibles
             if not (InCombatLockdown() and m.secureChildren) then
+                local host = m._layoutHost or p.content   -- content du panneau OU host de coin
                 if SP.AnchorModuleFrame then
-                    SP:AnchorModuleFrame(m, p.content, 0, m._layoutTop)
+                    SP:AnchorModuleFrame(m, host, 0, m._layoutTop)
                 else
                     m.frame:ClearAllPoints()
-                    m.frame:SetPoint("TOPLEFT", p.content, "TOPLEFT", 0, -m._layoutTop)
-                    m.frame:SetPoint("TOPRIGHT", p.content, "TOPRIGHT", 0, -m._layoutTop)
+                    m.frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -m._layoutTop)
+                    m.frame:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -m._layoutTop)
                 end
             end
         end
@@ -432,6 +443,8 @@ function SP:ApplyPanelBehavior()
     if b == 3 then SP:_ResetSlides(p) else p._panelActive = 0 end  -- 1/2 : démarre réduit
     -- le panneau ② suit : toujours du côté opposé au principal
     if SP.db.panel.panel2 and SP.db.panel.panel2.enabled then SP:ApplyPanel2() end
+    -- le flux s'écarte des coins réservés (recalculé aussi à chaque RebuildLayout)
+    if SP.ApplyCornerReservations then SP:ApplyCornerReservations() end
 end
 
 -- ------------------------------------------------------------
